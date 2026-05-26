@@ -37,6 +37,7 @@ import {
 import { getWriteRenderSafety } from '../../write/write-render-safety'
 import { WriteMarkdownEditor } from './WriteMarkdownEditor'
 import { WriteMarkdownPreview } from './WriteMarkdownPreview'
+import { useWriteSplitScrollSync } from './use-write-split-scroll-sync'
 
 type Props = {
   leftSidebarCollapsed: boolean
@@ -47,6 +48,7 @@ type Props = {
 }
 
 const WRITE_AUTOSAVE_MS = 900
+const WRITE_PREVIEW_DEBOUNCE_MS = 60
 const INLINE_AGENT_MIN_WIDTH = 280
 const INLINE_AGENT_MAX_WIDTH = 440
 const INLINE_AGENT_FALLBACK_HEIGHT = 56
@@ -79,6 +81,17 @@ function clamp(value: number, min: number, max: number): number {
 
 function clampImageZoom(value: number): number {
   return clamp(Math.round(value), IMAGE_MIN_ZOOM, IMAGE_MAX_ZOOM)
+}
+
+function useDebouncedValue<T>(value: T, delayMs: number): T {
+  const [debounced, setDebounced] = useState(value)
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => setDebounced(value), delayMs)
+    return () => window.clearTimeout(timeoutId)
+  }, [value, delayMs])
+
+  return debounced
 }
 
 function inlineAgentPosition(selection: ReturnType<typeof useWriteWorkspaceStore.getState>['selection']): {
@@ -323,6 +336,8 @@ export function WriteWorkspaceView({
   } = useWriteWorkspaceStore()
   const saveTimerRef = useRef<number | null>(null)
   const exportMenuRef = useRef<HTMLDivElement | null>(null)
+  const editorPaneRef = useRef<HTMLDivElement | null>(null)
+  const previewPaneRef = useRef<HTMLDivElement | null>(null)
   const exportNoticeTimerRef = useRef<number | null>(null)
   const inlineAgentTextareaRef = useRef<HTMLTextAreaElement | null>(null)
   const [inlineAgentValue, setInlineAgentValue] = useState('')
@@ -340,6 +355,7 @@ export function WriteWorkspaceView({
     fileSize,
     truncated: fileTruncated
   })
+  const debouncedPreviewContent = useDebouncedValue(fileContent, WRITE_PREVIEW_DEBOUNCE_MS)
   const saveLabel = activeFileIsImage
     ? t('writeImagePreview')
     : renderSafety.readOnly ? t('writeReadOnly') : formatSaveLabel(saveStatus, t)
@@ -643,6 +659,13 @@ export function WriteWorkspaceView({
   const liveModeActive = previewMode === 'live' && renderSafety.livePreviewEnabled
   const sourceModeActive = previewMode === 'source' || (previewMode === 'live' && !renderSafety.livePreviewEnabled)
   const editorAppearance = sourceModeActive ? 'source' : 'live'
+
+  useWriteSplitScrollSync({
+    enabled: previewMode === 'split' && activeFileIsText,
+    editorRootRef: editorPaneRef,
+    previewRef: previewPaneRef,
+    rebindKey: activeFilePath ?? 'write-preview'
+  })
 
   const renderModeButton = (
     nextMode: WritePreviewMode,
@@ -962,7 +985,7 @@ export function WriteWorkspaceView({
               ) : null}
               <div className="flex min-h-0 min-w-0 flex-1">
                 {editorVisible ? (
-                  <div className={`${editorWidth} min-h-0 overflow-hidden`}>
+                  <div ref={editorPaneRef} className={`${editorWidth} min-h-0 overflow-hidden`}>
                     <WriteMarkdownEditor
                       value={fileContent}
                       workspaceRoot={workspaceRoot}
@@ -994,9 +1017,9 @@ export function WriteWorkspaceView({
                 ) : null}
 
                 {previewVisible ? (
-                  <div className={`${previewWidth} min-h-0 overflow-y-auto overflow-x-hidden`}>
+                  <div ref={previewPaneRef} className={`${previewWidth} min-h-0 overflow-y-auto overflow-x-hidden`}>
                     <WriteMarkdownPreview
-                      content={fileContent}
+                      content={debouncedPreviewContent}
                       isMarkdown={isMarkdown && renderSafety.markdownPreviewEnabled}
                       filePath={activeFilePath}
                       previewErrorMessage={t('writePreviewErrorFallback')}
