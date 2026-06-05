@@ -159,6 +159,13 @@ function emitClawChannelActivity(payload: { channelId: string; threadId: string 
   mainWindow.webContents.send('claw:channel-activity', payload)
 }
 
+async function stopManagedRuntimesForQuit(): Promise<void> {
+  scheduleRuntime?.stop()
+  clawRuntime?.stop()
+  stopWeixinBridgeRuntime()
+  await kunRuntimeAdapter.stopAndWait()
+}
+
 async function loadGuiUpdaterModule(): Promise<GuiUpdaterModule> {
   if (!guiUpdaterModulePromise) {
     guiUpdaterModulePromise = import('./gui-updater')
@@ -166,7 +173,8 @@ async function loadGuiUpdaterModule(): Promise<GuiUpdaterModule> {
         if (!guiUpdaterInitialized) {
           module.initializeGuiUpdater(
             () => mainWindow,
-            async () => (await store.load()).guiUpdate.channel
+            async () => (await store.load()).guiUpdate.channel,
+            stopManagedRuntimesForQuit
           )
           guiUpdaterInitialized = true
         }
@@ -809,10 +817,7 @@ app.on('window-all-closed', () => {
 })
 
 app.on('before-quit', () => {
-  scheduleRuntime?.stop()
-  clawRuntime?.stop()
-  stopWeixinBridgeRuntime()
-  void kunRuntimeAdapter.stopAndWait().catch((error) => {
+  void stopManagedRuntimesForQuit().catch((error) => {
     console.warn('[deepseek-gui] failed to stop Kun runtime:', error)
   })
 })

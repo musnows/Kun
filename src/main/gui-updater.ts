@@ -30,6 +30,7 @@ let configuredChannel: GuiUpdateChannel = normalizeGuiUpdateChannel(
 )
 let configuredFeedUrl = ''
 let getSelectedChannel: (() => GuiUpdateChannel | Promise<GuiUpdateChannel>) | null = null
+let beforeInstallUpdate: (() => void | Promise<void>) | null = null
 let backgroundCheckTimer: NodeJS.Timeout | null = null
 let backgroundCheckPromise: Promise<void> | null = null
 
@@ -391,10 +392,12 @@ async function checkManualUpdate(
 
 export function initializeGuiUpdater(
   windowGetter: () => BrowserWindow | null,
-  channelGetter?: () => GuiUpdateChannel | Promise<GuiUpdateChannel>
+  channelGetter?: () => GuiUpdateChannel | Promise<GuiUpdateChannel>,
+  beforeInstall?: () => void | Promise<void>
 ): void {
   getMainWindow = windowGetter
   getSelectedChannel = channelGetter ?? null
+  beforeInstallUpdate = beforeInstall ?? null
   if (initialized) return
   initialized = true
 
@@ -544,6 +547,7 @@ export async function installGuiUpdate(): Promise<GuiUpdateInstallResult> {
       }
     }
     emitGuiUpdateState({ status: 'installing', info: lastInfo ?? undefined })
+    await beforeInstallUpdate?.()
     autoUpdater.quitAndInstall(false, true)
     return { ok: true }
   } catch (e) {
