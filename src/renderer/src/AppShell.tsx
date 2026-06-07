@@ -39,9 +39,9 @@ export default function AppShell(): React.ReactElement {
   }, [boot])
 
   return (
-    <div className={hasDesktopTitleBar ? 'ds-windows-app-frame flex h-full min-h-0 flex-col bg-ds-main' : 'h-full min-h-0 bg-transparent'}>
+    <div className={hasDesktopTitleBar ? 'ds-windows-app-frame flex h-full min-h-0 flex-col bg-ds-main' : 'flex h-full min-h-0 flex-col bg-transparent'}>
       {hasDesktopTitleBar ? <WindowsTitleBar platform={platform} /> : null}
-      <div className="min-h-0 flex-1">
+      <div className="flex min-h-0 flex-1 flex-col">
         <Suspense fallback={<RouteFallback />}>
           {route === 'settings' ? <SettingsView /> : <Workbench />}
         </Suspense>
