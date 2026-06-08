@@ -3,8 +3,6 @@
   --ds-window-controls-safe-inset: 0px;
   --ds-write-titlebar-extra-inset: 0px;
   --ds-ui-scale: 1;
-  --ds-font-weight-ui: 500;
-  --ds-font-weight-mono: 400;
   --bg-app: #f5f7fa;
   --bg-sidebar: #f4f7fb;
   --bg-canvas: #fbfcfe;
@@ -458,7 +456,6 @@ body {
   isolation: isolate;
   font-family:
     'SF Pro Text', 'PingFang SC', 'Noto Sans SC', 'Helvetica Neue', Arial, sans-serif;
-  font-weight: var(--ds-font-weight-ui);
   background-color: var(--ds-bg-main);
   color: var(--ds-text);
   zoom: var(--ds-ui-scale);
@@ -489,14 +486,6 @@ input,
 select,
 textarea {
   font: inherit;
-}
-
-code,
-pre,
-kbd,
-samp,
-.font-mono {
-  font-weight: var(--ds-font-weight-mono);
 }
 
 * {
