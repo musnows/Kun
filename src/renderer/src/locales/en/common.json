@@ -888,6 +888,7 @@
   "runtimeOfflineHeroKicker": "GUI agent core",
   "runtimeOfflineHeroTitle": "DeepSeek-GUI is waking the local agent",
   "runtimeOfflineHeroSub": "The workbench is bringing Kun back into this window. When the local service is ready, sessions and the composer resume here.",
+  "runtimeErrorHeroTitle": "Cannot connect to the local runtime",
   "openSettings": "Open Settings",
   "close": "Close",
   "clear": "Clear",
