@@ -30,6 +30,7 @@ const settings: AppSettingsV1 = {
   claw: defaultClawSettings(),
   schedule: defaultScheduleSettings(),
   guiUpdate: { channel: 'stable' },
+  disabledSkillIds: [],
   codePromptPrefix: ''
 }
 

@@ -57,6 +57,7 @@ function createSettings(patch: Partial<AppSettingsV1['write']['inlineCompletion'
       channel: 'stable'
     },
     codePromptPrefix: '',
+    disabledSkillIds: [],
     claw: defaultClawSettings()
   }
 }

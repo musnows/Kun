@@ -446,6 +446,58 @@ describe('FloatingComposer capability controls', () => {
     expect(html).toContain('/skill:openspec-apply-change')
   })
 
+  it('hides disabled Skills from the slash command menu', () => {
+    useChatStore.setState({
+      activeThreadId: 'thr_1',
+      activeThreadGoal: null,
+      route: 'chat',
+      workspaceRoot: '/workspace/deepseek-gui',
+      threads: []
+    })
+
+    const html = renderToStaticMarkup(
+      createElement(FloatingComposer, {
+        input: '/skill',
+        setInput: () => undefined,
+        workspaceRootOverride: '/workspace/deepseek-gui',
+        mode: 'agent',
+        setMode: () => undefined,
+        busy: false,
+        runtimeReady: true,
+        hasActiveThread: true,
+        composerModel: '',
+        composerPickList: [],
+        onComposerModelChange: () => undefined,
+        queuedMessages: [],
+        onRemoveQueuedMessage: () => undefined,
+        onSend: () => undefined,
+        onInterrupt: () => undefined,
+        attachmentUploadEnabled: false,
+        webAccessAvailable: false,
+        disabledSkillIds: ['/skill:test-skill-08'],
+        skillCommands: [
+          {
+            id: 'test-skill-08',
+            name: 'Test Skill 08',
+            description: 'Disabled test skill',
+            root: '/workspace/deepseek-gui/.agents/skills/test-skill-08'
+          },
+          {
+            id: 'test-skill-09',
+            name: 'Test Skill 09',
+            description: 'Enabled test skill',
+            root: '/workspace/deepseek-gui/.agents/skills/test-skill-09'
+          }
+        ]
+      })
+    )
+
+    expect(html).not.toContain('Test Skill 08')
+    expect(html).not.toContain('/skill:test-skill-08')
+    expect(html).toContain('Test Skill 09')
+    expect(html).toContain('/skill:test-skill-09')
+  })
+
   it('enables local Claw input when a WeChat channel is already mapped to a local thread', () => {
     useChatStore.setState({
       activeThreadId: 'thr_weixin',

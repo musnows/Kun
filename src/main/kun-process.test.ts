@@ -48,7 +48,8 @@ function createSettings(binaryPath: string): AppSettingsV1 {
     claw: defaultClawSettings(),
     schedule: defaultScheduleSettings(),
     guiUpdate: { channel: 'stable' },
-    codePromptPrefix: ''
+    codePromptPrefix: '',
+    disabledSkillIds: []
   }
 }
 

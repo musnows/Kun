@@ -146,13 +146,15 @@ describe('app-ipc-schemas', () => {
           model: 'deepseek-v4-pro',
           maxTokens: 128
         }
-      }
+      },
+      disabledSkillIds: ['test-skill-08']
     })
 
     expect(payload.agents?.kun?.port).toBe(9000)
     expect(payload.agents?.kun?.tokenEconomy?.enabled).toBe(true)
     expect(payload.agents?.kun?.tokenEconomy?.historyHygiene?.maxToolResultTokens).toBe(4000)
     expect(payload.write?.inlineCompletion?.model).toBe('deepseek-v4-pro')
+    expect(payload.disabledSkillIds).toEqual(['test-skill-08'])
   })
 
   it('accepts schedule settings patches and task payloads', () => {

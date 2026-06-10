@@ -57,7 +57,8 @@ function buildSettings(): AppSettingsV1 {
       ]
     },
     guiUpdate: { channel: 'stable' },
-    codePromptPrefix: ''
+    codePromptPrefix: '',
+    disabledSkillIds: []
   }
 }
 

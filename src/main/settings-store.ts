@@ -203,6 +203,7 @@ const defaultSettings = (): AppSettingsV1 => ({
     channel: DEFAULT_GUI_UPDATE_CHANNEL
   },
   codePromptPrefix: '',
+  disabledSkillIds: [],
   write: defaultWriteSettings(),
   claw: defaultClawSettings(),
   schedule: defaultScheduleSettings()
@@ -229,7 +230,10 @@ function buildMergedSettings(parsed: Partial<AppSettingsV1>): AppSettingsV1 {
     claw: mergeClawSettings(defaults.claw, migrated.claw),
     schedule: mergeScheduleSettings(defaults.schedule, migrated.schedule),
     guiUpdate: { ...defaults.guiUpdate, ...migrated.guiUpdate },
-    codePromptPrefix: typeof migrated.codePromptPrefix === 'string' ? migrated.codePromptPrefix : ''
+    codePromptPrefix: typeof migrated.codePromptPrefix === 'string' ? migrated.codePromptPrefix : '',
+    disabledSkillIds: Array.isArray(migrated.disabledSkillIds)
+      ? migrated.disabledSkillIds.filter((id): id is string => typeof id === 'string' && id.trim().length > 0)
+      : []
   }
 }
 

@@ -75,7 +75,10 @@ export function normalizeAppSettings(settings: AppSettingsV1): AppSettingsV1 {
         maybeSettings.guiUpdate?.channel ?? DEFAULT_GUI_UPDATE_CHANNEL
       )
     },
-    codePromptPrefix: typeof maybeSettings.codePromptPrefix === 'string' ? maybeSettings.codePromptPrefix : ''
+    codePromptPrefix: typeof maybeSettings.codePromptPrefix === 'string' ? maybeSettings.codePromptPrefix : '',
+    disabledSkillIds: Array.isArray(maybeSettings.disabledSkillIds)
+      ? maybeSettings.disabledSkillIds.filter((id: unknown) => typeof id === 'string' && id.trim())
+      : []
   }
 }
 

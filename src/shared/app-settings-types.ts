@@ -483,6 +483,8 @@ export type AppSettingsV1 = {
   schedule: ScheduleSettingsV1
   guiUpdate: GuiUpdateConfigV1
   codePromptPrefix: string
+  /** skill IDs disabled by the user; excluded from the slash menu */
+  disabledSkillIds: string[]
 }
 
 export type AppSettingsPatch = Partial<

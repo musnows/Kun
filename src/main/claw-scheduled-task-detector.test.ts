@@ -39,6 +39,7 @@ function settings(endpointFormat: ModelEndpointFormat): AppSettingsV1 {
     claw: defaultClawSettings(),
     schedule: defaultScheduleSettings(),
     guiUpdate: { channel: 'stable' },
+    disabledSkillIds: [],
     codePromptPrefix: ''
   }
 }

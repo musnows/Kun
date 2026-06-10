@@ -384,6 +384,7 @@ export function createNavigationActions(
           workspaceRoot,
           codeWorkspaceRoots,
           workspaceLabel: workspaceLabelFromPath(workspaceRoot),
+          disabledSkillIds: settings.disabledSkillIds,
           clawChannels: settings.claw.channels,
           activeClawChannelId: settings.claw.channels.find((channel) => channel.enabled)?.id ?? '',
           runtimeConnection: needsInitialSetup ? 'idle' : get().runtimeConnection,

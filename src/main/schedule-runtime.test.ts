@@ -71,7 +71,8 @@ function settingsWith(
       ...schedulePatch
     }),
     guiUpdate: { channel: 'stable' },
-    codePromptPrefix: ''
+    codePromptPrefix: '',
+    disabledSkillIds: []
   }
 }
 

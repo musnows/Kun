@@ -501,5 +501,19 @@
   "logRetentionSeven": "7 days",
   "loading": "Loading…",
   "loadFailed": "Could not load settings: {{message}}",
-  "preloadBridgeError": "The app bridge is not available. Restart the application or check the preload path."
+  "preloadBridgeError": "The app bridge is not available. Restart the application or check the preload path.",
+  "skills": "Skills",
+  "skillsList": "Skill List",
+  "skillsTotal": "Total Skills",
+  "skillsCount": "{{enabled}} enabled / {{total}} total",
+  "skillsLoaded": "Loaded in Slash Menu",
+  "skillsLoadedDesc": "At most {{limit}} enabled skills appear in the slash menu. Disable some skills to make room for others.",
+  "skillsLoading": "Loading skills...",
+  "skillsEmpty": "No skills found. Place skill packages in ~/.agents/skills or project .agents/skills.",
+  "skillsLimitTitle": "Skill Limit Reached",
+  "skillsLimitNotice": "Only {{loaded}} of {{total}} skills appear in the slash menu ({{unloaded}} excluded). Disable skills above to let others take their place.",
+  "skillsStatusNotLoaded": "Not loaded",
+  "skillsStatusDisabled": "Disabled",
+  "skillsScopeProject": "Project",
+  "skillsScopeGlobal": "Global"
 }

@@ -48,7 +48,8 @@ function settings(): AppSettingsV1 {
     claw: defaultClawSettings(),
     schedule: defaultScheduleSettings(),
     guiUpdate: { channel: 'stable' },
-    codePromptPrefix: ''
+    codePromptPrefix: '',
+    disabledSkillIds: []
   }
 }
 
@@ -121,7 +122,7 @@ describe('registerAppIpcHandlers', () => {
 
     registerAppIpcHandlers(registerOptions({ applySettingsPatch }))
 
-    const payload = { ...settings(), locale: 'zh' as const }
+    const payload = { ...settings(), locale: 'zh' as const, disabledSkillIds: ['test-skill-08'] }
     const handler = handlers.get('settings:set')
     await expect(handler?.({}, payload)).resolves.toEqual(settings())
     expect(applySettingsPatch).toHaveBeenCalledWith(payload)

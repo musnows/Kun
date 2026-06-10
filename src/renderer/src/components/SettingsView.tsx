@@ -22,6 +22,7 @@ import type {
   CoreRuntimeInfoJson,
   CoreRuntimeToolDiagnosticsJson
 } from '../agent/kun-contract'
+import type { SkillListItem } from '@shared/ds-gui-api'
 import type { WriteInlineCompletionDebugEntry } from '@shared/write-inline-completion'
 import { applyTheme, applyUiFontScale } from '../lib/apply-theme'
 import { formatWorkspacePickerError } from '../lib/format-workspace-picker-error'
@@ -51,10 +52,11 @@ import {
   ClawSettingsSection,
   GeneralSettingsSection,
   KeyboardShortcutsSettingsSection,
+  SkillsSettingsSection,
   WriteSettingsSection
 } from './settings-sections'
 
-type SettingsCategory = 'general' | 'write' | 'agents' | 'shortcuts' | 'claw'
+type SettingsCategory = 'general' | 'write' | 'agents' | 'shortcuts' | 'claw' | 'skills'
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error'
 type SettingsPatch = AppSettingsPatch
 type SkillRootOption = {
@@ -113,6 +115,8 @@ export function SettingsView(): ReactElement {
   const [writeCompletionDebugSelectedId, setWriteCompletionDebugSelectedId] = useState<string | null>(null)
   const [writeDebugLoading, setWriteDebugLoading] = useState(false)
   const [writeDebugError, setWriteDebugError] = useState<string | null>(null)
+  const [allSkills, setAllSkills] = useState<SkillListItem[]>([])
+  const [skillsLoading, setSkillsLoading] = useState(false)
   const initializedCategory = useRef(false)
   const saveTimer = useRef<ReturnType<typeof window.setTimeout> | null>(null)
   const statusTimer = useRef<ReturnType<typeof window.setTimeout> | null>(null)
@@ -202,6 +206,30 @@ export function SettingsView(): ReactElement {
   }, [category, loadWriteDebugEntries])
 
   useEffect(() => {
+    if (category !== 'skills') return
+    let cancelled = false
+    setSkillsLoading(true)
+    void (async () => {
+      try {
+        const result = typeof window.dsGui?.listSkills === 'function'
+          ? await window.dsGui.listSkills()
+          : { ok: false as const, message: 'listSkills unavailable' }
+        if (cancelled) return
+        if (result.ok) {
+          setAllSkills(result.skills)
+        } else {
+          setAllSkills([])
+        }
+      } catch {
+        if (!cancelled) setAllSkills([])
+      } finally {
+        if (!cancelled) setSkillsLoading(false)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [category])
+
+  useEffect(() => {
     if (!form || initializedCategory.current) return
     initializedCategory.current = true
     if (!getActiveAgentApiKey(form).trim()) {
@@ -226,6 +254,10 @@ export function SettingsView(): ReactElement {
       setCategory('shortcuts')
       return
     }
+    if (settingsSection === 'skill') {
+      setCategory('skills')
+      return
+    }
     setCategory('agents')
   }, [settingsSection])
 
@@ -236,6 +268,7 @@ export function SettingsView(): ReactElement {
       settingsSection === 'write' ||
       settingsSection === 'claw' ||
       settingsSection === 'shortcuts' ||
+      settingsSection === 'skill' ||
       category !== 'agents'
     ) {
       return
@@ -785,7 +818,9 @@ export function SettingsView(): ReactElement {
     resetClawWorkspaceToDefault,
     clawWorkspacePickerError,
     splitSettingsList,
-    listSettingsText
+    listSettingsText,
+    allSkills,
+    skillsLoading
   }
 
   return (
@@ -835,6 +870,7 @@ export function SettingsView(): ReactElement {
           {category === 'general' ? <GeneralSettingsSection ctx={settingsSectionContext} /> : null}
           {category === 'write' ? <WriteSettingsSection ctx={settingsSectionContext} /> : null}
           {category === 'agents' ? <AgentsSettingsSection ctx={settingsSectionContext} /> : null}
+          {category === 'skills' ? <SkillsSettingsSection ctx={settingsSectionContext} /> : null}
           {category === 'shortcuts' ? <KeyboardShortcutsSettingsSection ctx={settingsSectionContext} /> : null}
           {category === 'claw' ? <ClawSettingsSection ctx={settingsSectionContext} /> : null}
         </div>

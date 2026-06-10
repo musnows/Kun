@@ -501,5 +501,19 @@
   "logRetentionSeven": "7 天",
   "loading": "加载中…",
   "loadFailed": "无法加载设置：{{message}}",
-  "preloadBridgeError": "应用桥接不可用。请重启应用或检查预加载脚本路径。"
+  "preloadBridgeError": "应用桥接不可用。请重启应用或检查预加载脚本路径。",
+  "skills": "技能管理",
+  "skillsList": "技能列表",
+  "skillsTotal": "技能总数",
+  "skillsCount": "已启用 {{enabled}} / 总共 {{total}}",
+  "skillsLoaded": "斜杠菜单已加载",
+  "skillsLoadedDesc": "斜杠菜单最多加载 {{limit}} 个已启用的技能。禁用部分技能可为其他技能腾出空间。",
+  "skillsLoading": "正在加载技能...",
+  "skillsEmpty": "未发现任何技能。请将技能包放入 ~/.agents/skills 或项目的 .agents/skills 目录。",
+  "skillsLimitTitle": "技能数量已达上限",
+  "skillsLimitNotice": "斜杠菜单仅加载了 {{loaded}}/{{total}} 个技能（{{unloaded}} 个未加载）。禁用上方的技能可让其他技能顺位加载。",
+  "skillsStatusNotLoaded": "未加载",
+  "skillsStatusDisabled": "已禁用",
+  "skillsScopeProject": "项目",
+  "skillsScopeGlobal": "全局"
 }

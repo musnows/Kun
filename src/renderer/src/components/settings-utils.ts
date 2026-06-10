@@ -110,7 +110,10 @@ export function coerceRendererSettings(settings: AppSettingsV1): AppSettingsV1 {
     guiUpdate: {
       channel: normalizeGuiUpdateChannel(raw.guiUpdate?.channel ?? DEFAULT_GUI_UPDATE_CHANNEL)
     },
-    codePromptPrefix: typeof raw.codePromptPrefix === 'string' ? raw.codePromptPrefix : ''
+    codePromptPrefix: typeof raw.codePromptPrefix === 'string' ? raw.codePromptPrefix : '',
+    disabledSkillIds: Array.isArray(raw.disabledSkillIds)
+      ? raw.disabledSkillIds.filter((id: unknown) => typeof id === 'string' && id.trim())
+      : []
   }
 }
 

@@ -131,6 +131,8 @@ type Props = {
       promptPatterns?: string[]
     }
   }>
+  /** Skill IDs disabled by the user; excluded from the slash menu. */
+  disabledSkillIds?: string[]
   onPickAttachments?: (files: File[]) => void
   onPasteClipboardImage?: (options?: { silentNoImage?: boolean }) => void | Promise<void>
   onRemoveAttachment?: (id: string) => void
@@ -222,6 +224,14 @@ function isProjectSkillRoot(skillRoot: string | undefined, workspaceRoot: string
 
 function isProjectSkill(skill: { root?: string; scope?: 'project' | 'global' }, workspaceRoot: string): boolean {
   return skill.scope === 'project' || (skill.scope !== 'global' && isProjectSkillRoot(skill.root, workspaceRoot))
+}
+
+function normalizeSkillCommandId(id: string | undefined): string {
+  return (id ?? '').trim().replace(/^\/?skill:/, '')
+}
+
+function disabledSkillIdSet(ids: string[] | undefined): Set<string> {
+  return new Set((ids ?? []).map(normalizeSkillCommandId).filter(Boolean))
 }
 
 function normalizedImageFile(file: File, mimeTypeHint?: string): File | null {
@@ -498,6 +508,7 @@ export function FloatingComposer({
   changedFiles = EMPTY_CHANGED_FILES,
   changedFileStats = null,
   skillCommands = EMPTY_SKILL_COMMANDS,
+  disabledSkillIds,
   onPickAttachments,
   onPasteClipboardImage,
   onRemoveAttachment,
@@ -639,6 +650,7 @@ export function FloatingComposer({
   const slashCommands = useMemo<SlashCommand[]>(() => {
     const threadActionDisabled = !runtimeReady || busy || !activeThreadId
     const goalActionDisabled = !canOpenGoalPanel
+    const disabledSkills = disabledSkillIdSet(disabledSkillIds)
     const commands: SlashCommand[] = []
     if (onPlanCommand) {
       commands.push({
@@ -653,6 +665,7 @@ export function FloatingComposer({
     if (route !== 'claw') {
       const dynamicSkillCommands = skillCommands
         .filter((skill) => skill.id.trim() && skill.name.trim())
+        .filter((skill) => !disabledSkills.has(normalizeSkillCommandId(skill.id)))
         .sort((left, right) => {
           const leftProject = isProjectSkill(left, effectiveWorkspaceRoot)
           const rightProject = isProjectSkill(right, effectiveWorkspaceRoot)
@@ -773,6 +786,7 @@ export function FloatingComposer({
     route,
     runtimeReady,
     skillCommands,
+    disabledSkillIds,
     t
   ])
 
