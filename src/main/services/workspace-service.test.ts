@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdir, mkdtemp, readFile, realpath, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 
 vi.mock('electron', () => ({
   app: {
@@ -191,7 +191,8 @@ describe('workspace-service boundary checks', () => {
     expect(result.ok).toBe(true)
     if (!result.ok) return
     expect(result.name).toMatch(/^pasted-image-.+\.png$/)
-    expect(result.localFilePath).toMatch(/^\/tmp\/kun\/\d+\.png$/)
+    expect(dirname(result.localFilePath)).toBe(join(tmpdir(), 'kun'))
+    expect(basename(result.localFilePath)).toMatch(/^\d+\.png$/)
     expect(result.mimeType).toBe('image/png')
     expect(result.dataBase64).toBe(Buffer.from('clipboard-png-bytes').toString('base64'))
     expect(result.byteSize).toBe(Buffer.byteLength('clipboard-png-bytes'))

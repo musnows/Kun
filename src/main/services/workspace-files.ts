@@ -11,6 +11,7 @@ import {
   writeFile
 } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
+import { tmpdir } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import type {
   WorkspaceClipboardImageSavePayload,
@@ -50,7 +51,7 @@ import {
 const MAX_FILE_PREVIEW_BYTES = 1_500_000
 const MAX_IMAGE_PREVIEW_BYTES = 12 * 1024 * 1024
 const WORKSPACE_IMAGE_DIR = 'img'
-const CLIPBOARD_TEMP_DIR = '/tmp/kun'
+const CLIPBOARD_TEMP_DIR = join(tmpdir(), 'kun')
 
 const WORKSPACE_IMAGE_MIME_BY_EXT = new Map([
   ['.png', 'image/png'],
