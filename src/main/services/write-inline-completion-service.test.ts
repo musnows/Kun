@@ -161,6 +161,37 @@ describe('requestWriteInlineCompletion', () => {
     })
   })
 
+  it('does not route lookalike DeepSeek hosts to FIM completions', async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify({
+        choices: [{
+          message: {
+            content: '<<<SHORT\n from chat\n>>>'
+          }
+        }]
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' }
+      })
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await requestWriteInlineCompletion(
+      createSettings({ baseUrl: 'https://deepseek.com.evil.test/beta' }),
+      createRequest()
+    )
+
+    expect(result).toMatchObject({
+      ok: true,
+      completion: ' from chat'
+    })
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(url).toBe('https://deepseek.com.evil.test/v1/chat/completions')
+    const body = JSON.parse(String(init.body)) as { messages?: unknown[]; prompt?: string }
+    expect(body.messages).toBeDefined()
+    expect(body.prompt).toBeUndefined()
+  })
+
   it('does not request the API when inline completion is disabled', async () => {
     const fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)

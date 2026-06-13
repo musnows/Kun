@@ -172,7 +172,7 @@ function markerBlock(marker: string, text = ''): string {
 }
 
 function sanitizePromptLine(text = ''): string {
-  return String(text || '').replace(/\r\n?/g, '\n').replace(/-->/g, '--\\>')
+  return String(text || '').replace(/\r\n?/g, '\n').split('-->').join('--\\>')
 }
 
 function compactText(text = ''): string {
@@ -408,25 +408,61 @@ function compatibleModelEndpointUrl(baseUrl: string, endpointFormat: ModelEndpoi
   if (isCustomModelEndpointFormat(endpointFormat)) return upstreamOpenAiCustomEndpointUrl(baseUrl)
   if (endpointFormat === 'chat_completions') return upstreamOpenAiChatCompletionsUrl(baseUrl)
   const path = modelEndpointPath(endpointFormat)
-  const normalized = baseUrl.trim().replace(/\/+$/, '')
+  const normalized = trimTrailingSlashes(baseUrl.trim())
   if (!normalized) return `/v1/${path}`
-  const lastSegment = normalized.split('/').pop()?.toLowerCase() ?? ''
+  if (normalized.toLowerCase().endsWith(`/${path}`)) return normalized
+  const withoutEndpoint = stripKnownModelEndpointPath(normalized)
+  const lastSegment = withoutEndpoint.split('/').pop()?.toLowerCase() ?? ''
   if (lastSegment === 'beta') {
-    return `${normalized.slice(0, -'/beta'.length)}/v1/${path}`
+    return `${withoutEndpoint.slice(0, -'/beta'.length)}/v1/${path}`
   }
-  if (/^v\d+$/.test(lastSegment)) {
-    return `${normalized}/${path}`
+  if (isVersionSegment(lastSegment)) {
+    return `${withoutEndpoint}/${path}`
   }
-  return `${normalized}/v1/${path}`
+  return `${withoutEndpoint}/v1/${path}`
+}
+
+function stripKnownModelEndpointPath(baseUrl: string): string {
+  const lower = baseUrl.toLowerCase()
+  for (const path of ['chat/completions', 'responses', 'messages']) {
+    if (lower.endsWith(`/${path}`)) {
+      return trimTrailingSlashes(baseUrl.slice(0, -path.length))
+    }
+  }
+  return baseUrl
 }
 
 function isDeepSeekInlineCompletionBaseUrl(baseUrl: string): boolean {
-  try {
-    const parsed = new URL(baseUrl)
-    return parsed.hostname.toLowerCase().endsWith('deepseek.com')
-  } catch {
-    return baseUrl.toLowerCase().includes('deepseek.com')
+  const hostname = baseUrlHostname(baseUrl)
+  return hostname === 'deepseek.com' || hostname.endsWith('.deepseek.com')
+}
+
+function baseUrlHostname(baseUrl: string): string {
+  const trimmed = baseUrl.trim()
+  if (!trimmed) return ''
+  for (const candidate of [trimmed, `https://${trimmed}`]) {
+    try {
+      return new URL(candidate).hostname.toLowerCase()
+    } catch {
+      // Try the next normalized form.
+    }
   }
+  return ''
+}
+
+function trimTrailingSlashes(value: string): string {
+  let end = value.length
+  while (end > 0 && value.charCodeAt(end - 1) === 47) end -= 1
+  return end === value.length ? value : value.slice(0, end)
+}
+
+function isVersionSegment(value: string): boolean {
+  if (value.length < 2 || value[0] !== 'v') return false
+  for (let index = 1; index < value.length; index += 1) {
+    const code = value.charCodeAt(index)
+    if (code < 48 || code > 57) return false
+  }
+  return true
 }
 
 function buildProviderHeaders(apiKey: string, responseFormat: WriteInlineProviderResponseFormat): Record<string, string> {
