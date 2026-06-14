@@ -111,9 +111,10 @@ export async function acquireWorktree(params: {
       throw new Error(`${WORKTREE_HAS_CHANGES_PREFIX}${poolIndex}:${changesCount}`)
     }
     // Reset to HEAD, then clean untracked (order matters: reset first).
-    // --force -f -f removes nested git repos (e.g. CMake FetchContent deps).
+    // Single -f: removes untracked files/dirs but preserves nested git repos.
+    // (Nested repos would need an explicit second -f, which is destructive.)
     await runGit(wtPath, ['reset', '--hard', headCommit])
-    await runGit(wtPath, ['clean', '-ffd'])
+    await runGit(wtPath, ['clean', '-fd'])
   } else {
     await mkdir(poolDir, { recursive: true })
     try {
@@ -272,8 +273,22 @@ export async function mergeWorktreeToMain(params: {
     })
   }
 
-  await runGit(projectPath, ['checkout', mainBranch])
+  // Safety: do NOT checkout main in the user's main repo. That would silently
+  // switch the user's working branch. Instead, refuse unless the user is
+  // already on the main branch.
+  const { stdout: currentBranchOut } = await runGit(projectPath, ['rev-parse', '--abbrev-ref', 'HEAD'])
+  const currentBranch = currentBranchOut.trim()
+  if (currentBranch !== mainBranch) {
+    return {
+      success: false,
+      mergedCommit: null,
+      hasConflicts: false,
+      conflictedFiles: [],
+      message: `Cannot merge: your main repo is on "${currentBranch}", not "${mainBranch}". Switch to "${mainBranch}" first to avoid disrupting your work.`
+    }
+  }
 
+  // User is already on main; merge the pool branch in place (no checkout needed).
   // Try fast-forward first.
   try {
     await runGit(projectPath, ['merge', '--ff-only', branch])
@@ -370,10 +385,17 @@ export async function syncWorktreeFromMain(params: {
           syncedCommit: null,
           hasConflicts: true,
           conflictedFiles,
-          message: `Stash pop conflicts after sync (${conflictedFiles.length} files)`
+          message: `Stash pop conflicts after sync (${conflictedFiles.length} files). The rebase itself succeeded, but your auto-stashed changes conflicted on pop. Run \`git stash pop\` manually in the worktree to resolve.`
         }
       }
-      // Non-conflict stash pop failure: leave stash, report warning.
+      // Non-conflict stash pop failure: stash is still on the stack.
+      return {
+        success: true,
+        syncedCommit: await getHeadCommit(wtPath),
+        hasConflicts: false,
+        conflictedFiles: [],
+        message: `Synced from ${mainBranch}, but auto-stash could not be popped (it remains on the stash stack). Run \`git stash pop\` manually in the worktree.`
+      }
     }
   }
 
