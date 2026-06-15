@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactElement } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import {
   Columns2,
@@ -197,7 +197,10 @@ export function WriteWorkspaceView({
     ? writeRelativeToWorkspace(workspaceRoot, activeFilePath)
     : t('writeNoFileOpen')
   const activeFileName = activeFilePath ? writeBasenameFromPath(activeFilePath) : t('writeStudio')
-  const documentStats = activeFileIsText ? computeWriteDocumentStats(fileContent, isMarkdown) : null
+  const documentStats = useMemo(
+    () => (activeFileIsText ? computeWriteDocumentStats(fileContent, isMarkdown) : null),
+    [activeFileIsText, fileContent, isMarkdown],
+  )
   const documentStatsLabel = documentStats ? t('writeCharacterCount', { count: documentStats.characterCount }) : null
   const workspacePathLabel = rootDirectory || workspaceRoot
   const workspaceName = workspacePathLabel ? writeBasenameFromPath(workspacePathLabel) : t('writeWorkspace')
