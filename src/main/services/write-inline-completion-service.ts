@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import {
   DEFAULT_WRITE_INLINE_COMPLETION_MAX_TOKENS,
+  resolveModelProviderProxyUrl,
   resolveWriteInlineCompletionApiKey,
   resolveWriteInlineCompletionBaseUrl,
   resolveWriteInlineCompletionModel,
@@ -22,6 +23,7 @@ import {
   retrieveWriteInlineCompletionContext,
   type WriteRetrievalContext
 } from './write-retrieval-service'
+import { fetchWithOptionalProxy } from '../proxy-fetch'
 
 const INLINE_COMPLETION_TIMEOUT_MS = 12_000
 const MAX_INLINE_COMPLETION_DEBUG_ENTRIES = 120
@@ -598,7 +600,7 @@ export async function requestWriteInlineCompletion(
           suffix: request.suffix,
           max_tokens: maxTokens
         }
-    const response = await fetch(url, {
+    const response = await fetchWithOptionalProxy(url, {
       method: 'POST',
       headers: {
         Accept: 'application/json',
@@ -607,7 +609,7 @@ export async function requestWriteInlineCompletion(
       },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(INLINE_COMPLETION_TIMEOUT_MS)
-    })
+    }, resolveModelProviderProxyUrl(settings))
     const text = await response.text()
     if (!response.ok) {
       appendInlineCompletionDebugEntry({

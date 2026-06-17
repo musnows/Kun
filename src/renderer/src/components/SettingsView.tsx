@@ -581,6 +581,7 @@ export function SettingsView(): ReactElement {
 
   const sharedApiKey = provider.apiKey
   const sharedBaseUrl = provider.baseUrl
+  const sharedProxy = provider.proxy
   const writeInlineApiKeyInherited = !form.write.inlineCompletion.apiKey.trim()
   const writeInlineBaseUrlInherited =
     !form.write.inlineCompletion.baseUrl.trim() ||
@@ -589,7 +590,7 @@ export function SettingsView(): ReactElement {
   const effectiveWriteInlineBaseUrl = resolveWriteInlineCompletionBaseUrl(form)
   const effectiveWriteInlineApiKey = resolveWriteInlineCompletionApiKey(form)
   const effectiveWriteInlineModel = resolveWriteInlineCompletionModel(form)
-  const updateSharedCredential = (patch: { apiKey?: string; baseUrl?: string }): void => {
+  const updateSharedCredential = (patch: Partial<AppSettingsV1['provider']>): void => {
     update({ provider: patch })
   }
 
@@ -709,6 +710,7 @@ export function SettingsView(): ReactElement {
     updateSharedCredential,
     sharedApiKey,
     sharedBaseUrl,
+    sharedProxy,
     showApiKey,
     setShowApiKey,
     showRuntimeToken,

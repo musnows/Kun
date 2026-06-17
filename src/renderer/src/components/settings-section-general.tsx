@@ -34,6 +34,7 @@ export function GeneralSettingsSection({ ctx }: { ctx: Record<string, any> }): R
     updateSharedCredential,
     sharedApiKey,
     sharedBaseUrl,
+    sharedProxy,
     showApiKey,
     setShowApiKey,
     showRuntimeToken,
@@ -126,6 +127,27 @@ export function GeneralSettingsSection({ ctx }: { ctx: Record<string, any> }): R
                       value={sharedBaseUrl}
                       onChange={(e) => updateSharedCredential({ baseUrl: e.target.value })}
                     />
+                  }
+                />
+                <SettingRow
+                  title={t('proxyUrl')}
+                  description={t('proxyUrlDesc')}
+                  control={
+                    <div className="flex w-full min-w-0 flex-col gap-2 md:max-w-md">
+                      <label className="flex items-center justify-between gap-3 rounded-xl border border-ds-border bg-ds-card px-3 py-2 text-[13px] text-ds-muted shadow-sm">
+                        <span>{t('proxyEnabled')}</span>
+                        <Toggle
+                          checked={sharedProxy?.enabled === true}
+                          onChange={(enabled) => updateSharedCredential({ proxy: { ...sharedProxy, enabled } })}
+                        />
+                      </label>
+                      <input
+                        className="w-full min-w-0 rounded-xl border border-ds-border bg-ds-card px-3 py-2 text-[14px] text-ds-ink shadow-sm focus:border-accent/40 focus:outline-none focus:ring-1 focus:ring-accent/30"
+                        placeholder={t('proxyUrlPlaceholder')}
+                        value={sharedProxy?.url ?? ''}
+                        onChange={(e) => updateSharedCredential({ proxy: { ...sharedProxy, url: e.target.value } })}
+                      />
+                    </div>
                   }
                 />
                 <SettingRow

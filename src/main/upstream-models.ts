@@ -5,12 +5,14 @@ import {
   getModelProviderProfile,
   getModelProviderSettings,
   listModelProviderModelIds,
+  resolveModelProviderProxyUrl,
   resolveKunRuntimeSettings,
   type AppSettingsV1
 } from '../shared/app-settings'
 import { DEFAULT_COMPOSER_MODEL_IDS } from '../shared/default-composer-models'
 import type { ModelProviderModelGroup } from '../shared/ds-gui-api'
 import { upstreamOpenAiModelsUrl } from '../shared/openai-compat-url'
+import { fetchWithOptionalProxy } from './proxy-fetch'
 
 export type FetchUpstreamModelsResult =
   | { ok: true; modelIds: string[]; modelGroups?: ModelProviderModelGroup[] }
@@ -36,14 +38,14 @@ export async function fetchUpstreamModelIds(
   const activeProvider = getModelProviderProfile(settings, runtime.providerId)
   const url = upstreamOpenAiModelsUrl(runtime.baseUrl)
   try {
-    const res = await fetch(url, {
+    const res = await fetchWithOptionalProxy(url, {
       method: 'GET',
       headers: {
         Accept: 'application/json',
         Authorization: `Bearer ${key}`
       },
       signal: AbortSignal.timeout(UPSTREAM_MODELS_TIMEOUT_MS)
-    })
+    }, resolveModelProviderProxyUrl(settings))
     const text = await res.text()
     if (!res.ok) {
       return modelListOrError(

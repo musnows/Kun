@@ -2,8 +2,10 @@ import type { AppSettingsV1, ScheduleRunMode, ScheduledTaskV1 } from '../shared/
 import {
   DEFAULT_SCHEDULE_MODEL,
   DEFAULT_SCHEDULE_REASONING_EFFORT,
+  resolveModelProviderProxyUrl,
   resolveKunRuntimeSettings
 } from '../shared/app-settings'
+import { fetchWithOptionalProxy } from './proxy-fetch'
 
 const SCHEDULED_TASK_CANDIDATE_RE =
   /(?:提醒|定时|闹钟|通知|叫我|叫醒|稍后|之后|到点|分钟后|小时后|秒后|天后|明天|后天|今晚|later|remind|reminder|alarm|timer|schedule|scheduled|tomorrow|tonight|in\s+\d+\s+(?:seconds?|minutes?|hours?|days?|weeks?))/iu
@@ -179,7 +181,7 @@ export async function detectClawScheduledTaskRequest(
   const runtime = resolveKunRuntimeSettings(settings)
   const apiKey = runtime.apiKey.trim()
   if (!apiKey) return null
-  const response = await fetch(buildChatCompletionsUrl(runtime.baseUrl), {
+  const response = await fetchWithOptionalProxy(buildChatCompletionsUrl(runtime.baseUrl), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -194,7 +196,7 @@ export async function detectClawScheduledTaskRequest(
       max_tokens: 300
     }),
     signal: AbortSignal.timeout(DETECTOR_TIMEOUT_MS)
-  })
+  }, resolveModelProviderProxyUrl(settings))
   const text = await response.text()
   if (!response.ok) return null
   let content = ''

@@ -5,6 +5,8 @@ import {
   defaultModelProviderSettings,
   defaultScheduleSettings,
   defaultWriteSettings,
+  normalizeModelProviderSettings,
+  resolveModelProviderProxyUrl,
   resolveKunRuntimeSettings,
   type AppSettingsV1
 } from './app-settings'
@@ -51,5 +53,46 @@ describe('model provider settings', () => {
 
     expect(runtime.apiKey).toBe('sk-custom')
     expect(runtime.baseUrl).toBe('https://custom.example/v1')
+  })
+
+  it('normalizes common proxy protocols for model requests', () => {
+    const provider = normalizeModelProviderSettings({
+      proxy: {
+        enabled: true,
+        url: ' socks5://127.0.0.1:1080 '
+      }
+    })
+
+    expect(provider.proxy).toEqual({
+      enabled: true,
+      url: 'socks5://127.0.0.1:1080'
+    })
+  })
+
+  it('disables invalid proxy URLs', () => {
+    const provider = normalizeModelProviderSettings({
+      proxy: {
+        enabled: true,
+        url: 'ftp://127.0.0.1:2121'
+      }
+    })
+
+    expect(provider.proxy).toEqual({
+      enabled: false,
+      url: ''
+    })
+  })
+
+  it('resolves the configured model proxy URL only when enabled', () => {
+    const configured = settings()
+    configured.provider.proxy = {
+      enabled: true,
+      url: 'http://127.0.0.1:7890/'
+    }
+
+    expect(resolveModelProviderProxyUrl(configured)).toBe('http://127.0.0.1:7890/')
+
+    configured.provider.proxy.enabled = false
+    expect(resolveModelProviderProxyUrl(configured)).toBe('')
   })
 })

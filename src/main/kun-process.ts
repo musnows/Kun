@@ -8,6 +8,7 @@ import { dirname, join } from 'node:path'
 import {
   defaultKunTokenEconomySettings,
   isKunRuntimeInsecure,
+  resolveModelProviderProxyUrl,
   resolveKunRuntimeSettings,
   type KunRuntimeSettingsV1,
   type AppSettingsV1
@@ -188,6 +189,19 @@ function expandHomePath(path: string): string {
   return path
 }
 
+function modelProxyEnvironment(settings: AppSettingsV1): Record<string, string> {
+  const proxyUrl = resolveModelProviderProxyUrl(settings)
+  if (!proxyUrl) return {}
+  return {
+    HTTP_PROXY: proxyUrl,
+    HTTPS_PROXY: proxyUrl,
+    ALL_PROXY: proxyUrl,
+    http_proxy: proxyUrl,
+    https_proxy: proxyUrl,
+    all_proxy: proxyUrl
+  }
+}
+
 export function isKunChildRunning(): boolean {
   return child !== null && child.exitCode === null && child.signalCode === null
 }
@@ -234,6 +248,7 @@ export async function startKunChild(settings: AppSettingsV1): Promise<void> {
   child = spawn(resolution.command, args, {
     env: {
       ...process.env,
+      ...modelProxyEnvironment(settings),
       ELECTRON_RUN_AS_NODE: '1',
       KUN_RUNTIME_TOKEN: runtime.runtimeToken,
       DEEPSEEK_API_KEY: runtime.apiKey || process.env.DEEPSEEK_API_KEY || ''

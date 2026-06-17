@@ -5,6 +5,7 @@ import { estimateDeepseekCacheSavings, estimateDeepseekCost } from './deepseek-p
 import { isToolResultBridgeItem, repairModelHistoryItems } from '../../domain/model-history-repair.js'
 import { repairToolArguments } from './tool-argument-repair.js'
 import { isDeepSeekHost, probeDeepSeekReachable } from './model-error-probe.js'
+import { createProxyFetchFromEnv } from './proxy-fetch.js'
 
 /**
  * Configuration for the DeepSeek-compatible HTTP model client. The
@@ -106,7 +107,7 @@ export class DeepseekCompatModelClient implements ModelClient {
   constructor(config: DeepseekCompatConfig) {
     this.config = config
     this.model = config.model
-    this.fetchImpl = config.fetchImpl ?? fetch
+    this.fetchImpl = config.fetchImpl ?? createProxyFetchFromEnv() ?? fetch
   }
 
   /**

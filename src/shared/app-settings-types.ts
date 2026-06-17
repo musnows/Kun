@@ -42,6 +42,11 @@ export const DEFAULT_WRITE_INLINE_LONG_COMPLETION_MAX_TOKENS = 256
 export const DEFAULT_KUN_PORT = 8899
 export const DEFAULT_WEIXIN_BRIDGE_RPC_URL = 'http://127.0.0.1:18790/api/v1/admin/rpc'
 export const DEFAULT_MODEL_PROVIDER_ID = 'deepseek'
+export type NetworkProxyProtocol = 'http' | 'https' | 'socks' | 'socks4' | 'socks4a' | 'socks5' | 'socks5h'
+export type NetworkProxySettingsV1 = {
+  enabled: boolean
+  url: string
+}
 export type ModelProviderProfileV1 = {
   id: string
   name: string
@@ -52,13 +57,15 @@ export type ModelProviderProfileV1 = {
 export type ModelProviderSettingsV1 = {
   apiKey: string
   baseUrl: string
+  proxy: NetworkProxySettingsV1
   providers: ModelProviderProfileV1[]
 }
 
 export type ModelProviderProfilePatchV1 = Partial<ModelProviderProfileV1>
 export type ModelProviderSettingsPatchV1 = Partial<
-  Omit<ModelProviderSettingsV1, 'providers'>
+  Omit<ModelProviderSettingsV1, 'providers' | 'proxy'>
 > & {
+  proxy?: Partial<NetworkProxySettingsV1>
   providers?: ModelProviderProfilePatchV1[]
 }
 
