@@ -130,6 +130,8 @@ export class ContextCompactor {
     reason?: string
     summaryOverride?: string
     frozenMessageCount?: number
+    /** `false` marks a user-requested (`/compact`) compaction; omit for auto. */
+    auto?: boolean
   }): {
     next: TurnItem[]
     summaryItem: TurnItem
@@ -153,7 +155,8 @@ export class ContextCompactor {
           threadId: input.threadId,
           summary: 'no compaction needed',
           replacedTokens: 0,
-          pinnedConstraints: input.prefix.pinnedConstraints
+          pinnedConstraints: input.prefix.pinnedConstraints,
+          auto: input.auto
         }),
         replacedTokens: 0
       }
@@ -180,6 +183,7 @@ export class ContextCompactor {
       summary,
       replacedTokens,
       pinnedConstraints: input.prefix.pinnedConstraints,
+      auto: input.auto,
       sourceDigest,
       digestMarker,
       sourceItemIds: head.map((item) => item.id)

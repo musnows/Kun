@@ -384,6 +384,7 @@ export type CoreTurnItemJson = {
   }>
   summary?: string
   replacedTokens?: number
+  auto?: boolean
   pinnedConstraints?: string[]
   sourceDigest?: string
   digestMarker?: string
@@ -556,6 +557,7 @@ export type CoreRuntimeEventJson = {
     options: Array<{ label: string; description: string }>
   }>
   replacedTokens?: number
+  auto?: boolean
   pinnedConstraints?: string[]
   sourceDigest?: string
   digestMarker?: string

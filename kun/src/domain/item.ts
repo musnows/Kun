@@ -193,6 +193,7 @@ export function makeCompactionItem(input: {
   summary: string
   replacedTokens: number
   pinnedConstraints: string[]
+  auto?: boolean
   sourceDigest?: string
   digestMarker?: string
   sourceItemIds?: string[]
@@ -209,6 +210,7 @@ export function makeCompactionItem(input: {
     summary: input.summary,
     replacedTokens: input.replacedTokens,
     pinnedConstraints: input.pinnedConstraints,
+    ...(input.auto === undefined ? {} : { auto: input.auto }),
     ...(input.sourceDigest ? { sourceDigest: input.sourceDigest } : {}),
     ...(input.digestMarker ? { digestMarker: input.digestMarker } : {}),
     ...(input.sourceItemIds ? { sourceItemIds: [...input.sourceItemIds] } : {})

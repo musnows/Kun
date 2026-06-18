@@ -164,29 +164,46 @@ export class TurnService {
       history,
       prefix,
       budgetTokens: input.request.budgetTokens,
-      reason: input.request.reason
+      reason: input.request.reason,
+      // Mark this as a user-requested compaction so the GUI renders it as a
+      // manual "已压缩" event rather than an automatic one.
+      auto: false
     })
+    // Only surface lifecycle events (and persist the summary) when something
+    // was actually folded. A no-op compaction stays invisible in the timeline;
+    // the caller signals "nothing to compact" from the returned replacedTokens.
     if (result.replacedTokens > 0) {
+      // Emit `started` before the persist so the live SSE stream shows a brief
+      // "正在压缩上下文" row; the appendItem I/O below separates it from the
+      // `completed` frame so the running state actually paints.
+      await this.deps.events.record({
+        kind: 'compaction_started',
+        threadId: input.threadId,
+        turnId,
+        itemId: result.summaryItem.id,
+        auto: false
+      })
       await this.appendItem(input.threadId, result.summaryItem)
+      await this.deps.events.record({
+        kind: 'compaction_completed',
+        threadId: input.threadId,
+        turnId,
+        itemId: result.summaryItem.id,
+        summary: result.summaryItem.kind === 'compaction' ? result.summaryItem.summary : '',
+        replacedTokens: result.replacedTokens,
+        auto: false,
+        pinnedConstraints: prefix.pinnedConstraints,
+        ...(result.summaryItem.kind === 'compaction' && result.summaryItem.sourceDigest
+          ? { sourceDigest: result.summaryItem.sourceDigest }
+          : {}),
+        ...(result.summaryItem.kind === 'compaction' && result.summaryItem.digestMarker
+          ? { digestMarker: result.summaryItem.digestMarker }
+          : {}),
+        ...(result.summaryItem.kind === 'compaction' && result.summaryItem.sourceItemIds
+          ? { sourceItemIds: result.summaryItem.sourceItemIds }
+          : {})
+      })
     }
-    await this.deps.events.record({
-      kind: 'compaction_completed',
-      threadId: input.threadId,
-      turnId,
-      itemId: result.summaryItem.id,
-      summary: result.summaryItem.kind === 'compaction' ? result.summaryItem.summary : '',
-      replacedTokens: result.replacedTokens,
-      pinnedConstraints: prefix.pinnedConstraints,
-      ...(result.summaryItem.kind === 'compaction' && result.summaryItem.sourceDigest
-        ? { sourceDigest: result.summaryItem.sourceDigest }
-        : {}),
-      ...(result.summaryItem.kind === 'compaction' && result.summaryItem.digestMarker
-        ? { digestMarker: result.summaryItem.digestMarker }
-        : {}),
-      ...(result.summaryItem.kind === 'compaction' && result.summaryItem.sourceItemIds
-        ? { sourceItemIds: result.summaryItem.sourceItemIds }
-        : {})
-    })
     return {
       threadId: input.threadId,
       replacedTokens: result.replacedTokens,

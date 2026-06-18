@@ -790,6 +790,13 @@ export function buildThreadEventSink(
           base.busy = true
           armBusyWatchdog(set, get)
         }
+        // A standalone (manual `/compact`) compaction has no enclosing turn to
+        // flip the thread back to idle, so clear the transient busy flag it set
+        // on the `running` event once the compaction settles.
+        if (s.busy && ev.status !== 'running' && !s.currentTurnId) {
+          base.busy = false
+          clearBusyWatchdog()
+        }
         const idx = s.blocks.findIndex((b) => b.kind === 'compaction' && b.id === ev.itemId)
         if (idx >= 0) {
           const cur = s.blocks[idx]

@@ -733,7 +733,7 @@ function compactionBlockFromItem(item: CoreTurnItemJson): ChatBlock {
     status: item.status === 'failed' ? 'error' : 'success',
     messagesBefore: item.replacedTokens,
     detail: item.pinnedConstraints?.join('\n'),
-    auto: true
+    auto: item.auto ?? true
   }
 }
 
@@ -934,7 +934,7 @@ function compactionFromItem(item: CoreTurnItemJson): CompactionEventPayload {
     createdAt: itemCreatedAt(item),
     messagesBefore: item.replacedTokens,
     detail: item.pinnedConstraints?.length ? item.pinnedConstraints.join('\n') : undefined,
-    auto: true
+    auto: item.auto ?? true
   }
 }
 
@@ -1012,7 +1012,7 @@ function compactionFromEvent(
     createdAt: event.timestamp,
     messagesBefore: event.replacedTokens,
     detail: event.pinnedConstraints?.join('\n'),
-    auto: true
+    auto: event.auto ?? true
   }
 }
 

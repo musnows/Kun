@@ -1025,6 +1025,15 @@ function describeProcessBlock(
         after: block.messagesAfter
       })
     }
+    // `messagesBefore` carries the folded (released) token estimate. When known,
+    // show it so a manual compaction reads as a concrete, attributable action.
+    const releasedTokens = typeof block.messagesBefore === 'number' ? block.messagesBefore : 0
+    if (releasedTokens > 0) {
+      const tokens = releasedTokens.toLocaleString()
+      return block.auto === true
+        ? t('compactionAutoCompletedWithTokens', { tokens })
+        : t('compactionManualCompletedWithTokens', { tokens })
+    }
     return block.auto === true ? t('compactionAutoCompleted') : t('compactionManualCompleted')
   }
   if (block.kind === 'approval') {

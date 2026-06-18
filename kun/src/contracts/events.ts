@@ -199,6 +199,10 @@ export const CompactionEvent = RuntimeEventBase.extend({
   kind: z.enum(['compaction_started', 'compaction_completed']),
   summary: z.string().optional(),
   replacedTokens: z.number().int().nonnegative().optional(),
+  // Whether the compaction was triggered automatically by the loop
+  // (context threshold) or explicitly requested by the user via the
+  // `/compact` command. Absent on legacy/auto events (treated as auto).
+  auto: z.boolean().optional(),
   pinnedConstraints: z.array(z.string()).optional(),
   sourceDigest: z.string().min(1).optional(),
   digestMarker: z.string().min(1).optional(),

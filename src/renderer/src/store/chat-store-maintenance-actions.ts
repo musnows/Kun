@@ -304,6 +304,11 @@ export function createMaintenanceActions(
             lastTurnUsage: { threadId: prev.threadId, snapshot: { ...prev.snapshot, inputTokens } }
           }
         })
+      } else {
+        // Nothing was folded (e.g. a near-empty thread). The compaction emits no
+        // timeline row in that case, so surface a transient notice instead of
+        // leaving the command silently doing nothing.
+        set({ error: i18n.t('common:compactionNothingToCompact') })
       }
     } catch (e) {
       set({

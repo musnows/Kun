@@ -114,6 +114,10 @@ export const CompactionTurnItem = TurnItemBase.extend({
   kind: z.literal('compaction'),
   summary: z.string(),
   replacedTokens: z.number().int().nonnegative(),
+  // `false` when the user explicitly ran `/compact`; absent for
+  // loop-triggered (automatic) compaction so legacy items keep rendering
+  // as auto.
+  auto: z.boolean().optional(),
   pinnedConstraints: z.array(z.string()),
   sourceDigest: z.string().min(1).optional(),
   digestMarker: z.string().min(1).optional(),
