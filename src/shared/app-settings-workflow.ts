@@ -184,7 +184,12 @@ export function normalizeWorkflowNode(value: unknown, index: number): WorkflowNo
       return {
         ...base,
         type: 'generate-image',
-        config: { prompt: asText(config.prompt), size: asTrimmed(config.size) }
+        config: {
+          prompt: asText(config.prompt),
+          providerId: asTrimmed(config.providerId),
+          model: asTrimmed(config.model),
+          size: asTrimmed(config.size)
+        }
       }
     case 'condition':
       return {

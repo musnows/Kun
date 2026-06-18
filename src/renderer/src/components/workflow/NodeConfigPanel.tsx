@@ -272,6 +272,15 @@ export function NodeConfigPanel({ node, settings, lastResult, onChange, onDelete
                 onChange={(event) => onChange({ ...node, config: { ...node.config, prompt: event.target.value } })}
               />
             </Field>
+            <ModelPicker
+              providers={providers}
+              providerId={node.config.providerId}
+              model={node.config.model}
+              onChange={({ providerId, model }) => onChange({ ...node, config: { ...node.config, providerId, model } })}
+              providerFilter={(provider) => Boolean(provider.image)}
+              modelsOf={(provider) => provider.image?.models ?? []}
+              modelLabel={t('workflowImageModel')}
+            />
             <Field label={t('workflowImageSize')}>
               <input
                 className={INPUT_CLASS}

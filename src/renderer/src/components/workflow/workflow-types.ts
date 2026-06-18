@@ -73,7 +73,7 @@ export function createWorkflowNode(
         config: { prompt: '', workspaceRoot: '', providerId: '', model: '', reasoningEffort: 'medium', mode: 'agent' }
       }
     case 'generate-image':
-      return { ...base, type: 'generate-image', config: { prompt: '', size: '' } }
+      return { ...base, type: 'generate-image', config: { prompt: '', providerId: '', model: '', size: '' } }
     case 'condition':
       return {
         ...base,

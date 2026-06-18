@@ -349,6 +349,39 @@ function runCodeNode(code: string, payload: WorkflowPayload): NodeOutcome {
   return { payload: { json, text: safeJson(json) }, message: 'ok' }
 }
 
+/**
+ * Resolve the image-generation config for a generate-image node. When the node
+ * picks its own provider/model we patch them into the runtime image config and
+ * reuse the shared resolver, so a node-selected provider goes through the exact
+ * same provider→image-capability resolution as the global Settings path. Empty
+ * fields fall back to whatever is configured in Settings.
+ */
+function resolveWorkflowImageGen(
+  settings: AppSettingsV1,
+  nodeProviderId: string,
+  nodeModel: string
+): ReturnType<typeof resolveKunImageGenerationSettings> {
+  const providerId = nodeProviderId.trim()
+  const model = nodeModel.trim()
+  if (!providerId && !model) return resolveKunImageGenerationSettings(settings)
+  const kun = settings.agents.kun
+  const patched: AppSettingsV1 = {
+    ...settings,
+    agents: {
+      ...settings.agents,
+      kun: {
+        ...kun,
+        imageGeneration: {
+          ...kun.imageGeneration,
+          ...(providerId ? { providerId } : {}),
+          ...(model ? { model } : {})
+        }
+      }
+    }
+  }
+  return resolveKunImageGenerationSettings(patched)
+}
+
 function summarizeRun(results: WorkflowNodeRunResultV1[]): string {
   const lastMeaningful = [...results].reverse().find((result) => result.status === 'success' && result.message.trim())
   if (lastMeaningful) return lastMeaningful.message
@@ -907,9 +940,15 @@ export class WorkflowRuntime {
         return { payload: { json: { text }, text }, message: summarizeTaskResult(text), threadId: result.threadId }
       }
       case 'generate-image': {
-        const imageGen = resolveKunImageGenerationSettings(settings)
-        if (!imageGen.enabled || !imageGen.baseUrl.trim() || !imageGen.apiKey.trim() || !imageGen.model.trim()) {
+        const imageGen = resolveWorkflowImageGen(settings, node.config.providerId, node.config.model)
+        // A node that names its own provider/model opts itself in, even if the
+        // global image toggle is off; otherwise require the Settings switch.
+        const nodeDriven = Boolean(node.config.providerId.trim() || node.config.model.trim())
+        if (!imageGen.enabled && !nodeDriven) {
           throw new Error('Image generation is not configured in Settings.')
+        }
+        if (!imageGen.baseUrl.trim() || !imageGen.apiKey.trim() || !imageGen.model.trim()) {
+          throw new Error('Image generation is missing a provider, API key, or model.')
         }
         const workspace = (settings.workflow.defaultWorkspaceRoot.trim() || settings.workspaceRoot).trim()
         if (!workspace) throw new Error('No workspace configured to save the image.')

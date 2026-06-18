@@ -737,6 +737,8 @@ const workflowAiAgentConfigSchema = z
 const workflowGenerateImageConfigSchema = z
   .object({
     prompt: z.string().max(MAX_CHANNEL_TEXT_LENGTH).optional(),
+    providerId: z.string().max(MAX_ID_LENGTH).optional(),
+    model: z.string().max(256).optional(),
     size: z.string().max(32).optional()
   })
   .strict()

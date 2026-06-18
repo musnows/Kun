@@ -635,6 +635,10 @@ export type WorkflowAiAgentConfigV1 = {
 export type WorkflowGenerateImageConfigV1 = {
   /** Image prompt; supports {{json.x}} / {{text}} interpolation. */
   prompt: string
+  /** Provider profile (with an image capability) to use; empty falls back to the Settings image provider. */
+  providerId: string
+  /** Image model name; empty uses the provider/Settings default. */
+  model: string
   /** Optional size override (e.g. "1024x1024"); empty uses the provider default. */
   size: string
 }

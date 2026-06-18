@@ -12,22 +12,43 @@ type Props = {
   providerId: string
   model: string
   onChange: (next: { providerId: string; model: string }) => void
+  /** Restrict the provider dropdown, e.g. only image-capable providers. Default: all. */
+  providerFilter?: (provider: ModelProviderProfileV1) => boolean
+  /** Models offered for the selected provider. Default: provider.models (chat models). */
+  modelsOf?: (provider: ModelProviderProfileV1) => string[]
+  /** Label for the model field. Default: the generic "Model" label. */
+  modelLabel?: string
 }
 
 /** Provider dropdown + a searchable model combobox (handles providers with many models). */
-export function ModelPicker({ providers, providerId, model, onChange }: Props): ReactElement {
+export function ModelPicker({
+  providers,
+  providerId,
+  model,
+  onChange,
+  providerFilter,
+  modelsOf,
+  modelLabel
+}: Props): ReactElement {
   const { t } = useTranslation('common')
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [rect, setRect] = useState<DOMRect | null>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
 
+  const visibleProviders = useMemo(
+    () => (providerFilter ? providers.filter(providerFilter) : providers),
+    [providers, providerFilter]
+  )
   const provider = providers.find((item) => item.id === providerId)
   const providerChosen = providerId.trim().length > 0
   // A model is only meaningful within a provider — never pool every provider's
   // models together, otherwise the combobox lets you pick a model with no
   // provider selected (the runtime would then have to guess the provider).
-  const models = useMemo(() => (provider ? provider.models.filter(Boolean) : []), [provider])
+  const models = useMemo(() => {
+    if (!provider) return []
+    return (modelsOf ? modelsOf(provider) : provider.models).filter(Boolean)
+  }, [provider, modelsOf])
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
     return (q ? models.filter((item) => item.toLowerCase().includes(q)) : models).slice(0, 200)
@@ -56,7 +77,7 @@ export function ModelPicker({ providers, providerId, model, onChange }: Props): 
           onChange={(event) => onChange({ providerId: event.target.value, model: '' })}
         >
           <option value="">—</option>
-          {providers.map((item) => (
+          {visibleProviders.map((item) => (
             <option key={item.id} value={item.id}>
               {item.name || item.id}
             </option>
@@ -65,7 +86,7 @@ export function ModelPicker({ providers, providerId, model, onChange }: Props): 
       </label>
 
       <label className="flex flex-col gap-1.5">
-        <span className="text-[12px] font-medium text-ds-muted">{t('scheduleModel')}</span>
+        <span className="text-[12px] font-medium text-ds-muted">{modelLabel ?? t('scheduleModel')}</span>
         <button
           ref={triggerRef}
           type="button"
