@@ -35,6 +35,16 @@ export const TRIGGER_KINDS: ReadonlySet<WorkflowNodeKind> = new Set([
   'webhook-trigger'
 ])
 
+/** Palette grouping shown in the editor sidebar / insert menu. `id` maps to the `workflowGroup_<id>` label. */
+export type WorkflowPaletteGroup = { id: string; kinds: readonly WorkflowNodeKind[] }
+export const WORKFLOW_PALETTE_GROUPS: readonly WorkflowPaletteGroup[] = [
+  { id: 'trigger', kinds: ['manual-trigger', 'schedule-trigger', 'webhook-trigger'] },
+  { id: 'ai', kinds: ['ai-agent', 'generate-image'] },
+  { id: 'flow', kinds: ['condition', 'switch', 'filter', 'merge', 'loop'] },
+  { id: 'data', kinds: ['set-fields', 'code', 'sort', 'limit', 'aggregate'] },
+  { id: 'action', kinds: ['http-request', 'subworkflow', 'delay'] }
+]
+
 export type WorkflowFlowNodeData = {
   node: WorkflowNodeV1
   [key: string]: unknown
@@ -108,7 +118,7 @@ export function createWorkflowNode(
       return {
         ...base,
         type: 'code',
-        config: { code: 'return $json' }
+        config: { language: 'javascript', code: 'return $json' }
       }
     case 'merge':
       return { ...base, type: 'merge', config: { mode: 'array' } }

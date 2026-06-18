@@ -724,4 +724,42 @@ describe('WorkflowRuntime end-to-end execution', () => {
     expect(blockRun.nodeResults.map((r) => r.nodeId)).not.toContain('d')
     runtime.stop()
   }, 15_000)
+
+  it('code node runs a bash script with stdin/env input and parses its stdout', async () => {
+    const store = createStore(
+      settingsWithWorkflows([
+        buildWorkflow({
+          id: 'wf-bash',
+          name: 'Bash',
+          enabled: true,
+          nodes: [
+            { id: 'm', type: 'manual-trigger', config: {} },
+            { id: 's', type: 'set-fields', config: { fields: [{ key: 'n', value: '5' }], keepIncoming: false } },
+            {
+              id: 'c',
+              type: 'code',
+              config: { language: 'bash', code: 'echo "{\\"got\\": $WORKFLOW_JSON, \\"lang\\": \\"bash\\"}"' }
+            }
+          ],
+          connections: [
+            { id: 'e1', source: 'm', sourceHandle: 'out', target: 's', targetHandle: 'in' },
+            { id: 'e2', source: 's', sourceHandle: 'out', target: 'c', targetHandle: 'in' }
+          ]
+        })
+      ])
+    )
+    const runtime = createWorkflowRuntime({ store: store as never, runtimeRequest: vi.fn() as never, logError: vi.fn() })
+    const runId = requireOk(await runtime.runWorkflow('wf-bash'))
+    await waitFor(async () => {
+      const run = (await store.load()).workflow.workflows[0].runs.find((entry) => entry.id === runId)
+      return Boolean(run && run.status !== 'running')
+    }, 10_000)
+    const run = store.read().workflow.workflows[0].runs.find((entry) => entry.id === runId)!
+    expect(run.status).toBe('success')
+    const code = run.nodeResults.find((result) => result.nodeId === 'c')!
+    const output = JSON.parse(code.outputJson) as { got: { n: string }; lang: string }
+    expect(output.lang).toBe('bash')
+    expect(output.got.n).toBe('5')
+    runtime.stop()
+  }, 15_000)
 })

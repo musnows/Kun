@@ -6,6 +6,7 @@ import {
   SCHEDULE_REASONING_EFFORT_IDS,
   getModelProviderSettings,
   type AppSettingsV1,
+  type WorkflowCodeLanguage,
   type WorkflowConditionOperator,
   type WorkflowHttpMethod,
   type WorkflowNodeRunResultV1,
@@ -21,6 +22,11 @@ const INPUT_CLASS =
 
 const SCHEDULE_KINDS: WorkflowTriggerScheduleKind[] = ['manual', 'interval', 'daily', 'at', 'cron']
 const HTTP_METHODS: WorkflowHttpMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']
+const CODE_PLACEHOLDERS: Record<WorkflowCodeLanguage, string> = {
+  javascript: 'return { value: $json }',
+  python: 'import sys, json\ndata = json.load(sys.stdin)\nprint(data.get("text", ""))',
+  bash: 'echo "$WORKFLOW_TEXT" | tr a-z A-Z'
+}
 const CONDITION_OPERATORS: WorkflowConditionOperator[] = [
   'contains',
   'notContains',
@@ -626,14 +632,41 @@ export function NodeConfigPanel({ node, settings, lastResult, onChange, onDelete
         ) : null}
 
         {node.type === 'code' ? (
-          <Field label={t('workflowCode')}>
-            <textarea
-              className={`${INPUT_CLASS} min-h-[160px] resize-y font-mono`}
-              value={node.config.code}
-              placeholder={t('workflowCodePlaceholder')}
-              onChange={(event) => onChange({ ...node, config: { code: event.target.value } })}
-            />
-          </Field>
+          <>
+            <Field label={t('workflowCodeLanguage')}>
+              <select
+                className={INPUT_CLASS}
+                value={node.config.language}
+                onChange={(event) =>
+                  onChange({
+                    ...node,
+                    config: {
+                      ...node.config,
+                      language:
+                        event.target.value === 'python' || event.target.value === 'bash'
+                          ? event.target.value
+                          : 'javascript'
+                    }
+                  })
+                }
+              >
+                <option value="javascript">JavaScript</option>
+                <option value="python">Python</option>
+                <option value="bash">Shell (bash)</option>
+              </select>
+            </Field>
+            <Field label={t('workflowCode')}>
+              <textarea
+                className={`${INPUT_CLASS} min-h-[160px] resize-y font-mono`}
+                value={node.config.code}
+                placeholder={CODE_PLACEHOLDERS[node.config.language]}
+                onChange={(event) => onChange({ ...node, config: { ...node.config, code: event.target.value } })}
+              />
+            </Field>
+            <p className="text-[11.5px] leading-5 text-ds-faint">
+              {t(node.config.language === 'javascript' ? 'workflowCodeHintJs' : 'workflowCodeHintCmd')}
+            </p>
+          </>
         ) : null}
 
         {node.type === 'subworkflow' ? (

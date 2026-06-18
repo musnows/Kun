@@ -703,8 +703,17 @@ export type WorkflowMergeConfigV1 = {
   mode: WorkflowMergeMode
 }
 
+export const WORKFLOW_CODE_LANGUAGES = ['javascript', 'python', 'bash'] as const
+export type WorkflowCodeLanguage = (typeof WORKFLOW_CODE_LANGUAGES)[number]
 export type WorkflowCodeConfigV1 = {
-  /** JS function body. Receives $json / $text, may `return` a value. Sandboxed with a timeout. */
+  /** Execution language. javascript runs sandboxed in-process; python/bash spawn a local interpreter. */
+  language: WorkflowCodeLanguage
+  /**
+   * Script body.
+   * - javascript: receives $json / $text and may `return` a value (sandboxed, short timeout).
+   * - python / bash: input arrives on stdin as JSON and via $WORKFLOW_JSON / $WORKFLOW_TEXT;
+   *   whatever the script prints to stdout becomes the output (parsed as JSON when possible).
+   */
   code: string
 }
 

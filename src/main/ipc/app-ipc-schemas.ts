@@ -802,7 +802,12 @@ const workflowSwitchConfigSchema = z
   })
   .strict()
 
-const workflowCodeConfigSchema = z.object({ code: z.string().max(MAX_BODY_BYTES).optional() }).strict()
+const workflowCodeConfigSchema = z
+  .object({
+    language: z.enum(['javascript', 'python', 'bash']).optional(),
+    code: z.string().max(MAX_BODY_BYTES).optional()
+  })
+  .strict()
 
 const workflowMergeConfigSchema = z.object({ mode: z.enum(['array', 'object']).optional() }).strict()
 

@@ -1,3 +1,4 @@
+import { spawn } from 'node:child_process'
 import { randomBytes, randomUUID } from 'node:crypto'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
@@ -330,6 +331,9 @@ async function runHttpNode(config: WorkflowHttpRequestConfigV1, payload: Workflo
 }
 
 const CODE_TIMEOUT_MS = 2_000
+/** python/bash scripts may do real work (network, files), so they get longer than the JS sandbox. */
+const COMMAND_TIMEOUT_MS = 30_000
+const PYTHON_BIN = process.env.WORKFLOW_PYTHON_BIN?.trim() || 'python3'
 const MAX_SUBWORKFLOW_DEPTH = 5
 
 function runCodeNode(code: string, payload: WorkflowPayload): NodeOutcome {
@@ -347,6 +351,75 @@ function runCodeNode(code: string, payload: WorkflowPayload): NodeOutcome {
   if (typeof out === 'string') return { payload: { json: { value: out }, text: out }, message: 'ok' }
   const json = typeof out === 'object' ? out : { value: out }
   return { payload: { json, text: safeJson(json) }, message: 'ok' }
+}
+
+/**
+ * Run a python or bash script in a child process. The script reads its input on
+ * stdin as JSON ({ json, text }) and via the $WORKFLOW_JSON / $WORKFLOW_TEXT env
+ * vars; whatever it writes to stdout becomes the node output (parsed as JSON when
+ * the whole stdout is a JSON object/array, otherwise passed through as text).
+ */
+function runCommandNode(
+  language: 'python' | 'bash',
+  code: string,
+  payload: WorkflowPayload
+): Promise<NodeOutcome> {
+  const bin = language === 'python' ? PYTHON_BIN : 'bash'
+  return new Promise((resolve, reject) => {
+    const child = spawn(bin, ['-c', code], {
+      env: { ...process.env, WORKFLOW_TEXT: payload.text ?? '', WORKFLOW_JSON: safeJson(payload.json) }
+    })
+    let stdout = ''
+    let stderr = ''
+    let settled = false
+    const finish = (run: () => void): void => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      run()
+    }
+    const timer = setTimeout(() => {
+      child.kill('SIGKILL')
+      finish(() => reject(new Error(`${language} script timed out after ${COMMAND_TIMEOUT_MS}ms`)))
+    }, COMMAND_TIMEOUT_MS)
+    child.stdout.on('data', (chunk) => {
+      stdout += String(chunk)
+    })
+    child.stderr.on('data', (chunk) => {
+      stderr += String(chunk)
+    })
+    child.on('error', (error) => {
+      const reason =
+        (error as NodeJS.ErrnoException).code === 'ENOENT'
+          ? `${bin} was not found on this machine`
+          : error.message
+      finish(() => reject(new Error(`${language} error: ${reason}`)))
+    })
+    child.on('close', (exitCode) => {
+      finish(() => {
+        if (exitCode !== 0) {
+          reject(new Error(`${language} exited with code ${exitCode}: ${(stderr || stdout).trim().slice(0, 500)}`))
+          return
+        }
+        const out = stdout.trim()
+        let parsed: unknown
+        try {
+          parsed = out ? JSON.parse(out) : undefined
+        } catch {
+          parsed = undefined
+        }
+        if (parsed !== null && typeof parsed === 'object') {
+          resolve({ payload: { json: parsed, text: out }, message: 'ok' })
+        } else {
+          resolve({ payload: { json: out ? { text: out } : {}, text: out }, message: 'ok' })
+        }
+      })
+    })
+    // Scripts that never read stdin trigger EPIPE on write — ignore it.
+    child.stdin.on('error', () => {})
+    child.stdin.write(JSON.stringify({ json: payload.json, text: payload.text }))
+    child.stdin.end()
+  })
 }
 
 /**
@@ -991,7 +1064,9 @@ export class WorkflowRuntime {
         }
       }
       case 'code':
-        return runCodeNode(node.config.code, payload)
+        return node.config.language === 'python' || node.config.language === 'bash'
+          ? runCommandNode(node.config.language, node.config.code, payload)
+          : runCodeNode(node.config.code, payload)
       case 'subworkflow': {
         if (depth >= MAX_SUBWORKFLOW_DEPTH) throw new Error('Sub-workflow nesting is too deep.')
         const target = settings.workflow.workflows.find((workflow) => workflow.id === node.config.workflowId)

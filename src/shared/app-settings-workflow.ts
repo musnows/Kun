@@ -265,7 +265,10 @@ export function normalizeWorkflowNode(value: unknown, index: number): WorkflowNo
       return {
         ...base,
         type: 'code',
-        config: { code: asText(config.code) }
+        config: {
+          language: config.language === 'python' || config.language === 'bash' ? config.language : 'javascript',
+          code: asText(config.code)
+        }
       }
     case 'merge':
       return {

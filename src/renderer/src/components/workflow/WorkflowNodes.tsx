@@ -106,7 +106,7 @@ function nodeSummary(node: WorkflowNodeV1): string {
     case 'set-fields':
       return node.config.fields.map((field) => field.key).filter(Boolean).join(', ')
     case 'code':
-      return 'JS'
+      return node.config.language === 'python' ? 'Python' : node.config.language === 'bash' ? 'Shell' : 'JS'
     case 'sort':
       return `${node.config.field || 'item'} ${node.config.order}`
     case 'limit':

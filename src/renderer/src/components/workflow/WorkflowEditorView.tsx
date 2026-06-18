@@ -18,7 +18,7 @@ import {
   type OnConnectEnd,
   type OnConnectStart
 } from '@xyflow/react'
-import { ArrowLeft, MousePointerClick, Play, Plus, Save, Square } from 'lucide-react'
+import { ArrowLeft, ChevronRight, MousePointerClick, Play, Plus, Save, Square } from 'lucide-react'
 import type {
   AppSettingsV1,
   WorkflowNodeKind,
@@ -38,6 +38,7 @@ import { NodeConfigPanel } from './NodeConfigPanel'
 import {
   TRIGGER_KINDS,
   WORKFLOW_PALETTE,
+  WORKFLOW_PALETTE_GROUPS,
   createWorkflowNode,
   flowToWorkflowGraph,
   toFlowEdges,
@@ -98,7 +99,17 @@ function WorkflowEditorInner({
   const [dirty, setDirty] = useState(false)
   const [saving, setSaving] = useState(false)
   const [connectMenu, setConnectMenu] = useState<ConnectMenuState | null>(null)
+  const [collapsedGroups, setCollapsedGroups] = useState<ReadonlySet<string>>(() => new Set())
   const connectingRef = useRef<{ nodeId: string; handleId: string } | null>(null)
+
+  const toggleGroup = useCallback((groupId: string): void => {
+    setCollapsedGroups((prev) => {
+      const next = new Set(prev)
+      if (next.has(groupId)) next.delete(groupId)
+      else next.add(groupId)
+      return next
+    })
+  }, [])
 
   const styledEdges = useMemo(
     () => toFlowEdges(flowToWorkflowGraph(rfNodes, rfEdges).connections, runStatus),
@@ -344,23 +355,43 @@ function WorkflowEditorInner({
           <span className="px-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-ds-faint">
             {t('workflowPalette')}
           </span>
-          {WORKFLOW_PALETTE.map((kind) => {
-            const Icon = NODE_ICONS[kind]
+          {WORKFLOW_PALETTE_GROUPS.map((group) => {
+            const collapsed = collapsedGroups.has(group.id)
             return (
-              <button
-                key={kind}
-                type="button"
-                draggable
-                onDragStart={(event) => onPaletteDragStart(event, kind)}
-                onClick={() => addNode(kind)}
-                className="flex cursor-grab items-center gap-2 rounded-lg border border-transparent px-2 py-2 text-left text-[12.5px] text-ds-ink transition hover:border-ds-border hover:bg-ds-hover active:cursor-grabbing"
-              >
-                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-accent/10 text-accent">
-                  <Icon className="h-3.5 w-3.5" strokeWidth={1.9} />
-                </span>
-                <span className="min-w-0 flex-1 truncate">{t(`workflowNode_${kind}`)}</span>
-                <Plus className="h-3.5 w-3.5 shrink-0 text-ds-faint" strokeWidth={1.8} />
-              </button>
+              <div key={group.id} className="flex flex-col">
+                <button
+                  type="button"
+                  onClick={() => toggleGroup(group.id)}
+                  className="flex items-center gap-1 px-2 py-1 text-[10.5px] font-semibold uppercase tracking-wide text-ds-faint transition hover:text-ds-muted"
+                >
+                  <ChevronRight
+                    className={`h-3 w-3 shrink-0 transition-transform ${collapsed ? '' : 'rotate-90'}`}
+                    strokeWidth={2}
+                  />
+                  <span className="min-w-0 flex-1 truncate text-left">{t(`workflowGroup_${group.id}`)}</span>
+                </button>
+                {!collapsed
+                  ? group.kinds.map((kind) => {
+                      const Icon = NODE_ICONS[kind]
+                      return (
+                        <button
+                          key={kind}
+                          type="button"
+                          draggable
+                          onDragStart={(event) => onPaletteDragStart(event, kind)}
+                          onClick={() => addNode(kind)}
+                          className="flex cursor-grab items-center gap-2 rounded-lg border border-transparent px-2 py-1.5 text-left text-[12.5px] text-ds-ink transition hover:border-ds-border hover:bg-ds-hover active:cursor-grabbing"
+                        >
+                          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-accent/10 text-accent">
+                            <Icon className="h-3.5 w-3.5" strokeWidth={1.9} />
+                          </span>
+                          <span className="min-w-0 flex-1 truncate">{t(`workflowNode_${kind}`)}</span>
+                          <Plus className="h-3.5 w-3.5 shrink-0 text-ds-faint" strokeWidth={1.8} />
+                        </button>
+                      )
+                    })
+                  : null}
+              </div>
             )
           })}
         </aside>
@@ -404,18 +435,29 @@ function WorkflowEditorInner({
                 className="fixed z-[71] max-h-[60vh] w-44 overflow-y-auto rounded-lg border border-ds-border bg-ds-card p-1 shadow-lg"
                 style={{ left: connectMenu.x, top: connectMenu.y }}
               >
-                {WORKFLOW_PALETTE.filter((kind) => !TRIGGER_KINDS.has(kind)).map((kind) => {
-                  const Icon = NODE_ICONS[kind]
+                {WORKFLOW_PALETTE_GROUPS.map((group) => {
+                  const kinds = group.kinds.filter((kind) => !TRIGGER_KINDS.has(kind))
+                  if (kinds.length === 0) return null
                   return (
-                    <button
-                      key={kind}
-                      type="button"
-                      onClick={() => addConnectedNode(kind)}
-                      className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12.5px] text-ds-ink transition hover:bg-ds-hover"
-                    >
-                      <Icon className="h-3.5 w-3.5 text-accent" strokeWidth={1.9} />
-                      {t(`workflowNode_${kind}`)}
-                    </button>
+                    <div key={group.id}>
+                      <div className="px-2 pb-0.5 pt-1.5 text-[9.5px] font-semibold uppercase tracking-wide text-ds-faint">
+                        {t(`workflowGroup_${group.id}`)}
+                      </div>
+                      {kinds.map((kind) => {
+                        const Icon = NODE_ICONS[kind]
+                        return (
+                          <button
+                            key={kind}
+                            type="button"
+                            onClick={() => addConnectedNode(kind)}
+                            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12.5px] text-ds-ink transition hover:bg-ds-hover"
+                          >
+                            <Icon className="h-3.5 w-3.5 text-accent" strokeWidth={1.9} />
+                            {t(`workflowNode_${kind}`)}
+                          </button>
+                        )
+                      })}
+                    </div>
                   )
                 })}
               </div>
