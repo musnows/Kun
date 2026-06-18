@@ -429,4 +429,65 @@ describe('WorkflowRuntime end-to-end execution', () => {
     expect(code.error.toLowerCase()).toContain('code')
     runtime.stop()
   }, 15_000)
+
+  it('subworkflow node runs another workflow and returns its output', async () => {
+    const child = buildWorkflow({
+      id: 'child',
+      name: 'Child',
+      enabled: true,
+      nodes: [
+        { id: 'cm', type: 'manual-trigger', config: {} },
+        { id: 'cs', type: 'set-fields', config: { fields: [{ key: 'childOut', value: 'yes' }], keepIncoming: false } }
+      ],
+      connections: [{ id: 'ce1', source: 'cm', sourceHandle: 'out', target: 'cs', targetHandle: 'in' }]
+    })
+    const parent = buildWorkflow({
+      id: 'parent',
+      name: 'Parent',
+      enabled: true,
+      nodes: [
+        { id: 'pm', type: 'manual-trigger', config: {} },
+        { id: 'sub', type: 'subworkflow', config: { workflowId: 'child' } }
+      ],
+      connections: [{ id: 'pe1', source: 'pm', sourceHandle: 'out', target: 'sub', targetHandle: 'in' }]
+    })
+    const store = createStore(settingsWithWorkflows([child, parent]))
+    const runtime = createWorkflowRuntime({ store: store as never, runtimeRequest: vi.fn() as never, logError: vi.fn() })
+    const runId = requireOk(await runtime.runWorkflow('parent'))
+    await waitFor(async () => {
+      const run = (await store.load()).workflow.workflows
+        .find((wf) => wf.id === 'parent')!
+        .runs.find((entry) => entry.id === runId)
+      return Boolean(run && run.status !== 'running')
+    }, 10_000)
+    const run = store.read().workflow.workflows.find((wf) => wf.id === 'parent')!.runs.find((entry) => entry.id === runId)!
+    expect(run.status).toBe('success')
+    const sub = run.nodeResults.find((result) => result.nodeId === 'sub')!
+    expect(JSON.parse(sub.outputJson)).toEqual({ childOut: 'yes' })
+    runtime.stop()
+  }, 15_000)
+
+  it('subworkflow recursion is bounded by the depth guard', async () => {
+    const selfRef = buildWorkflow({
+      id: 'self',
+      name: 'Self',
+      enabled: true,
+      nodes: [
+        { id: 'm', type: 'manual-trigger', config: {} },
+        { id: 'sub', type: 'subworkflow', config: { workflowId: 'self' } }
+      ],
+      connections: [{ id: 'e1', source: 'm', sourceHandle: 'out', target: 'sub', targetHandle: 'in' }]
+    })
+    const store = createStore(settingsWithWorkflows([selfRef]))
+    const runtime = createWorkflowRuntime({ store: store as never, runtimeRequest: vi.fn() as never, logError: vi.fn() })
+    const runId = requireOk(await runtime.runWorkflow('self'))
+    await waitFor(async () => {
+      const run = (await store.load()).workflow.workflows[0].runs.find((entry) => entry.id === runId)
+      return Boolean(run && run.status !== 'running')
+    }, 10_000)
+    const run = store.read().workflow.workflows[0].runs.find((entry) => entry.id === runId)!
+    expect(run.status).toBe('error')
+    expect(run.nodeResults.find((result) => result.nodeId === 'sub')!.error.toLowerCase()).toContain('deep')
+    runtime.stop()
+  }, 15_000)
 })

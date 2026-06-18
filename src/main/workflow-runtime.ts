@@ -307,6 +307,7 @@ async function runHttpNode(config: WorkflowHttpRequestConfigV1, payload: Workflo
 }
 
 const CODE_TIMEOUT_MS = 2_000
+const MAX_SUBWORKFLOW_DEPTH = 5
 
 function runCodeNode(code: string, payload: WorkflowPayload): NodeOutcome {
   const sandbox: Record<string, unknown> = { $json: payload.json, $text: payload.text, __result: undefined }
@@ -538,7 +539,70 @@ export class WorkflowRuntime {
       runs: [...current.runs, run].slice(-MAX_WORKFLOW_RUNS)
     }))
 
-    const settings = await this.deps.store.load()
+    let runStatus: WorkflowRunStatus = 'success'
+    let runMessage = ''
+    let nodeResults: WorkflowNodeRunResultV1[] = []
+    try {
+      const settings = await this.deps.store.load()
+      const result = await this.runGraph(workflow, triggerNodeId, { json: {}, text: '' }, {
+        settings,
+        statusWorkflowId: workflow.id,
+        cancelId: workflow.id,
+        depth: 0
+      })
+      runStatus = result.status
+      nodeResults = result.nodeResults
+      runMessage = runStatus === 'success' ? summarizeRun(nodeResults) : result.errorMessage
+    } catch (error) {
+      runStatus = 'error'
+      runMessage = error instanceof Error ? error.message : String(error)
+      this.deps.logError('workflow', 'Workflow run failed', { message: runMessage, workflowId: workflow.id })
+    } finally {
+      const finishedAt = new Date()
+      await this.updateWorkflow(workflow.id, (current) => ({
+        ...current,
+        lastRunAt: finishedAt.toISOString(),
+        lastStatus: runStatus,
+        lastMessage: runMessage,
+        nextRunAt: computeWorkflowNextRunAt(current, finishedAt),
+        updatedAt: finishedAt.toISOString(),
+        runs: current.runs.map((entry) =>
+          entry.id === runId
+            ? { ...entry, status: runStatus, finishedAt: finishedAt.toISOString(), message: runMessage, nodeResults }
+            : entry
+        )
+      }))
+      this.runningWorkflowIds.delete(workflow.id)
+      this.cancelRequested.delete(workflow.id)
+      setTimeout(() => this.liveNodeStatus.delete(workflow.id), LIVE_STATUS_LINGER_MS)
+    }
+    return { ok: runStatus !== 'error', runId, status: runStatus, message: runMessage }
+  }
+
+  /**
+   * Pruning dataflow scheduler over one workflow graph. A node runs once all its
+   * incoming edges are resolved (delivered a payload, or pruned). Conditions /
+   * switches prune the branches they don't take, cascading to make downstream
+   * nodes unreachable — so joins (Merge) wait only for branches that fire.
+   * Pure: no persistence. Used by both top-level runs and sub-workflow nodes.
+   */
+  private async runGraph(
+    workflow: WorkflowV1,
+    triggerNodeId: string,
+    initialPayload: WorkflowPayload,
+    ctx: { settings: AppSettingsV1; statusWorkflowId?: string; cancelId?: string; depth: number }
+  ): Promise<{
+    status: WorkflowRunStatus
+    errorMessage: string
+    nodeResults: WorkflowNodeRunResultV1[]
+    output: WorkflowPayload
+  }> {
+    const { settings } = ctx
+    const setLive = (nodeId: string, status: WorkflowNodeRunStatus): void => {
+      if (ctx.statusWorkflowId) this.setLive(ctx.statusWorkflowId, nodeId, status)
+    }
+    const isCanceled = (): boolean => (ctx.cancelId ? this.cancelRequested.has(ctx.cancelId) : false)
+
     const nodeById = new Map(workflow.nodes.map((node) => [node.id, node]))
     const outEdges = new Map<string, WorkflowConnectionV1[]>()
     const inEdges = new Map<string, WorkflowConnectionV1[]>()
@@ -559,13 +623,10 @@ export class WorkflowRuntime {
     const readyQueue: string[] = []
     const deadline = Date.now() + MAX_RUN_DURATION_MS
     let executions = 0
-    let runStatus: WorkflowRunStatus = 'success'
-    let runMessage = ''
+    let status: WorkflowRunStatus = 'success'
+    let errorMessage = ''
+    let output = initialPayload
 
-    // Pruning dataflow scheduler: a node runs once all its incoming edges are
-    // resolved (delivered a payload, or pruned). Conditions/switches prune the
-    // branches they don't take, which cascades to make downstream nodes
-    // unreachable — so joins (Merge) wait only for the branches that fire.
     const incoming = (nodeId: string): WorkflowConnectionV1[] => inEdges.get(nodeId) ?? []
     const edgeResolved = (edge: WorkflowConnectionV1): boolean =>
       delivered.has(edge.id) || prunedEdges.has(edge.id)
@@ -597,19 +658,19 @@ export class WorkflowRuntime {
     markReady(triggerNodeId)
     try {
       while (readyQueue.length > 0) {
-        if (this.cancelRequested.has(workflow.id)) {
-          runStatus = 'error'
-          runMessage = 'Canceled.'
+        if (isCanceled()) {
+          status = 'error'
+          errorMessage = 'Canceled.'
           break
         }
         if (Date.now() > deadline) {
-          runStatus = 'error'
-          runMessage = 'Workflow exceeded the maximum run duration.'
+          status = 'error'
+          errorMessage = 'Workflow exceeded the maximum run duration.'
           break
         }
         if (executions >= MAX_NODE_EXECUTIONS) {
-          runStatus = 'error'
-          runMessage = 'Workflow exceeded the maximum node count.'
+          status = 'error'
+          errorMessage = 'Workflow exceeded the maximum node count.'
           break
         }
         const nodeId = readyQueue.shift()
@@ -627,13 +688,13 @@ export class WorkflowRuntime {
 
         let outcome: NodeOutcome | null
         if (node.disabled) {
-          this.setLive(workflow.id, node.id, 'skipped')
+          setLive(node.id, 'skipped')
           outcome = null
         } else {
-          this.setLive(workflow.id, node.id, 'running')
+          setLive(node.id, 'running')
           const nodeStartedAt = new Date()
           try {
-            const produced = await this.executeNode(node, primary, settings, inputs.length ? inputs : [primary])
+            const produced = await this.executeNode(node, primary, settings, inputs.length ? inputs : [primary], ctx.depth)
             nodeResults.push({
               nodeId: node.id,
               status: 'success',
@@ -644,8 +705,9 @@ export class WorkflowRuntime {
               threadId: produced.threadId ?? '',
               error: ''
             })
-            this.setLive(workflow.id, node.id, 'success')
+            setLive(node.id, 'success')
             outcome = produced
+            output = produced.payload
           } catch (error) {
             const message = error instanceof Error ? error.message : String(error)
             nodeResults.push({
@@ -658,9 +720,9 @@ export class WorkflowRuntime {
               threadId: '',
               error: message
             })
-            this.setLive(workflow.id, node.id, 'error')
-            runStatus = 'error'
-            runMessage = message
+            setLive(node.id, 'error')
+            status = 'error'
+            errorMessage = message
             break
           }
         }
@@ -678,37 +740,20 @@ export class WorkflowRuntime {
         for (const edge of edges) settleTarget(edge.target)
       }
     } catch (error) {
-      runStatus = 'error'
-      runMessage = error instanceof Error ? error.message : String(error)
-      this.deps.logError('workflow', 'Workflow run failed', { message: runMessage, workflowId: workflow.id })
-    } finally {
-      const finishedAt = new Date()
-      if (runStatus === 'success') runMessage = summarizeRun(nodeResults)
-      await this.updateWorkflow(workflow.id, (current) => ({
-        ...current,
-        lastRunAt: finishedAt.toISOString(),
-        lastStatus: runStatus,
-        lastMessage: runMessage,
-        nextRunAt: computeWorkflowNextRunAt(current, finishedAt),
-        updatedAt: finishedAt.toISOString(),
-        runs: current.runs.map((entry) =>
-          entry.id === runId
-            ? { ...entry, status: runStatus, finishedAt: finishedAt.toISOString(), message: runMessage, nodeResults }
-            : entry
-        )
-      }))
-      this.runningWorkflowIds.delete(workflow.id)
-      this.cancelRequested.delete(workflow.id)
-      setTimeout(() => this.liveNodeStatus.delete(workflow.id), LIVE_STATUS_LINGER_MS)
+      status = 'error'
+      errorMessage = error instanceof Error ? error.message : String(error)
+      this.deps.logError('workflow', 'Workflow graph failed', { message: errorMessage, workflowId: workflow.id })
     }
-    return { ok: runStatus !== 'error', runId, status: runStatus, message: runMessage }
+
+    return { status, errorMessage, nodeResults, output }
   }
 
   private async executeNode(
     node: WorkflowNodeV1,
     payload: WorkflowPayload,
     settings: AppSettingsV1,
-    inputs: WorkflowPayload[] = [payload]
+    inputs: WorkflowPayload[] = [payload],
+    depth = 0
   ): Promise<NodeOutcome> {
     switch (node.type) {
       case 'manual-trigger':
@@ -760,6 +805,18 @@ export class WorkflowRuntime {
       }
       case 'code':
         return runCodeNode(node.config.code, payload)
+      case 'subworkflow': {
+        if (depth >= MAX_SUBWORKFLOW_DEPTH) throw new Error('Sub-workflow nesting is too deep.')
+        const target = settings.workflow.workflows.find((workflow) => workflow.id === node.config.workflowId)
+        if (!target) throw new Error('Sub-workflow not found.')
+        const trigger =
+          target.nodes.find((item) => item.type === 'manual-trigger') ??
+          target.nodes.find((item) => item.type === 'schedule-trigger')
+        if (!trigger) throw new Error('Sub-workflow has no trigger node.')
+        const result = await this.runGraph(target, trigger.id, payload, { settings, depth: depth + 1 })
+        if (result.status === 'error') throw new Error(result.errorMessage || 'Sub-workflow failed.')
+        return { payload: result.output, message: `ran ${target.name || 'sub-workflow'}` }
+      }
       case 'merge': {
         if (node.config.mode === 'object') {
           const merged: Record<string, unknown> = {}

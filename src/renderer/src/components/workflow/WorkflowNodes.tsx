@@ -16,6 +16,7 @@ import {
   Split,
   Timer,
   Trash2,
+  Workflow,
   type LucideIcon
 } from 'lucide-react'
 import type { WorkflowNodeKind, WorkflowNodeRunStatus, WorkflowNodeV1 } from '@shared/app-settings'
@@ -46,6 +47,7 @@ export const NODE_ICONS: Record<WorkflowNodeKind, LucideIcon> = {
   code: Code2,
   'http-request': Globe,
   merge: GitMerge,
+  subworkflow: Workflow,
   delay: Timer
 }
 

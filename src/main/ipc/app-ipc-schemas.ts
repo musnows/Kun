@@ -797,6 +797,10 @@ const workflowCodeConfigSchema = z.object({ code: z.string().max(MAX_BODY_BYTES)
 
 const workflowMergeConfigSchema = z.object({ mode: z.enum(['array', 'object']).optional() }).strict()
 
+const workflowSubWorkflowConfigSchema = z
+  .object({ workflowId: z.string().max(MAX_ID_LENGTH).optional() })
+  .strict()
+
 const workflowNodeBaseShape = {
   id: z.string().max(MAX_ID_LENGTH),
   name: z.string().max(512).optional(),
@@ -820,6 +824,7 @@ const workflowNodePatchSchema = z.discriminatedUnion('type', [
   z.object({ ...workflowNodeBaseShape, type: z.literal('code'), config: workflowCodeConfigSchema.optional() }).strict(),
   z.object({ ...workflowNodeBaseShape, type: z.literal('http-request'), config: workflowHttpRequestConfigSchema.optional() }).strict(),
   z.object({ ...workflowNodeBaseShape, type: z.literal('merge'), config: workflowMergeConfigSchema.optional() }).strict(),
+  z.object({ ...workflowNodeBaseShape, type: z.literal('subworkflow'), config: workflowSubWorkflowConfigSchema.optional() }).strict(),
   z.object({ ...workflowNodeBaseShape, type: z.literal('delay'), config: workflowDelayConfigSchema.optional() }).strict()
 ])
 

@@ -202,6 +202,12 @@ export function normalizeWorkflowNode(value: unknown, index: number): WorkflowNo
         type: 'merge',
         config: { mode: config.mode === 'object' ? 'object' : 'array' }
       }
+    case 'subworkflow':
+      return {
+        ...base,
+        type: 'subworkflow',
+        config: { workflowId: asTrimmed(config.workflowId) }
+      }
     case 'http-request':
       return {
         ...base,

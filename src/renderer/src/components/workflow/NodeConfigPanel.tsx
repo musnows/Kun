@@ -599,6 +599,23 @@ export function NodeConfigPanel({ node, settings, lastResult, onChange, onDelete
           </Field>
         ) : null}
 
+        {node.type === 'subworkflow' ? (
+          <Field label={t('workflowSubWorkflowTarget')}>
+            <select
+              className={INPUT_CLASS}
+              value={node.config.workflowId}
+              onChange={(event) => onChange({ ...node, config: { workflowId: event.target.value } })}
+            >
+              <option value="">{t('workflowSubWorkflowNone')}</option>
+              {settings.workflow.workflows.map((workflow) => (
+                <option key={workflow.id} value={workflow.id}>
+                  {workflow.name || t('workflowUntitled')}
+                </option>
+              ))}
+            </select>
+          </Field>
+        ) : null}
+
         {node.type === 'merge' ? (
           <Field label={t('workflowMergeMode')}>
             <select

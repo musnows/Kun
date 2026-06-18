@@ -547,6 +547,7 @@ export type WorkflowNodeKind =
   | 'code'
   | 'http-request'
   | 'merge'
+  | 'subworkflow'
   | 'delay'
 
 export const WORKFLOW_NODE_KINDS: readonly WorkflowNodeKind[] = [
@@ -559,6 +560,7 @@ export const WORKFLOW_NODE_KINDS: readonly WorkflowNodeKind[] = [
   'code',
   'http-request',
   'merge',
+  'subworkflow',
   'delay'
 ]
 
@@ -642,6 +644,11 @@ export type WorkflowCodeConfigV1 = {
   code: string
 }
 
+export type WorkflowSubWorkflowConfigV1 = {
+  /** id of another workflow to run; its output becomes this node's output. */
+  workflowId: string
+}
+
 export type WorkflowHttpHeaderV1 = {
   key: string
   value: string
@@ -684,6 +691,7 @@ export type WorkflowNodeConfigByKind = {
   code: WorkflowCodeConfigV1
   'http-request': WorkflowHttpRequestConfigV1
   merge: WorkflowMergeConfigV1
+  subworkflow: WorkflowSubWorkflowConfigV1
   delay: WorkflowDelayConfigV1
 }
 
