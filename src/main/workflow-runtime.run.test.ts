@@ -13,10 +13,32 @@ import {
   type AppSettingsPatch,
   type AppSettingsV1,
   type WorkflowCustomModuleV1,
+  type WorkflowNodeKind,
   type WorkflowRunResult,
   type WorkflowV1
 } from '../shared/app-settings'
 import { createWorkflowRuntime } from './workflow-runtime'
+
+// Loose fixture builders — normalizeWorkflow fills name/position/disabled and
+// per-kind config defaults at runtime, so tests pass partial nodes. The single
+// cast in buildWorkflow keeps every call site type-clean without `as any`.
+type NodeSpec = {
+  id: string
+  type: WorkflowNodeKind
+  name?: string
+  disabled?: boolean
+  onError?: 'fail' | 'continue' | 'fallback'
+  retries?: number
+  retryDelayMs?: number
+  fallbackJson?: string
+  inputs?: { key: string; type: 'text' | 'number' | 'boolean' | 'json'; source: string }[]
+  config?: Record<string, unknown>
+}
+type ConnSpec = { id: string; source: string; sourceHandle?: string; target: string; targetHandle?: string }
+type WorkflowSpec = Omit<Partial<WorkflowV1>, 'nodes' | 'connections'> & {
+  nodes?: NodeSpec[]
+  connections?: ConnSpec[]
+}
 
 function settingsWithWorkflows(workflows: WorkflowV1[], modules: WorkflowCustomModuleV1[] = []): AppSettingsV1 {
   return {
@@ -53,8 +75,8 @@ function createStore(initial: AppSettingsV1) {
   }
 }
 
-function buildWorkflow(partial: Partial<WorkflowV1>): WorkflowV1 {
-  return normalizeWorkflow(partial, 0, '2026-06-18T00:00:00.000Z')
+function buildWorkflow(partial: WorkflowSpec): WorkflowV1 {
+  return normalizeWorkflow(partial as unknown as Partial<WorkflowV1>, 0, '2026-06-18T00:00:00.000Z')
 }
 
 async function waitFor(predicate: () => Promise<boolean>, timeoutMs: number): Promise<void> {

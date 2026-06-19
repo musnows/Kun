@@ -788,7 +788,7 @@ const workflowDelayConfigSchema = z
 const workflowCustomConfigSchema = z
   .object({
     moduleId: z.string().max(MAX_ID_LENGTH).optional(),
-    values: z.record(z.string().max(MAX_BODY_BYTES)).optional()
+    values: z.record(z.string(), z.string().max(MAX_BODY_BYTES)).optional()
   })
   .strict()
 
@@ -1131,7 +1131,7 @@ const workflowNodePresetSchema = z
     icon: z.string().max(64).optional(),
     nodeType: z.string().max(64),
     nodeName: z.string().max(200).optional(),
-    config: z.record(z.unknown()).optional()
+    config: z.record(z.string(), z.unknown()).optional()
   })
   .strict()
 

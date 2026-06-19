@@ -132,7 +132,11 @@ describe('electron-builder Kun packaging', () => {
   })
 
   it('uses the rounded Kun icon for Windows installers and shortcuts', () => {
-    expect(builderConfig.win.icon).toBe('./src/asset/img/kun_mac.png')
+    // Windows ships a multi-size .ico (16/24/32/48/64/72/96/128/256) generated
+    // from the rounded kun_mac.png so Explorer/desktop render crisp small icons
+    // instead of downscaling a single 1024px PNG (#222). The .ico still carries
+    // the rounded Kun artwork — it is derived from kun_mac.png.
+    expect(builderConfig.win.icon).toBe('./build/icon.ico')
   })
 
   it('requires Apple secure timestamps when Developer ID signing is enabled', () => {

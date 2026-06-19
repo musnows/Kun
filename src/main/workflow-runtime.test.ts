@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { normalizeWorkflow } from '../shared/app-settings-workflow'
-import type { WorkflowV1 } from '../shared/app-settings'
+import type { WorkflowNodeKind, WorkflowV1 } from '../shared/app-settings'
 import {
   checkWorkflowCode,
   computeWorkflowNextRunAt,
@@ -8,8 +8,20 @@ import {
   workflowHasScheduleTrigger
 } from './workflow-runtime'
 
-function buildWorkflow(partial: Partial<WorkflowV1>): WorkflowV1 {
-  return normalizeWorkflow(partial, 0, '2026-06-18T00:00:00.000Z')
+// Loose fixture builders — normalizeWorkflow fills name/position/disabled and
+// per-kind config defaults at runtime, so tests pass partial nodes. The single
+// cast in buildWorkflow keeps every call site type-clean without `as any`.
+type NodeSpec = {
+  id: string
+  type: WorkflowNodeKind
+  name?: string
+  disabled?: boolean
+  config?: Record<string, unknown>
+}
+type WorkflowSpec = Omit<Partial<WorkflowV1>, 'nodes'> & { nodes?: NodeSpec[] }
+
+function buildWorkflow(partial: WorkflowSpec): WorkflowV1 {
+  return normalizeWorkflow(partial as unknown as Partial<WorkflowV1>, 0, '2026-06-18T00:00:00.000Z')
 }
 
 describe('cronNextRun', () => {
