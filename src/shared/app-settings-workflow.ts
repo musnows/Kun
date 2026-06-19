@@ -4,6 +4,7 @@ import {
   type WorkflowConditionOperator,
   type WorkflowConnectionV1,
   type WorkflowCustomModuleV1,
+  type WorkflowEnvVarV1,
   type WorkflowFieldV1,
   type WorkflowHttpHeaderV1,
   type WorkflowHttpMethod,
@@ -150,6 +151,39 @@ function normalizeSwitchRules(value: unknown): WorkflowSwitchRuleV1[] {
     .slice(0, 20)
 }
 
+function normalizeNodeErrorFields(n: Record<string, unknown>): {
+  onError?: 'continue' | 'fallback'
+  retries?: number
+  retryDelayMs?: number
+  fallbackJson?: string
+} {
+  const out: { onError?: 'continue' | 'fallback'; retries?: number; retryDelayMs?: number; fallbackJson?: string } = {}
+  if (n.onError === 'continue' || n.onError === 'fallback') out.onError = n.onError
+  const retries = normalizePositiveInteger(n.retries, 0, 0, 10)
+  if (retries > 0) out.retries = retries
+  const delay = normalizePositiveInteger(n.retryDelayMs, 0, 0, 600_000)
+  if (delay > 0) out.retryDelayMs = delay
+  const fallback = asText(n.fallbackJson)
+  if (fallback) out.fallbackJson = fallback
+  return out
+}
+
+function normalizeEnvVars(value: unknown): WorkflowEnvVarV1[] {
+  if (!Array.isArray(value)) return []
+  return value
+    .map((entry): WorkflowEnvVarV1 => {
+      const e = record(entry)
+      const type = e.type
+      return {
+        key: asTrimmed(e.key),
+        value: asText(e.value),
+        type: type === 'number' || type === 'boolean' || type === 'secret' ? type : 'string'
+      }
+    })
+    .filter((entry) => entry.key.length > 0)
+    .slice(0, 100)
+}
+
 export function normalizeWorkflowNode(value: unknown, index: number): WorkflowNodeV1 | null {
   const n = record(value)
   const type = n.type
@@ -159,7 +193,8 @@ export function normalizeWorkflowNode(value: unknown, index: number): WorkflowNo
     id: asTrimmed(n.id) || `node-${index + 1}`,
     name: asTrimmed(n.name),
     position: normalizePosition(n.position),
-    disabled: normalizeBoolean(n.disabled, false)
+    disabled: normalizeBoolean(n.disabled, false),
+    ...normalizeNodeErrorFields(n)
   }
   const config = record(n.config)
   switch (kind) {
@@ -243,7 +278,8 @@ export function normalizeWorkflowNode(value: unknown, index: number): WorkflowNo
         type: 'set-fields',
         config: {
           fields: normalizeFields(config.fields),
-          keepIncoming: normalizeBoolean(config.keepIncoming, false)
+          keepIncoming: normalizeBoolean(config.keepIncoming, false),
+          scope: config.scope === 'run' ? 'run' : 'payload'
         }
       }
     case 'sort':
@@ -456,7 +492,9 @@ function normalizeNodeResult(value: unknown): WorkflowNodeRunResultV1 {
     message: asText(r.message),
     outputJson: asText(r.outputJson),
     threadId: asTrimmed(r.threadId),
-    error: asText(r.error)
+    error: asText(r.error),
+    ...(r.inputJson !== undefined ? { inputJson: asText(r.inputJson) } : {}),
+    ...(r.retries !== undefined ? { retries: normalizePositiveInteger(r.retries, 0, 0, 100) } : {})
   }
 }
 
@@ -490,6 +528,7 @@ export function normalizeWorkflow(workflow: Partial<WorkflowV1>, index: number, 
     name: asTrimmed(w.name) || `Workflow ${index + 1}`,
     enabled: normalizeBoolean(w.enabled, true),
     callableByAgent: normalizeBoolean(w.callableByAgent, false),
+    env: normalizeEnvVars(w.env),
     nodes,
     connections,
     createdAt: asTrimmed(w.createdAt) || now,

@@ -811,7 +811,8 @@ const workflowFieldSchema = z
 const workflowSetFieldsConfigSchema = z
   .object({
     fields: z.array(workflowFieldSchema).max(50).optional(),
-    keepIncoming: z.boolean().optional()
+    keepIncoming: z.boolean().optional(),
+    scope: z.enum(['payload', 'run']).optional()
   })
   .strict()
 
@@ -897,7 +898,11 @@ const workflowNodeBaseShape = {
   id: z.string().max(MAX_ID_LENGTH),
   name: z.string().max(512).optional(),
   position: workflowPositionSchema.optional(),
-  disabled: z.boolean().optional()
+  disabled: z.boolean().optional(),
+  onError: z.enum(['fail', 'continue', 'fallback']).optional(),
+  retries: z.number().int().min(0).max(10).optional(),
+  retryDelayMs: z.number().int().min(0).max(600_000).optional(),
+  fallbackJson: z.string().max(MAX_BODY_BYTES).optional()
 }
 
 const workflowNodePatchSchema = z.discriminatedUnion('type', [
@@ -964,6 +969,8 @@ const workflowNodeResultPatchSchema = z
     finishedAt: z.string().max(128).optional(),
     message: z.string().max(MAX_CHANNEL_TEXT_LENGTH).optional(),
     outputJson: z.string().max(MAX_BODY_BYTES).optional(),
+    inputJson: z.string().max(MAX_BODY_BYTES).optional(),
+    retries: z.number().int().min(0).max(100).optional(),
     threadId: z.string().max(MAX_ID_LENGTH).optional(),
     error: z.string().max(MAX_CHANNEL_TEXT_LENGTH).optional()
   })
@@ -987,6 +994,18 @@ const workflowPatchSchema = z
     name: z.string().max(512).optional(),
     enabled: z.boolean().optional(),
     callableByAgent: z.boolean().optional(),
+    env: z
+      .array(
+        z
+          .object({
+            key: z.string().max(128),
+            value: z.string().max(MAX_BODY_BYTES),
+            type: z.enum(['string', 'number', 'boolean', 'secret'])
+          })
+          .strict()
+      )
+      .max(100)
+      .optional(),
     nodes: z.array(workflowNodePatchSchema).max(200).optional(),
     connections: z.array(workflowConnectionPatchSchema).max(512).optional(),
     createdAt: z.string().max(128).optional(),

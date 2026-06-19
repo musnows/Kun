@@ -860,6 +860,8 @@ export type WorkflowSetFieldsConfigV1 = {
   fields: WorkflowFieldV1[]
   /** When true, merge the new fields onto the incoming json; otherwise replace it. */
   keepIncoming: boolean
+  /** 'payload' (default) writes to the node output; 'run' writes into run-scoped vars ({{$run.key}}). */
+  scope?: 'payload' | 'run'
 }
 
 export type WorkflowNodeConfigByKind = {
@@ -887,6 +889,9 @@ export type WorkflowNodeConfigByKind = {
   custom: WorkflowCustomConfigV1
 }
 
+/** How a node behaves when its execution fails after retries. */
+export type WorkflowNodeErrorMode = 'fail' | 'continue' | 'fallback'
+
 /** Discriminated union over `type`, each kind carrying its own `config`. */
 export type WorkflowNodeV1 = {
   [K in WorkflowNodeKind]: {
@@ -897,6 +902,13 @@ export type WorkflowNodeV1 = {
     /** React Flow canvas coordinates. Opaque to the backend. */
     position: { x: number; y: number }
     disabled: boolean
+    /** Error policy. Absent = 'fail' (the run stops) — preserves the original behavior. */
+    onError?: WorkflowNodeErrorMode
+    /** Retry attempts before applying onError (0 = no retry). */
+    retries?: number
+    retryDelayMs?: number
+    /** For onError = 'fallback': JSON the node emits instead of failing. */
+    fallbackJson?: string
     config: WorkflowNodeConfigByKind[K]
   }
 }[WorkflowNodeKind]
@@ -919,6 +931,10 @@ export type WorkflowNodeRunResultV1 = {
   message: string
   /** JSON payload this node emitted, serialized. Empty when none. */
   outputJson: string
+  /** JSON payload this node received, serialized. Empty when none. (For the run history viewer.) */
+  inputJson?: string
+  /** Retry attempts spent before this result (0/absent = first try). */
+  retries?: number
   /** For ai-agent nodes: the Kun thread it created. */
   threadId: string
   error: string
@@ -935,12 +951,21 @@ export type WorkflowRunV1 = {
   nodeResults: WorkflowNodeRunResultV1[]
 }
 
+/** A workflow-scoped variable readable via {{$env.key}} in node expressions. */
+export type WorkflowEnvVarV1 = {
+  key: string
+  value: string
+  type: 'string' | 'number' | 'boolean' | 'secret'
+}
+
 export type WorkflowV1 = {
   id: string
   name: string
   enabled: boolean
   /** When true, the Kun agent may invoke this workflow as a tool (list_workflows / run_workflow). */
   callableByAgent: boolean
+  /** Workflow-scoped variables, exposed to node expressions as {{$env.key}}. */
+  env: WorkflowEnvVarV1[]
   nodes: WorkflowNodeV1[]
   connections: WorkflowConnectionV1[]
   createdAt: string

@@ -12,6 +12,7 @@ import type {
   WorkflowConditionConfigV1,
   WorkflowCustomModuleV1,
   WorkflowConnectionV1,
+  WorkflowEnvVarV1,
   WorkflowHttpRequestConfigV1,
   WorkflowNodeRunResultV1,
   WorkflowNodeRunStatus,
@@ -225,12 +226,60 @@ function stringifyValue(value: unknown): string {
   return typeof value === 'string' ? value : safeJson(value)
 }
 
-function interpolate(template: string, payload: WorkflowPayload): string {
-  return template.replace(/\{\{\s*([^}]+?)\s*\}\}/g, (_, expr: string) => stringifyValue(readPath(payload, expr)))
+/** Cross-node / variable scope available to {{ }} expressions during a run. */
+export type InterpScope = {
+  /** nodeId -> that node's output payload (only completed, reachable nodes). */
+  nodes?: Record<string, WorkflowPayload>
+  /** workflow env vars, exposed as {{$env.key}}. */
+  env?: Record<string, unknown>
+  /** run-scoped vars (set-fields scope=run), exposed as {{$run.key}}. */
+  run?: Record<string, unknown>
+  /** current loop frame, exposed as {{$loop.index}} / {{$loop.item}} / {{$loop.total}}. */
+  loop?: { index: number; item: unknown; total: number }
 }
 
-function evaluateCondition(config: WorkflowConditionConfigV1, payload: WorkflowPayload): boolean {
-  const leftRaw = config.leftExpr.trim() ? readPath(payload, config.leftExpr) : payload.text
+function resolveExpr(payload: WorkflowPayload, expr: string, scope?: InterpScope): unknown {
+  const t = expr.trim()
+  if (t.startsWith('$nodes.')) {
+    const rest = t.slice('$nodes.'.length)
+    const dot = rest.indexOf('.')
+    const nodeId = dot === -1 ? rest : rest.slice(0, dot)
+    const sub = dot === -1 ? '' : rest.slice(dot + 1)
+    const np = scope?.nodes?.[nodeId]
+    if (!np) return undefined
+    if (!sub || sub === 'json') return np.json
+    if (sub === 'text') return np.text
+    return getByPath(np.json, sub.replace(/^json\.?/, ''))
+  }
+  if (t.startsWith('$env.')) return scope?.env?.[t.slice('$env.'.length)]
+  if (t.startsWith('$run.')) {
+    const rest = t.slice('$run.'.length)
+    const dot = rest.indexOf('.')
+    const key = dot === -1 ? rest : rest.slice(0, dot)
+    const sub = dot === -1 ? '' : rest.slice(dot + 1)
+    const base = scope?.run?.[key]
+    return sub ? getByPath(base, sub) : base
+  }
+  if (t === '$loop.index') return scope?.loop?.index
+  if (t === '$loop.total') return scope?.loop?.total
+  if (t === '$loop.item' || t.startsWith('$loop.item.')) {
+    const item = scope?.loop?.item
+    const sub = t === '$loop.item' ? '' : t.slice('$loop.item.'.length)
+    return sub ? getByPath(item, sub) : item
+  }
+  return readPath(payload, t)
+}
+
+function interpolate(template: string, payload: WorkflowPayload, scope?: InterpScope): string {
+  return template.replace(/\{\{\s*([^}]+?)\s*\}\}/g, (_, expr: string) => stringifyValue(resolveExpr(payload, expr, scope)))
+}
+
+function evaluateCondition(
+  config: WorkflowConditionConfigV1,
+  payload: WorkflowPayload,
+  scope?: InterpScope
+): boolean {
+  const leftRaw = config.leftExpr.trim() ? resolveExpr(payload, config.leftExpr, scope) : payload.text
   const left = stringifyValue(leftRaw)
   const right = config.rightValue
   const l = config.caseSensitive ? left : left.toLowerCase()
@@ -286,8 +335,12 @@ async function readBodyCapped(response: Response, limit: number): Promise<string
   return Buffer.concat(chunks).toString('utf8')
 }
 
-async function runHttpNode(config: WorkflowHttpRequestConfigV1, payload: WorkflowPayload): Promise<NodeOutcome> {
-  const url = interpolate(config.url, payload).trim()
+async function runHttpNode(
+  config: WorkflowHttpRequestConfigV1,
+  payload: WorkflowPayload,
+  scope?: InterpScope
+): Promise<NodeOutcome> {
+  const url = interpolate(config.url, payload, scope).trim()
   let parsed: URL
   try {
     parsed = new URL(url)
@@ -300,14 +353,14 @@ async function runHttpNode(config: WorkflowHttpRequestConfigV1, payload: Workflo
   const headers: Record<string, string> = {}
   for (const header of config.headers) {
     const key = header.key.trim()
-    if (key) headers[key] = interpolate(header.value, payload)
+    if (key) headers[key] = interpolate(header.value, payload, scope)
   }
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), config.timeoutMs)
   try {
     const init: RequestInit = { method: config.method, headers, signal: controller.signal }
     if (config.method !== 'GET' && config.method !== 'DELETE' && config.body.trim()) {
-      init.body = interpolate(config.body, payload)
+      init.body = interpolate(config.body, payload, scope)
     }
     const response = await fetch(url, init)
     const raw = await readBodyCapped(response, HTTP_MAX_RESPONSE_BYTES)
@@ -559,6 +612,21 @@ export function checkWorkflowCode(language: WorkflowCodeLanguage, code: string):
  * workflow-settings default, else the app workspace. Used as the default cwd
  * for AI / image / code nodes that don't set their own.
  */
+/** Coerce a workflow's env vars into a {{$env.key}} lookup (secrets are plain values here). */
+function resolveEnv(env: WorkflowEnvVarV1[]): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  for (const entry of env) {
+    if (!entry.key) continue
+    out[entry.key] =
+      entry.type === 'number'
+        ? Number(entry.value) || 0
+        : entry.type === 'boolean'
+          ? entry.value === 'true'
+          : entry.value
+  }
+  return out
+}
+
 function resolveRunWorkspace(workflow: WorkflowV1, settings: AppSettingsV1, triggerNodeId?: string): string {
   const triggers = workflow.nodes.filter(
     (node) =>
@@ -1091,6 +1159,10 @@ export class WorkflowRuntime {
       cancelId?: string
       depth: number
       workspaceOverride?: string
+      /** Loop frame for body sub-runs, exposed via {{$loop.*}}. */
+      loop?: { index: number; item: unknown; total: number }
+      /** Run-scoped vars shared across the run (set-fields scope=run). */
+      runVars?: Record<string, unknown>
     }
   ): Promise<{
     status: WorkflowRunStatus
@@ -1128,6 +1200,18 @@ export class WorkflowRuntime {
     let status: WorkflowRunStatus = 'success'
     let errorMessage = ''
     let output = initialPayload
+
+    // Interpolation scope shared across the run: completed-node outputs ($nodes),
+    // workflow env ($env), run-scoped vars ($run), and the loop frame ($loop).
+    const nodeOutputs: Record<string, WorkflowPayload> = {}
+    const env = resolveEnv(workflow.env)
+    const runVars = ctx.runVars ?? {}
+    const secretValues = workflow.env
+      .filter((entry) => entry.type === 'secret' && entry.value.trim())
+      .map((entry) => entry.value)
+    const redact = (text: string): string =>
+      secretValues.reduce((acc, secret) => acc.split(secret).join('***'), text)
+    const scopeFor = (): InterpScope => ({ nodes: nodeOutputs, env, run: runVars, loop: ctx.loop })
 
     const incoming = (nodeId: string): WorkflowConnectionV1[] => inEdges.get(nodeId) ?? []
     const edgeResolved = (edge: WorkflowConnectionV1): boolean =>
@@ -1195,30 +1279,68 @@ export class WorkflowRuntime {
         } else {
           setLive(node.id, 'running')
           const nodeStartedAt = new Date()
-          try {
-            const produced = await this.executeNode(
-              node,
-              primary,
-              settings,
-              inputs.length ? inputs : [primary],
-              ctx.depth,
-              runWorkspace
-            )
+          const inputJson = redact(safeJson(primary.json))
+          const maxRetries = node.retries ?? 0
+          let attempt = 0
+          let produced: NodeOutcome | null = null
+          let lastError = ''
+          // Retry, then apply onError: 'fail' (default) stops the run; 'continue'/'fallback' resume.
+          while (true) {
+            try {
+              produced = await this.executeNode(
+                node,
+                primary,
+                settings,
+                inputs.length ? inputs : [primary],
+                ctx.depth,
+                runWorkspace,
+                scopeFor(),
+                runVars
+              )
+              break
+            } catch (error) {
+              lastError = error instanceof Error ? error.message : String(error)
+              if (attempt < maxRetries) {
+                attempt += 1
+                if (node.retryDelayMs) await sleep(node.retryDelayMs)
+                continue
+              }
+              const mode = node.onError ?? 'fail'
+              if (mode === 'continue' || mode === 'fallback') {
+                let fallback: unknown = null
+                if (mode === 'fallback' && node.fallbackJson) {
+                  try {
+                    fallback = JSON.parse(node.fallbackJson)
+                  } catch {
+                    fallback = node.fallbackJson
+                  }
+                }
+                produced = {
+                  payload: { json: fallback, text: mode === 'fallback' ? safeJson(fallback) : '' },
+                  message: `error handled (${mode}): ${lastError}`
+                }
+              }
+              break
+            }
+          }
+          if (produced) {
             nodeResults.push({
               nodeId: node.id,
               status: 'success',
               startedAt: nodeStartedAt.toISOString(),
               finishedAt: new Date().toISOString(),
-              message: produced.message,
-              outputJson: safeJson(produced.payload.json),
+              message: redact(produced.message),
+              outputJson: redact(safeJson(produced.payload.json)),
+              inputJson,
+              retries: attempt,
               threadId: produced.threadId ?? '',
-              error: ''
+              error: lastError ? redact(lastError) : ''
             })
             setLive(node.id, 'success')
             outcome = produced
             output = produced.payload
-          } catch (error) {
-            const message = error instanceof Error ? error.message : String(error)
+            nodeOutputs[node.id] = produced.payload
+          } else {
             nodeResults.push({
               nodeId: node.id,
               status: 'error',
@@ -1226,12 +1348,14 @@ export class WorkflowRuntime {
               finishedAt: new Date().toISOString(),
               message: '',
               outputJson: '',
+              inputJson,
+              retries: attempt,
               threadId: '',
-              error: message
+              error: redact(lastError)
             })
             setLive(node.id, 'error')
             status = 'error'
-            errorMessage = message
+            errorMessage = lastError
             break
           }
         }
@@ -1263,7 +1387,9 @@ export class WorkflowRuntime {
     settings: AppSettingsV1,
     inputs: WorkflowPayload[] = [payload],
     depth = 0,
-    runWorkspace = ''
+    runWorkspace = '',
+    scope: InterpScope = {},
+    runVars: Record<string, unknown> = {}
   ): Promise<NodeOutcome> {
     switch (node.type) {
       case 'manual-trigger':
@@ -1287,7 +1413,7 @@ export class WorkflowRuntime {
           settings.workflow.defaultWorkspaceRoot.trim() ||
           settings.workspaceRoot
         const result = await runPromptViaRuntime(this.deps, settings, {
-          prompt: interpolate(node.config.prompt, payload),
+          prompt: interpolate(node.config.prompt, payload, scope),
           title: `[Workflow] ${node.name || 'AI task'}`.trim(),
           workspaceRoot: workspace,
           model: modelConfig.model,
@@ -1316,13 +1442,13 @@ export class WorkflowRuntime {
           settings.workflow.defaultWorkspaceRoot.trim() ||
           settings.workspaceRoot
         ).trim()
-        const outputDir = resolveImageOutputDir(workspace, interpolate(node.config.outputDir, payload))
+        const outputDir = resolveImageOutputDir(workspace, interpolate(node.config.outputDir, payload, scope))
         // Lazy import keeps the kun image module out of the unit-test graph.
         const { createImageGenClient } = await import('../../kun/src/adapters/tool/image-gen-tool-provider.js')
         const client = createImageGenClient(imageGen)
         const size = node.config.size.trim() || imageGen.defaultSize.trim()
         const image = await client.generate({
-          prompt: interpolate(node.config.prompt, payload),
+          prompt: interpolate(node.config.prompt, payload, scope),
           model: imageGen.model.trim(),
           ...(size && size !== 'auto' ? { size } : {}),
           timeoutMs: imageGen.timeoutMs,
@@ -1339,12 +1465,12 @@ export class WorkflowRuntime {
         }
       }
       case 'condition': {
-        const matched = evaluateCondition(node.config, payload)
+        const matched = evaluateCondition(node.config, payload, scope)
         return { payload, message: matched ? 'true' : 'false', branch: matched ? 'true' : 'false' }
       }
       case 'switch': {
         for (let index = 0; index < node.config.rules.length; index += 1) {
-          if (evaluateCondition(node.config.rules[index], payload)) {
+          if (evaluateCondition(node.config.rules[index], payload, scope)) {
             return { payload, message: `case ${index + 1}`, branch: `case-${index}` }
           }
         }
@@ -1395,7 +1521,7 @@ export class WorkflowRuntime {
           const result = await this.runGraph(target, trigger.id, current, { settings, depth: depth + 1 })
           if (result.status === 'error') throw new Error(result.errorMessage || 'Loop body failed.')
           current = result.output
-          if (evaluateCondition(stopCondition, current)) {
+          if (evaluateCondition(stopCondition, current, scope)) {
             done = true
             break
           }
@@ -1426,18 +1552,26 @@ export class WorkflowRuntime {
         }
       }
       case 'set-fields': {
+        if (node.config.scope === 'run') {
+          // Write into run-scoped vars ({{$run.key}}); pass the incoming payload through unchanged.
+          for (const field of node.config.fields) {
+            const key = field.key.trim()
+            if (key) runVars[key] = interpolate(field.value, payload, scope)
+          }
+          return { payload, message: `set ${node.config.fields.length} run var(s)` }
+        }
         const base =
           node.config.keepIncoming && payload.json && typeof payload.json === 'object' && !Array.isArray(payload.json)
             ? { ...(payload.json as Record<string, unknown>) }
             : {}
         for (const field of node.config.fields) {
-          if (field.key.trim()) base[field.key.trim()] = interpolate(field.value, payload)
+          if (field.key.trim()) base[field.key.trim()] = interpolate(field.value, payload, scope)
         }
         const json = base
         return { payload: { json, text: safeJson(json) }, message: `${node.config.fields.length} fields` }
       }
       case 'filter': {
-        const pass = evaluateCondition(node.config, payload)
+        const pass = evaluateCondition(node.config, payload, scope)
         return { payload, message: pass ? 'pass' : 'blocked', branch: pass ? undefined : NO_BRANCH }
       }
       case 'sort': {
@@ -1476,12 +1610,12 @@ export class WorkflowRuntime {
         return { payload: { json: { count: items.length }, text: safeJson({ count: items.length }) }, message: `count ${items.length}` }
       }
       case 'http-request':
-        return runHttpNode(node.config, payload)
+        return runHttpNode(node.config, payload, scope)
       case 'delay':
         await sleep(node.config.delayMs)
         return { payload, message: `Waited ${node.config.delayMs}ms` }
       case 'template': {
-        const rendered = interpolate(node.config.template, payload)
+        const rendered = interpolate(node.config.template, payload, scope)
         if (node.config.outputMode === 'json') {
           let parsed: unknown
           let parsedOk = true
@@ -1512,7 +1646,7 @@ export class WorkflowRuntime {
       }
       case 'output': {
         if (node.config.mode === 'text') {
-          const text = interpolate(node.config.textTemplate, payload)
+          const text = interpolate(node.config.textTemplate, payload, scope)
           return { payload: { json: { text }, text }, message: 'output' }
         }
         if (node.config.mode === 'json') {
