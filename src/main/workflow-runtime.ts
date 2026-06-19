@@ -288,6 +288,50 @@ function interpolate(template: string, payload: WorkflowPayload, scope?: InterpS
   return template.replace(/\{\{\s*([^}]+?)\s*\}\}/g, (_, expr: string) => stringifyValue(resolveExpr(payload, expr, scope)))
 }
 
+/** Whether a template references at least one {{ }} expression. */
+function hasInterpolation(template: string): boolean {
+  return /\{\{\s*[^}]+?\s*\}\}/.test(template)
+}
+
+/** A trimmed string, treating empty JSON literals ({} / [] / null) as "no content". */
+function meaningfulText(value: string): string {
+  const trimmed = value.trim()
+  return trimmed === '{}' || trimmed === '[]' || trimmed === 'null' ? '' : trimmed
+}
+
+/**
+ * The upstream input rendered as plain text, for AI prompts that don't explicitly
+ * template it. A node's declared typed inputs ($input) win; otherwise the upstream
+ * payload's text, then a primitive json value. Empty/empty-object payloads → ''.
+ */
+function buildUpstreamContext(payload: WorkflowPayload, inputs?: Record<string, unknown>): string {
+  if (inputs && Object.keys(inputs).length > 0) {
+    return Object.entries(inputs)
+      .map(([key, value]) => `${key}: ${stringifyValue(value)}`)
+      .join('\n')
+      .trim()
+  }
+  const text = meaningfulText(payload.text ?? '')
+  if (text) return text
+  const json = payload.json
+  if (json !== null && json !== undefined && typeof json !== 'object') return stringifyValue(json)
+  return ''
+}
+
+/**
+ * Assemble an AI node's prompt. The configured prompt is interpolated as usual;
+ * when it has no {{ }} reference, the upstream input is appended so an AI node
+ * that doesn't explicitly template its input still receives it.
+ */
+function buildAiPrompt(template: string, payload: WorkflowPayload, scope: InterpScope): string {
+  const rendered = interpolate(template, payload, scope)
+  if (hasInterpolation(template)) return rendered
+  const context = buildUpstreamContext(payload, scope.input)
+  if (!context) return rendered
+  const base = rendered.trim()
+  return base ? `${base}\n\n${context}` : context
+}
+
 function evaluateCondition(
   config: WorkflowConditionConfigV1,
   payload: WorkflowPayload,
@@ -801,16 +845,25 @@ function resolveEnv(env: WorkflowEnvVarV1[]): Record<string, unknown> {
   return out
 }
 
-function resolveRunWorkspace(workflow: WorkflowV1, settings: AppSettingsV1, triggerNodeId?: string): string {
+function resolveRunWorkspace(
+  workflow: WorkflowV1,
+  settings: AppSettingsV1,
+  triggerNodeId?: string,
+  payload?: WorkflowPayload,
+  scope?: InterpScope
+): string {
   const triggers = workflow.nodes.filter(
     (node) =>
       node.type === 'manual-trigger' || node.type === 'schedule-trigger' || node.type === 'webhook-trigger'
   )
   const trigger = (triggerNodeId ? triggers.find((node) => node.id === triggerNodeId) : undefined) ?? triggers[0]
-  const triggerWorkspace =
+  const rawWorkspace =
     trigger && typeof (trigger.config as { workspaceRoot?: unknown }).workspaceRoot === 'string'
-      ? (trigger.config as { workspaceRoot: string }).workspaceRoot.trim()
+      ? (trigger.config as { workspaceRoot: string }).workspaceRoot
       : ''
+  // The trigger's working directory may reference the run input ({{json.dir}} /
+  // {{$env.X}}), so the working directory itself can be passed in as a parameter.
+  const triggerWorkspace = (payload ? interpolate(rawWorkspace, payload, scope) : rawWorkspace).trim()
   return triggerWorkspace || settings.workflow.defaultWorkspaceRoot.trim() || settings.workspaceRoot
 }
 
@@ -1518,7 +1571,13 @@ export class WorkflowRuntime {
     output: WorkflowPayload
   }> {
     const { settings } = ctx
-    const runWorkspace = ctx.workspaceOverride?.trim() || resolveRunWorkspace(workflow, settings, triggerNodeId)
+    const env = resolveEnv(workflow.env)
+    const runVars = ctx.runVars ?? {}
+    // The trigger's working directory can read the run input ({{json.dir}}), so a
+    // caller can pass the working directory in as a run parameter.
+    const runWorkspace =
+      ctx.workspaceOverride?.trim() ||
+      resolveRunWorkspace(workflow, settings, triggerNodeId, initialPayload, { env, run: runVars, loop: ctx.loop })
     const setLive = (nodeId: string, status: WorkflowNodeRunStatus): void => {
       if (ctx.statusWorkflowId) this.setLive(ctx.statusWorkflowId, nodeId, status)
     }
@@ -1551,8 +1610,6 @@ export class WorkflowRuntime {
     // Interpolation scope shared across the run: completed-node outputs ($nodes),
     // workflow env ($env), run-scoped vars ($run), and the loop frame ($loop).
     const nodeOutputs: Record<string, WorkflowPayload> = {}
-    const env = resolveEnv(workflow.env)
-    const runVars = ctx.runVars ?? {}
     // Global secret set so this run also masks secrets owned by sub-workflows / loop
     // bodies whose output or error flows back across the workflow boundary.
     const secretValues = collectSecretValues(settings)
@@ -1777,12 +1834,12 @@ export class WorkflowRuntime {
           settings.workflow.providerId?.trim() || ''
         )
         const workspace =
-          node.config.workspaceRoot.trim() ||
+          interpolate(node.config.workspaceRoot, payload, scope).trim() ||
           runWorkspace ||
           settings.workflow.defaultWorkspaceRoot.trim() ||
           settings.workspaceRoot
         const result = await runPromptViaRuntime(this.deps, settings, {
-          prompt: interpolate(node.config.prompt, payload, scope),
+          prompt: buildAiPrompt(node.config.prompt, payload, scope),
           title: `[Workflow] ${node.name || 'AI task'}`.trim(),
           workspaceRoot: workspace,
           model: modelConfig.model,
