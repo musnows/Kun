@@ -1,8 +1,10 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
+import { homedir } from 'node:os'
 import type { KunGuiApi } from '../shared/kun-gui-api'
 
 const api = {
   platform: process.platform,
+  homeDir: homedir(),
   getSettings: () => ipcRenderer.invoke('settings:get'),
   setSettings: (partial) =>
     ipcRenderer.invoke('settings:set', partial),

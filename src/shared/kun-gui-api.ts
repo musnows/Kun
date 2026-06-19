@@ -259,6 +259,7 @@ export type ComputerUsePermissions = {
 
 export type KunGuiApi = {
   platform: string
+  homeDir: string
   getSettings: () => Promise<AppSettingsV1>
   setSettings: (partial: AppSettingsPatch) => Promise<AppSettingsV1>
   saveSettingsSilent: (partial: AppSettingsPatch) => Promise<AppSettingsV1>

@@ -7,7 +7,7 @@ import { useWorktreeStore } from '../stores/worktree-store'
 import { SettingsCard, SettingRow } from './settings-controls'
 
 export function WorktreeSettingsSection({ ctx }: { ctx: Record<string, any> }): ReactElement {
-  const { t } = ctx
+  const { t, compactHomePath, expandHomePath } = ctx
   const { poolStatus, loading, error, lastMergeResult, lastSyncResult, setPoolStatus, setLoading, setError, setLastMergeResult, setLastSyncResult } =
     useWorktreeStore()
   const [busyPool, setBusyPool] = useState<number | null>(null)
@@ -17,7 +17,7 @@ export function WorktreeSettingsSection({ ctx }: { ctx: Record<string, any> }): 
   const worktreeRoot: string | undefined = ctx.form?.worktreeRootPath || undefined
 
   const refresh = useCallback(async () => {
-    const path = ctx.form?.workspaceRoot || ctx.kun?.workspaceRoot || ''
+    const path = expandHomePath(ctx.form?.workspaceRoot || ctx.kun?.workspaceRoot || '')
     if (!path) return
     setProjectPath(path)
     setLoading(true)
@@ -199,8 +199,11 @@ export function WorktreeSettingsSection({ ctx }: { ctx: Record<string, any> }): 
               </div>
               <div className="rounded-xl border border-ds-border-muted bg-ds-main/40 px-3 py-2">
                 <div className="text-ds-faint">{t('worktreePoolDir')}</div>
-                <div className="mt-0.5 truncate font-mono text-[11px] text-ds-muted" title={poolStatus?.poolDir}>
-                  {poolStatus?.poolDir ?? '—'}
+                <div
+                  className="mt-0.5 truncate font-mono text-[11px] text-ds-muted"
+                  title={poolStatus?.poolDir ? compactHomePath(poolStatus.poolDir) : undefined}
+                >
+                  {poolStatus?.poolDir ? compactHomePath(poolStatus.poolDir) : '—'}
                 </div>
               </div>
               <div className="flex items-end justify-end">
@@ -263,8 +266,11 @@ export function WorktreeSettingsSection({ ctx }: { ctx: Record<string, any> }): 
                               </span>
                             )}
                           </div>
-                          <div className="mt-0.5 truncate text-[11px] text-ds-faint" title={wt?.path}>
-                            {wt ? wt.path : t('worktreeNotCreated')}
+                          <div
+                            className="mt-0.5 truncate text-[11px] text-ds-faint"
+                            title={wt?.path ? compactHomePath(wt.path) : undefined}
+                          >
+                            {wt ? compactHomePath(wt.path) : t('worktreeNotCreated')}
                             {wt && wt.changesCount > 0 ? (
                               <span className="ml-2 text-amber-600 dark:text-amber-400">
                                 · {wt.changesCount} {t('worktreeUncommitted')}
