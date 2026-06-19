@@ -1,12 +1,13 @@
 import type { ReactElement } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Bot, Download, Pencil, Play, Plus, Power, Trash2, Upload, Workflow as WorkflowIcon, X } from 'lucide-react'
+import { Bot, Download, Pencil, Play, Plus, Power, Trash2, Upload, Workflow as WorkflowIcon, X, Zap } from 'lucide-react'
 import {
   mergeWorkflowSettings,
   normalizeWorkflowSettings,
   type AppSettingsV1,
   type WorkflowCustomModuleV1,
+  type WorkflowHookTriggerV1,
   type WorkflowInputFieldV1,
   type WorkflowNodePresetV1,
   type WorkflowNodeRunResultV1,
@@ -19,6 +20,7 @@ import { confirmDialog } from '../../lib/confirm-dialog'
 import { SidebarTitlebarToggleButton } from '../sidebar/SidebarPrimitives'
 import { parseWorkflowDsl, serializeWorkflowDsl } from '@shared/workflow-dsl'
 import { WorkflowEditorView } from './WorkflowEditorView'
+import { WorkflowHookTriggers } from './WorkflowHookTriggers'
 import { createWorkflow } from './workflow-types'
 
 type Props = {
@@ -157,6 +159,18 @@ export function WorkflowView({ leftSidebarCollapsed, onToggleLeftSidebar }: Prop
       void refreshStatus()
     },
     [refreshStatus, settings]
+  )
+
+  const [showHooks, setShowHooks] = useState(false)
+  const persistHookTriggers = useCallback(
+    async (next: WorkflowHookTriggerV1[]): Promise<void> => {
+      if (!settings) return
+      const nextWorkflow = mergeWorkflowSettings(settings.workflow, { hookTriggers: next })
+      setSettings({ ...settings, workflow: nextWorkflow })
+      const saved = await rendererRuntimeClient.setSettings({ workflow: nextWorkflow })
+      setSettings(saved)
+    },
+    [settings]
   )
 
   const handleCreate = useCallback(async (): Promise<void> => {
@@ -395,6 +409,14 @@ export function WorkflowView({ leftSidebarCollapsed, onToggleLeftSidebar }: Prop
               />
               <button
                 type="button"
+                onClick={() => setShowHooks(true)}
+                className="inline-flex items-center gap-2 rounded-xl border border-ds-border bg-ds-card px-3.5 py-2 text-[13px] font-medium text-ds-muted transition hover:bg-ds-hover hover:text-ds-ink"
+              >
+                <Zap className="h-4 w-4" strokeWidth={1.8} />
+                {t('workflowHooks')}
+              </button>
+              <button
+                type="button"
                 onClick={() => importInputRef.current?.click()}
                 className="inline-flex items-center gap-2 rounded-xl border border-ds-border bg-ds-card px-3.5 py-2 text-[13px] font-medium text-ds-muted transition hover:bg-ds-hover hover:text-ds-ink"
               >
@@ -540,6 +562,15 @@ export function WorkflowView({ leftSidebarCollapsed, onToggleLeftSidebar }: Prop
             setRunInputTarget(null)
             void handleRun(id, input)
           }}
+        />
+      ) : null}
+
+      {showHooks && settings ? (
+        <WorkflowHookTriggers
+          triggers={settings.workflow.hookTriggers}
+          workflows={workflows}
+          onChange={(next) => void persistHookTriggers(next)}
+          onClose={() => setShowHooks(false)}
         />
       ) : null}
     </div>
