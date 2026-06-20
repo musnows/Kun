@@ -453,7 +453,6 @@
   "speechToTextLocalModelFileSize": "File: {{size}}",
   "speechToTextLocalModelMemory": "Memory: about {{memory}}",
   "speechToTextLocalModelCpu": "CPU: {{threads}} threads recommended",
-  "speechToTextLocalModelVram": "VRAM: about {{vram}}",
   "speechToTextLocalModelQuality": "Quality: {{quality}}",
   "speechToTextLocalQuality_basic": "Basic",
   "speechToTextLocalQuality_balanced": "Balanced",

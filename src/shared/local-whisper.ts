@@ -46,9 +46,8 @@ export const LOCAL_WHISPER_MODELS = [
     source: 'ggerganov/whisper.cpp',
     resourceTier: 'low',
     resourceEstimate: {
-      memory: '0.4-0.8 GB',
-      cpuThreads: '2-4',
-      vram: '0.5-1 GB'
+      memory: '100-300 MB',
+      cpuThreads: '1-2'
     },
     qualityTier: 'basic',
     recommended: false
@@ -78,9 +77,8 @@ export const LOCAL_WHISPER_MODELS = [
     source: 'ggerganov/whisper.cpp',
     resourceTier: 'medium',
     resourceEstimate: {
-      memory: '1-2 GB',
-      cpuThreads: '4-6',
-      vram: '1.5-2.5 GB'
+      memory: '300-600 MB',
+      cpuThreads: '2-4'
     },
     qualityTier: 'balanced',
     recommended: true
@@ -110,9 +108,8 @@ export const LOCAL_WHISPER_MODELS = [
     source: 'ggerganov/whisper.cpp',
     resourceTier: 'high',
     resourceEstimate: {
-      memory: '3-5 GB',
-      cpuThreads: '6-8',
-      vram: '4-6 GB'
+      memory: '800-1200 MB',
+      cpuThreads: '4-8'
     },
     qualityTier: 'strong',
     recommended: false
@@ -137,7 +134,6 @@ export type LocalWhisperModelStatus = {
   resourceEstimate: {
     memory: string
     cpuThreads: string
-    vram: string
   }
   qualityTier: LocalWhisperQualityTier
   recommended?: boolean

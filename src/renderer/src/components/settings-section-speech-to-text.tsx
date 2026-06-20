@@ -173,6 +173,7 @@ export function SpeechToTextSettingsSection({ ctx }: { ctx: Record<string, any> 
   const [testState, setTestState] = useState<'idle' | 'busy' | InlineNotice>('idle')
   const [localWhisperStatuses, setLocalWhisperStatuses] = useState<Partial<Record<LocalWhisperModelId, LocalWhisperModelStatus>>>({})
   const [localWhisperBusy, setLocalWhisperBusy] = useState<'idle' | 'download' | 'cancel' | 'delete'>('idle')
+  const [localWhisperNotice, setLocalWhisperNotice] = useState<InlineNotice | null>(null)
   const [localWhisperSourceStatuses, setLocalWhisperSourceStatuses] = useState<LocalWhisperDownloadSourceStatus[] | null>(null)
   const [localWhisperSourceCheckBusy, setLocalWhisperSourceCheckBusy] = useState(false)
   const localWhisperStatus = localWhisperStatuses[selectedLocalWhisperModelId] ?? null
@@ -264,6 +265,7 @@ export function SpeechToTextSettingsSection({ ctx }: { ctx: Record<string, any> 
 
   const downloadLocalWhisper = async (): Promise<void> => {
     if (typeof window.kunGui?.downloadLocalWhisperModel !== 'function') return
+    setLocalWhisperNotice(null)
     setLocalWhisperBusy('download')
     try {
       const result = await window.kunGui.downloadLocalWhisperModel({
@@ -272,7 +274,7 @@ export function SpeechToTextSettingsSection({ ctx }: { ctx: Record<string, any> 
       })
       if (result.status) setLocalWhisperModelStatus(result.status)
       if (!result.ok) {
-        setTestState({ tone: 'error', message: t('speechToTextLocalDownloadFailed', { message: result.message }) })
+        setLocalWhisperNotice({ tone: 'error', message: t('speechToTextLocalDownloadFailed', { message: result.message }) })
       }
     } finally {
       setLocalWhisperBusy('idle')
@@ -281,12 +283,13 @@ export function SpeechToTextSettingsSection({ ctx }: { ctx: Record<string, any> 
 
   const cancelLocalWhisper = async (): Promise<void> => {
     if (typeof window.kunGui?.cancelLocalWhisperModel !== 'function') return
+    setLocalWhisperNotice(null)
     setLocalWhisperBusy('cancel')
     try {
       const result = await window.kunGui.cancelLocalWhisperModel(selectedLocalWhisperModelId)
       if (result.status) setLocalWhisperModelStatus(result.status)
       if (!result.ok) {
-        setTestState({ tone: 'error', message: t('speechToTextLocalCancelFailed', { message: result.message }) })
+        setLocalWhisperNotice({ tone: 'error', message: t('speechToTextLocalCancelFailed', { message: result.message }) })
       }
     } finally {
       setLocalWhisperBusy('idle')
@@ -296,12 +299,13 @@ export function SpeechToTextSettingsSection({ ctx }: { ctx: Record<string, any> 
   const deleteLocalWhisper = async (): Promise<void> => {
     if (typeof window.kunGui?.deleteLocalWhisperModel !== 'function') return
     if (!window.confirm(t('speechToTextLocalDeleteConfirm', { model: selectedLocalWhisperModel.shortName }))) return
+    setLocalWhisperNotice(null)
     setLocalWhisperBusy('delete')
     try {
       const result = await window.kunGui.deleteLocalWhisperModel(selectedLocalWhisperModelId)
       if (result.status) setLocalWhisperModelStatus(result.status)
       if (!result.ok) {
-        setTestState({ tone: 'error', message: t('speechToTextLocalDeleteFailed', { message: result.message }) })
+        setLocalWhisperNotice({ tone: 'error', message: t('speechToTextLocalDeleteFailed', { message: result.message }) })
       }
     } finally {
       setLocalWhisperBusy('idle')
@@ -541,6 +545,7 @@ export function SpeechToTextSettingsSection({ ctx }: { ctx: Record<string, any> 
                               void refreshLocalWhisperStatus(model.id).catch(() => undefined)
                               return
                             }
+                            setLocalWhisperNotice(null)
                             updateSpeechToText({ model: model.id })
                           }}
                           className={[
@@ -565,7 +570,7 @@ export function SpeechToTextSettingsSection({ ctx }: { ctx: Record<string, any> 
                               {localWhisperModelStateLabel(t, modelState)}
                             </span>
                             {model.recommended ? (
-                              <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-300">
+                              <span className="rounded-full bg-orange-500/15 px-2 py-0.5 text-[11px] font-medium text-orange-700 dark:text-orange-300">
                                 {t('speechToTextLocalRecommended')}
                               </span>
                             ) : null}
@@ -574,7 +579,6 @@ export function SpeechToTextSettingsSection({ ctx }: { ctx: Record<string, any> 
                             <span>{t('speechToTextLocalModelFileSize', { size: formatBytes(model.sizeBytes) })}</span>
                             <span>{t('speechToTextLocalModelMemory', { memory: model.resourceEstimate.memory })}</span>
                             <span>{t('speechToTextLocalModelCpu', { threads: model.resourceEstimate.cpuThreads })}</span>
-                            <span>{t('speechToTextLocalModelVram', { vram: model.resourceEstimate.vram })}</span>
                             <span>{t('speechToTextLocalModelQuality', {
                               quality: localWhisperQualityLabel(t, model.qualityTier)
                             })}</span>
@@ -608,6 +612,7 @@ export function SpeechToTextSettingsSection({ ctx }: { ctx: Record<string, any> 
                             size: formatBytes(selectedLocalWhisperModel.sizeBytes)
                           })}
                   </div>
+                  {localWhisperNotice ? <InlineNoticeView notice={localWhisperNotice} /> : null}
                   <div className="flex flex-wrap gap-2">
                     <button
                       type="button"

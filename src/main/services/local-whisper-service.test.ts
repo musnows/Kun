@@ -1,3 +1,4 @@
+import { existsSync, statSync } from 'node:fs'
 import { mkdir, mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -38,6 +39,22 @@ describe('local-whisper-service helpers', () => {
     expect(_internals.localWhisperDownloadUrl(model, 'huggingface')).toBe(model.downloadUrl)
     expect(_internals.localWhisperDownloadUrl(model, 'hf-mirror')).toContain('https://hf-mirror.com/')
     expect(_internals.localWhisperDownloadUrl(model, 'hf-sufy')).toContain('https://hf-cdn.sufy.com/')
+  })
+
+  it('bundles Whisper runners for supported desktop platforms', () => {
+    const runners = [
+      ['darwin-arm64', 'whisper-cli'],
+      ['win32-x64', 'whisper-cli.exe'],
+      ['linux-x64', 'whisper-cli']
+    ] as const
+
+    for (const [platformDir, executable] of runners) {
+      const runnerDir = join(process.cwd(), 'resources', 'whisper', platformDir)
+      const runnerPath = join(runnerDir, executable)
+      expect(existsSync(join(runnerDir, 'runner.json'))).toBe(true)
+      expect(existsSync(runnerPath)).toBe(true)
+      expect(statSync(runnerPath).size).toBeGreaterThan(64 * 1024)
+    }
   })
 
   it('computes sha256 checksums for downloaded files', async () => {

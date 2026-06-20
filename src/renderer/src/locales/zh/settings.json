@@ -453,7 +453,6 @@
   "speechToTextLocalModelFileSize": "文件：{{size}}",
   "speechToTextLocalModelMemory": "内存：约 {{memory}}",
   "speechToTextLocalModelCpu": "CPU：建议 {{threads}} 线程",
-  "speechToTextLocalModelVram": "显存：约 {{vram}}",
   "speechToTextLocalModelQuality": "质量：{{quality}}",
   "speechToTextLocalQuality_basic": "基础",
   "speechToTextLocalQuality_balanced": "均衡",

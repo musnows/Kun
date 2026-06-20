@@ -128,6 +128,7 @@ function buildRunner(platform, arch) {
   ]
   const osxArch = cmakeArchValue(platform, arch)
   if (osxArch) configureArgs.push(`-DCMAKE_OSX_ARCHITECTURES=${osxArch}`)
+  if (platform === 'linux') configureArgs.push('-DGGML_OPENMP=OFF')
 
   console.log(`[prepare-whisper-runner] Configuring whisper.cpp for ${platform}-${arch}`)
   execFileSync('cmake', configureArgs, { cwd: ROOT, stdio: 'inherit' })
