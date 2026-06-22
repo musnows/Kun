@@ -1413,7 +1413,7 @@
   "guiUpdateTopbarDownloading": "更新中 {{percent}}%",
   "guiUpdateTopbarInstalling": "安装中…",
   "guiUpdateTopbarManual": "下载 {{version}}",
-  "turnCompleteNotificationTitle": "DeepSeek 回复已完成",
+  "turnCompleteNotificationTitle": "Kun 已完成回复",
   "turnCompleteNotificationBody": "「{{title}}」已完成回复。",
   "busyTimeout": "已等待 {{minutes}} 分钟仍未收到运行时完成事件。深度思考任务可能需要更长时间,如果仍然卡住可中断后重试。",
   "runtimeActionNeedsConnection": "请先连接运行时后再使用 AI。",

@@ -1413,7 +1413,7 @@
   "guiUpdateTopbarDownloading": "Updating {{percent}}%",
   "guiUpdateTopbarInstalling": "Installing…",
   "guiUpdateTopbarManual": "Download {{version}}",
-  "turnCompleteNotificationTitle": "DeepSeek reply complete",
+  "turnCompleteNotificationTitle": "Kun reply complete",
   "turnCompleteNotificationBody": "“{{title}}” is ready.",
   "busyTimeout": "No response from the runtime after waiting {{minutes}} minutes. Deep-thinking tasks may take longer. If it stays stuck, you can cancel and retry.",
   "runtimeActionNeedsConnection": "Connect to the runtime before using AI actions.",
