@@ -45,7 +45,7 @@ type WorkbenchPlanControllerOptions = {
   route: ChatState['route']
   sendMessage: ChatState['sendMessage']
   setError: ChatState['setError']
-  setMode: Dispatch<SetStateAction<'plan' | 'agent'>>
+  setComposerMode: ChatState['setComposerMode']
   setRightPanelMode: Dispatch<SetStateAction<RightPanelMode>>
   setRightSidebarWidth: Dispatch<SetStateAction<number>>
   t: (key: string) => string
@@ -95,6 +95,21 @@ export function buildGuiPlanTurnOverrides(
   return undefined
 }
 
+/**
+ * Decide whether to auto-open the plan preview when a plan block loads.
+ * Open only for a plan we just generated in *this* thread's plan turn: the
+ * in-flight marker carries the thread id captured at send time, so honoring
+ * it only while that thread is still active stops a plan turn started in
+ * thread A from popping open thread B's old plan after a mid-turn switch.
+ * A null marker (thread reload, or no plan turn in flight) never opens.
+ */
+export function shouldAutoOpenPlanPanel(
+  inFlightThreadId: string | null,
+  activeThreadId: string | null
+): boolean {
+  return inFlightThreadId !== null && inFlightThreadId === activeThreadId
+}
+
 export function buildDraftGuiPlanTurnOverrides(input: {
   request: string
   workspaceRoot: string
@@ -129,7 +144,7 @@ export function useWorkbenchPlanController({
   route,
   sendMessage,
   setError,
-  setMode,
+  setComposerMode,
   setRightPanelMode,
   setRightSidebarWidth,
   t,
@@ -138,7 +153,7 @@ export function useWorkbenchPlanController({
 }: WorkbenchPlanControllerOptions) {
   const activeGuiPlan = useGuiPlanStore((s) => s.activePlan)
   const latestPlanBlock = useMemo(() => latestSuccessfulPlanBlock(blocks), [blocks])
-  const planTurnInFlightRef = useRef(false)
+  const planTurnInFlightThreadIdRef = useRef<string | null>(null)
   const lastLoadedPlanBlockIdRef = useRef<string | null>(null)
 
   const openGuiPlanPanel = useCallback((): void => {
@@ -209,7 +224,6 @@ export function useWorkbenchPlanController({
       setError(t('workspaceRequiredToCreateThread'))
       return false
     }
-    planTurnInFlightRef.current = true
     const { workspaceRoot: _workspaceRoot, ...messageOverrides } = overrides ?? {}
     // Default to draft: an explicit guiPlan override (e.g. from SDD upgrade)
     // takes priority; otherwise we always start a fresh plan. Previously the
@@ -221,11 +235,25 @@ export function useWorkbenchPlanController({
       activeThreadId: currentChatState.activeThreadId,
       existingRelativePaths: await readExistingPlanRelativePaths(targetWorkspaceRoot)
     }).guiPlan
+    // Tag the in-flight plan turn with the thread it belongs to BEFORE awaiting
+    // sendMessage. A fast response can land a create_plan block in `blocks`
+    // before this Promise resolves; if we tagged only after the await, the
+    // auto-open effect would see a null marker in that window and never open.
+    // For a brand-new chat the id is null here and gets re-tagged below after
+    // sendMessage creates the thread. A mid-await thread switch deliberately
+    // leaves the original tag intact so the auto-open effect rejects it as a
+    // cross-thread leak (see shouldAutoOpenPlanPanel).
+    const initialActiveThreadId = currentChatState.activeThreadId
+    planTurnInFlightThreadIdRef.current = initialActiveThreadId
     const sent = await sendMessage(text, 'plan', {
       ...messageOverrides,
       guiPlan
     })
-    if (!sent) planTurnInFlightRef.current = false
+    if (!sent) {
+      planTurnInFlightThreadIdRef.current = null
+    } else if (initialActiveThreadId === null) {
+      planTurnInFlightThreadIdRef.current = useChatStore.getState().activeThreadId ?? null
+    }
     return sent
   }
 
@@ -263,7 +291,7 @@ export function useWorkbenchPlanController({
     }
     const saved = await savePlanContentToDisk(plan, snapshot.content)
     if (!saved) return
-    setMode('agent')
+    setComposerMode('agent')
     const prompt = buildPlanBuildPrompt(plan.relativePath)
     const sent = await sendMessage(prompt, 'agent', {
       displayText: `${t('planBuild')}: ${plan.relativePath}`
@@ -274,7 +302,7 @@ export function useWorkbenchPlanController({
   }
 
   const handleGuiPlanCommand = async (request?: string): Promise<void> => {
-    setMode('plan')
+    setComposerMode('plan')
     if (request?.trim()) {
       await sendPlanTurn(request.trim())
     }
@@ -291,7 +319,7 @@ export function useWorkbenchPlanController({
       setError(t('composerQueuePlaceholder'))
       return
     }
-    setMode('agent')
+    setComposerMode('agent')
     await sendMessage(
       buildSddVerifyPrompt({
         workspaceRoot: plan.workspaceRoot,
@@ -338,7 +366,7 @@ export function useWorkbenchPlanController({
       '```'
     ].join('\n')
 
-    setMode('plan')
+    setComposerMode('plan')
     const sent = await sendPlanTurn(
       buildRefinePlanPrompt({
         feedback,
@@ -379,18 +407,23 @@ export function useWorkbenchPlanController({
 
   useEffect(() => {
     if (route !== 'chat' && mode === 'plan') {
-      setMode('agent')
+      setComposerMode('agent')
     }
-  }, [mode, route, setMode])
+  }, [mode, route, setComposerMode])
 
   useEffect(() => {
     if (latestPlanBlock && lastLoadedPlanBlockIdRef.current === latestPlanBlock.blockId) return
     if (!latestPlanBlock) return
     lastLoadedPlanBlockIdRef.current = latestPlanBlock.blockId
-    // Keep generated plans inline until the user explicitly opens the preview.
-    // This avoids squeezing the chat on portrait/narrow screens after a plan turn.
-    const shouldOpen = false
-    planTurnInFlightRef.current = false
+    // Auto-open the preview only for a plan we just generated in this thread's
+    // plan turn. Loading an old thread that merely contains a plan — or a plan
+    // turn started in a different thread we've since switched away from — must
+    // not pop the panel open and squeeze the chat on portrait/narrow screens.
+    const shouldOpen = shouldAutoOpenPlanPanel(
+      planTurnInFlightThreadIdRef.current,
+      useChatStore.getState().activeThreadId
+    )
+    planTurnInFlightThreadIdRef.current = null
     void loadPlanFromMeta(latestPlanBlock.meta, shouldOpen).catch((error) => {
       useGuiPlanStore.getState().setOperationStatus(
         'error',
@@ -400,7 +433,7 @@ export function useWorkbenchPlanController({
   }, [latestPlanBlock, loadPlanFromMeta])
 
   useEffect(() => {
-    if (!busy) planTurnInFlightRef.current = false
+    if (!busy) planTurnInFlightThreadIdRef.current = null
   }, [busy])
 
   return {
