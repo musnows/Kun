@@ -35,20 +35,31 @@ function settingsWithActiveXiaomiWithoutKey(): AppSettingsV1 {
 describe('initialSetupSelection', () => {
   it('preselects the active provider card when it is a known preset', () => {
     const selection = initialSetupSelection(settingsWithActiveXiaomiWithoutKey())
-    expect(selection).toEqual({ presetId: 'xiaomi', mode: 'api' })
+    expect(selection).toEqual({ presetId: 'xiaomi', mode: 'api', permissionMode: 'bypass' })
   })
 
   it('preselects the token plan mode for token plan profiles', () => {
     const current = settings({ agents: { kun: { providerId: 'minimax-token-plan' } } })
-    expect(initialSetupSelection(current)).toEqual({ presetId: 'minimax', mode: 'token-plan' })
+    expect(initialSetupSelection(current)).toEqual({
+      presetId: 'minimax',
+      mode: 'token-plan',
+      permissionMode: 'bypass'
+    })
   })
 
   it('falls back to deepseek for unknown or empty active providers', () => {
-    expect(initialSetupSelection(settings())).toEqual({ presetId: 'deepseek', mode: 'api' })
+    expect(initialSetupSelection(settings())).toEqual({ presetId: 'deepseek', mode: 'api', permissionMode: 'bypass' })
     expect(initialSetupSelection(settings({ agents: { kun: { providerId: 'custom-provider-2' } } })))
-      .toEqual({ presetId: 'deepseek', mode: 'api' })
+      .toEqual({ presetId: 'deepseek', mode: 'api', permissionMode: 'bypass' })
     expect(initialSetupSelection(settings({ agents: { kun: { providerId: 'litellm' } } })))
-      .toEqual({ presetId: 'deepseek', mode: 'api' })
+      .toEqual({ presetId: 'deepseek', mode: 'api', permissionMode: 'bypass' })
+  })
+
+  it('preselects the saved permission mode', () => {
+    const current = settings({
+      agents: { kun: { approvalPolicy: 'on-request', sandboxMode: 'workspace-write' } }
+    })
+    expect(initialSetupSelection(current).permissionMode).toBe('workspace-write')
   })
 })
 
@@ -83,7 +94,7 @@ describe('initialSetupDrafts', () => {
     for (const id of excludedIds) {
       expect(drafts[id]).toBeUndefined()
       expect(initialSetupSelection(settings({ agents: { kun: { providerId: id } } })))
-        .toEqual({ presetId: 'deepseek', mode: 'api' })
+        .toEqual({ presetId: 'deepseek', mode: 'api', permissionMode: 'bypass' })
     }
   })
 })
@@ -96,6 +107,20 @@ describe('buildInitialSetupSettings', () => {
 
     expect(getKunRuntimeSettings(next).providerId).toBe('deepseek')
     expect(getActiveAgentApiKey(next)).toBe('sk-deepseek-key')
+  })
+
+  it('stores the selected default Agent permission mode', () => {
+    const current = settingsWithActiveXiaomiWithoutKey()
+    const drafts = initialSetupDrafts(current)
+    const next = buildInitialSetupSettings(current, drafts, {
+      presetId: 'deepseek',
+      mode: 'api',
+      permissionMode: 'workspace-write'
+    })
+
+    const runtime = getKunRuntimeSettings(next)
+    expect(runtime.approvalPolicy).toBe('on-request')
+    expect(runtime.sandboxMode).toBe('workspace-write')
   })
 
   it('syncs the deepseek draft into the provider profile used by settings', () => {
