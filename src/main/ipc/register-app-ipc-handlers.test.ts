@@ -43,6 +43,7 @@ function settings(): AppSettingsV1 {
     },
     workspaceRoot: '/tmp/workspace',
     log: { enabled: false, retentionDays: 7 },
+    checkpointCleanup: { intervalDays: 3 },
     notifications: { turnComplete: true },
     appBehavior: { openAtLogin: false, startMinimized: false, closeToTray: false },
     keyboardShortcuts: defaultKeyboardShortcuts(),
@@ -122,6 +123,35 @@ describe('registerAppIpcHandlers', () => {
     const handler = handlers.get('settings:set')
     await expect(handler?.({}, payload)).resolves.toEqual(settings())
     expect(applySettingsPatch).toHaveBeenCalledWith(payload)
+  })
+
+  it('accepts checkpoint cleanup settings patches', async () => {
+    const { registerAppIpcHandlers } = await import('./register-app-ipc-handlers')
+    const applySettingsPatch = vi.fn(async () => settings())
+
+    registerAppIpcHandlers(registerOptions({ applySettingsPatch }))
+
+    const payload = {
+      checkpointCleanup: {
+        intervalDays: 5
+      }
+    }
+    const handler = handlers.get('settings:set')
+    await expect(handler?.({}, payload)).resolves.toEqual(settings())
+    expect(applySettingsPatch).toHaveBeenCalledWith(payload)
+  })
+
+  it('rejects unsupported checkpoint cleanup intervals', async () => {
+    const { registerAppIpcHandlers } = await import('./register-app-ipc-handlers')
+    const applySettingsPatch = vi.fn(async () => settings())
+
+    registerAppIpcHandlers(registerOptions({ applySettingsPatch }))
+
+    const handler = handlers.get('settings:set')
+    await expect(
+      handler?.({}, { checkpointCleanup: { intervalDays: 4 } })
+    ).rejects.toThrow(/Invalid payload for settings:set/)
+    expect(applySettingsPatch).not.toHaveBeenCalled()
   })
 
   it('accepts telegram phone connection settings patches', async () => {

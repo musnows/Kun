@@ -108,6 +108,7 @@ function settings(): AppSettingsV1 {
     },
     workspaceRoot: '~/.kun/default_workspace',
     log: { enabled: true, retentionDays: 2 },
+    checkpointCleanup: { intervalDays: 3 },
     notifications: { turnComplete: true },
     appBehavior: { openAtLogin: false, startMinimized: false, closeToTray: false },
     keyboardShortcuts: defaultKeyboardShortcuts(),

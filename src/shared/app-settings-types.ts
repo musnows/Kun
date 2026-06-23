@@ -80,6 +80,9 @@ export const DEFAULT_WRITE_INLINE_LONG_COMPLETION_MIN_ACCEPT_SCORE = 0.36
 export const DEFAULT_WRITE_INLINE_LONG_COMPLETION_MAX_TOKENS = 256
 export const DEFAULT_KUN_PORT = 18899
 export const DEFAULT_LOG_RETENTION_DAYS = 3
+export const CHECKPOINT_CLEANUP_INTERVAL_DAYS = [1, 2, 3, 5, 10] as const
+export type CheckpointCleanupIntervalDays = (typeof CHECKPOINT_CLEANUP_INTERVAL_DAYS)[number]
+export const DEFAULT_CHECKPOINT_CLEANUP_INTERVAL_DAYS: CheckpointCleanupIntervalDays = 3
 export const DEFAULT_CURSOR_SPOTLIGHT_COLOR = '#85c1f1'
 export const DEFAULT_WEIXIN_BRIDGE_RPC_URL = 'http://127.0.0.1:18790/api/v1/admin/rpc'
 export const DEFAULT_MODEL_PROVIDER_ID = 'deepseek'
@@ -501,6 +504,10 @@ export type KunSettingsEnvelopePatchV1 = {
 export type LogConfigV1 = {
   enabled: boolean
   retentionDays: number
+}
+
+export type CheckpointCleanupConfigV1 = {
+  intervalDays: CheckpointCleanupIntervalDays
 }
 
 export type NotificationConfigV1 = {
@@ -1646,6 +1653,7 @@ export type AppSettingsV1 = {
   agents: KunSettingsEnvelopeV1
   workspaceRoot: string
   log: LogConfigV1
+  checkpointCleanup: CheckpointCleanupConfigV1
   notifications: NotificationConfigV1
   appBehavior: AppBehaviorConfigV1
   keyboardShortcuts: KeyboardShortcutsConfigV1
@@ -1661,11 +1669,12 @@ export type AppSettingsV1 = {
 }
 
 export type AppSettingsPatch = Partial<
-  Omit<AppSettingsV1, 'provider' | 'agents' | 'log' | 'notifications' | 'appBehavior' | 'keyboardShortcuts' | 'write' | 'claw' | 'schedule' | 'workflow' | 'guiUpdate' | 'terminal'>
+  Omit<AppSettingsV1, 'provider' | 'agents' | 'log' | 'checkpointCleanup' | 'notifications' | 'appBehavior' | 'keyboardShortcuts' | 'write' | 'claw' | 'schedule' | 'workflow' | 'guiUpdate' | 'terminal'>
 > & {
   provider?: ModelProviderSettingsPatchV1
   agents?: KunSettingsEnvelopePatchV1
   log?: Partial<LogConfigV1>
+  checkpointCleanup?: Partial<CheckpointCleanupConfigV1>
   notifications?: Partial<NotificationConfigV1>
   appBehavior?: Partial<AppBehaviorConfigV1>
   keyboardShortcuts?: Partial<KeyboardShortcutsConfigV1>

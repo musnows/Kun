@@ -31,6 +31,7 @@ import {
   MIN_KUN_LOCAL_PORT,
   normalizeAppSettings,
   normalizeAppBehaviorSettings,
+  normalizeCheckpointCleanupSettings,
   normalizeKeyboardShortcuts,
   resolveKunRuntimeSettings,
   resolveTerminalColorMode,
@@ -52,9 +53,10 @@ import {
   runtimeRequestViaHost
 } from './runtime/kun-adapter'
 import { waitForRuntimeTurnsIdle } from './runtime/managed-runtime-idle'
-import { setKunUnexpectedExitHandler, type KunUnexpectedExitInfo } from './kun-process'
+import { resolveKunDataDir, setKunUnexpectedExitHandler, type KunUnexpectedExitInfo } from './kun-process'
 import { RestartBudget, type KunRuntimeStatus } from './kun-runtime-supervisor'
 import { configureLogger, logError, logWarn, pruneOnStartup } from './logger'
+import { cleanupUnusedGitCheckpointsIfDue } from './services/git-checkpoint-service'
 import { createClawRuntime, type ClawRuntime } from './claw-runtime'
 import { createScheduleRuntime, type ScheduleRuntime } from './schedule-runtime'
 import { createWorkflowRuntime, type WorkflowRuntime } from './workflow-runtime'
@@ -216,6 +218,7 @@ let trayMenu: Menu | null = null
 let trayMenuOpenPromise: Promise<void> | null = null
 let isQuitting = false
 let closeWindowPromptOpen = false
+let checkpointCleanupTimer: ReturnType<typeof setInterval> | null = null
 
 type GuiUpdaterModule = typeof import('./gui-updater')
 
@@ -225,6 +228,48 @@ let guiUpdaterInitialized = false
 function emitClawChannelActivity(payload: { channelId: string; threadId: string }): void {
   if (!mainWindow || mainWindow.isDestroyed()) return
   mainWindow.webContents.send('claw:channel-activity', payload)
+}
+
+function stopCheckpointCleanupTimer(): void {
+  if (checkpointCleanupTimer) {
+    clearInterval(checkpointCleanupTimer)
+    checkpointCleanupTimer = null
+  }
+}
+
+async function runCheckpointCleanupIfDue(settings: AppSettingsV1): Promise<void> {
+  const runtime = resolveKunRuntimeSettings(settings)
+  const dataDir = resolveKunDataDir(runtime)
+  const intervalDays = settings.checkpointCleanup.intervalDays
+  try {
+    const cleanup = await cleanupUnusedGitCheckpointsIfDue({ dataDir, intervalDays })
+    if (!cleanup.due) return
+    const { result } = cleanup
+    console.info(
+      `[kun-gui] git checkpoint cleanup scanned=${result.scanned} deleted=${result.deleted} kept=${result.kept} failed=${result.failed}`
+    )
+    if (result.failed > 0) {
+      logWarn('git-checkpoint-cleanup', 'failed to delete some unused checkpoints', {
+        failed: result.failed,
+        failedIds: result.failedIds
+      })
+    }
+  } catch (error) {
+    logWarn('git-checkpoint-cleanup', 'failed to clean unused checkpoints', {
+      message: error instanceof Error ? error.message : String(error)
+    })
+  }
+}
+
+function syncCheckpointCleanupTimer(settings: AppSettingsV1): void {
+  stopCheckpointCleanupTimer()
+  const intervalMs = settings.checkpointCleanup.intervalDays * 24 * 60 * 60 * 1_000
+  const run = (): void => {
+    void runCheckpointCleanupIfDue(settings)
+  }
+  run()
+  checkpointCleanupTimer = setInterval(run, intervalMs)
+  checkpointCleanupTimer.unref?.()
 }
 
 async function stopManagedRuntimesForQuit(): Promise<void> {
@@ -1431,6 +1476,7 @@ app.whenReady().then(async () => {
     retentionDays: initial.log.retentionDays
   })
   traceStartup('logger configured')
+  syncCheckpointCleanupTimer(initial)
   scheduleRuntime = createScheduleRuntime({ store, runtimeRequest, logError, powerSaveBlocker })
   scheduleRuntime.sync(initial)
   workflowRuntime = createWorkflowRuntime({ store, runtimeRequest, logError, powerSaveBlocker })
@@ -1480,6 +1526,10 @@ app.whenReady().then(async () => {
       ...restPatch,
       provider: mergeModelProviderSettings(prev.provider, providerPatch),
       log: { ...prev.log, ...(partial.log ?? {}) },
+      checkpointCleanup: normalizeCheckpointCleanupSettings({
+        ...prev.checkpointCleanup,
+        ...(partial.checkpointCleanup ?? {})
+      }),
       notifications: { ...prev.notifications, ...(partial.notifications ?? {}) },
       appBehavior: mergeAppBehaviorSettings(prev.appBehavior, partial.appBehavior),
       keyboardShortcuts: normalizeKeyboardShortcuts({
@@ -1522,6 +1572,7 @@ app.whenReady().then(async () => {
     syncWeixinBridgeRuntime(saved)
     syncLoginItemSettings(saved)
     syncTray(saved)
+    syncCheckpointCleanupTimer(saved)
     return saved
   }
 
@@ -1630,6 +1681,7 @@ app.on('window-all-closed', () => {
 app.on('before-quit', (event) => {
   isQuitting = true
   stopRuntimeWatchdog()
+  stopCheckpointCleanupTimer()
   if (managedRuntimesStoppedForQuit) return
   event.preventDefault()
   void stopManagedRuntimesForQuit()

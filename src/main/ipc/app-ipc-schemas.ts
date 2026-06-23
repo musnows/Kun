@@ -462,6 +462,16 @@ const logPatchSchema = z.object({
   retentionDays: z.number().int().min(1).max(365).optional()
 }).strict()
 
+const checkpointCleanupPatchSchema = z.object({
+  intervalDays: z.union([
+    z.literal(1),
+    z.literal(2),
+    z.literal(3),
+    z.literal(5),
+    z.literal(10)
+  ]).optional()
+}).strict()
+
 const notificationsPatchSchema = z.object({
   turnComplete: z.boolean().optional()
 }).strict()
@@ -1286,6 +1296,7 @@ const settingsPatchObjectSchema = z.object({
   }).strict().optional(),
   workspaceRoot: defaultPathSchema,
   log: logPatchSchema.optional(),
+  checkpointCleanup: checkpointCleanupPatchSchema.optional(),
   notifications: notificationsPatchSchema.optional(),
   appBehavior: appBehaviorPatchSchema.optional(),
   keyboardShortcuts: keyboardShortcutsPatchSchema.optional(),

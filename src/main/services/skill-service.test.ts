@@ -266,6 +266,7 @@ describe('skill-service', () => {
       agents: { kun: defaultKunRuntimeSettings() },
       workspaceRoot,
       log: { enabled: false, retentionDays: 7 },
+      checkpointCleanup: { intervalDays: 3 },
       notifications: { turnComplete: true },
       appBehavior: { openAtLogin: false, startMinimized: false, closeToTray: false },
       keyboardShortcuts: defaultKeyboardShortcuts(),

@@ -51,6 +51,7 @@ function settingsWithWorkflows(workflows: WorkflowV1[], modules: WorkflowCustomM
     agents: { kun: { ...defaultKunRuntimeSettings(), model: 'test-model', apiKey: 'test-key' } },
     workspaceRoot: '/tmp/workflow-workspace',
     log: { enabled: true, retentionDays: 7 },
+    checkpointCleanup: { intervalDays: 3 },
     notifications: { turnComplete: true },
     appBehavior: { openAtLogin: false, startMinimized: false, closeToTray: false },
     keyboardShortcuts: defaultKeyboardShortcuts(),
