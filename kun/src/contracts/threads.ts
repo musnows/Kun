@@ -102,6 +102,19 @@ export const ThreadSchema = z.object({
    * bridges pin a non-runtime provider per thread.
    */
   providerId: z.string().optional(),
+  /**
+   * Optional subagent profile id this thread is bound to. When set, the
+   * thread persona (model / providerId / systemPrompt below) is a snapshot
+   * of the agent at thread-create time so later agent edits don't drift
+   * historical conversations.
+   */
+  agentId: z.string().optional(),
+  /**
+   * Optional thread-level systemPrompt override. When non-empty, it
+   * replaces the runtime's base systemPrompt in every ModelRequest on this
+   * thread (primary-agent persona snapshot path).
+   */
+  systemPrompt: z.string().optional(),
   mode: ThreadMode,
   status: ThreadStatus,
   approvalPolicy: ApprovalPolicySchema.default(DEFAULT_APPROVAL_POLICY),
@@ -130,6 +143,8 @@ export const ThreadSummarySchema = ThreadSchema.pick({
   workspace: true,
   model: true,
   providerId: true,
+  agentId: true,
+  systemPrompt: true,
   mode: true,
   status: true,
   approvalPolicy: true,
@@ -162,6 +177,10 @@ export const CreateThreadRequest = z.object({
    * provider's HTTP client.
    */
   providerId: z.string().optional(),
+  /** Optional subagent profile id to bind this thread to. */
+  agentId: z.string().optional(),
+  /** Optional persona systemPrompt snapshot applied to every ModelRequest on this thread. */
+  systemPrompt: z.string().optional(),
   mode: ThreadMode.default('agent'),
   approvalPolicy: ApprovalPolicySchema.optional(),
   sandboxMode: SandboxModeSchema.optional(),

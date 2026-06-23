@@ -259,10 +259,27 @@ export function createThreadActions(
           return
         }
       }
+      // Primary-agent persona snapshot: bind this thread to the picked
+      // subagent profile and freeze its providerId / model / systemPrompt
+      // at create time so later agent edits don't drift the thread.
+      const pickedAgentId = options.agentId?.trim() || get().composerAgentId?.trim() || ''
+      const personaProfile = pickedAgentId
+        ? settings.agents?.kun?.subagents?.profiles?.find(
+            (profile) => profile.id === pickedAgentId &&
+              profile.enabled &&
+              (profile.mode === 'primary' || profile.mode === 'all')
+          )
+        : undefined
       const t = await p.createThread({
         workspace: workspaceRoot,
         title: getDefaultThreadTitle(),
-        mode: 'agent'
+        mode: 'agent',
+        ...(personaProfile ? {
+          agentId: personaProfile.id,
+          ...(personaProfile.providerId ? { providerId: personaProfile.providerId } : {}),
+          ...(personaProfile.model ? { model: personaProfile.model } : {}),
+          ...(personaProfile.systemPrompt ? { systemPrompt: personaProfile.systemPrompt } : {})
+        } : {})
       })
       // Register + activate optimistically before refreshing. A freshly created
       // Kun thread may not be listed until the first message is written.

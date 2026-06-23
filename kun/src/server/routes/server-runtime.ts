@@ -26,6 +26,8 @@ import type { AttachmentStore } from '../../attachments/attachment-store.js'
 import type { MemoryDiagnostics } from '../../contracts/memory.js'
 import type { MemoryStore } from '../../memory/memory-store.js'
 import type { ReviewTarget } from '../../contracts/review.js'
+import type { DelegationRuntime } from '../../delegation/delegation-runtime.js'
+import type { ModelClient } from '../../ports/model-client.js'
 
 export type RuntimeToolDiagnostics = {
   providers: ToolProviderPolicy[]
@@ -62,6 +64,18 @@ export type ServerRuntime = {
   toolHost?: ToolHost
   attachmentStore?: AttachmentStore
   memoryStore?: MemoryStore
+  /**
+   * Active delegation runtime exposed for diagnostics + agent profile
+   * listing. Optional so test scaffolds can omit it.
+   */
+  delegationRuntime?: DelegationRuntime
+  /**
+   * Default ModelClient + model id for one-shot completions outside the
+   * agent loop (e.g. AI-generated subagent profiles). Optional so test
+   * scaffolds can omit it.
+   */
+  modelClient?: ModelClient
+  defaultModel?: string
   runTurn(threadId: string, turnId: string): Promise<'completed' | 'failed' | 'aborted'> | void
   /**
    * Relaunch goal continuation turns for threads whose in-flight turn was

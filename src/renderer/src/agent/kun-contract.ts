@@ -23,6 +23,9 @@ export type CoreThreadSummaryJson = {
   approvalPolicy?: string
   sandboxMode?: string
   pinned?: boolean
+  providerId?: string
+  agentId?: string
+  systemPrompt?: string
   relation?: 'primary' | 'fork' | 'side'
   parentThreadId?: string
   forkedFromThreadId?: string

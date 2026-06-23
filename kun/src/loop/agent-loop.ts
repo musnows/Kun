@@ -1355,7 +1355,10 @@ export class AgentLoop {
       turnId,
       model,
       ...(thread?.providerId?.trim() ? { providerId: thread.providerId.trim() } : {}),
-      systemPrompt: this.opts.prefix.systemPrompt,
+      // Thread-level systemPrompt (primary-agent persona snapshot) replaces
+      // the runtime base when set. Empty/whitespace falls back to the
+      // immutable prefix so unbound threads keep the prompt-cache fingerprint.
+      systemPrompt: thread?.systemPrompt?.trim() || this.opts.prefix.systemPrompt,
       ...(planTurnActive ? { modeInstruction: PLAN_MODE_INSTRUCTION } : {}),
       ...(contextInstructions.length ? { contextInstructions } : {}),
       prefix: this.opts.prefix.fewShots,

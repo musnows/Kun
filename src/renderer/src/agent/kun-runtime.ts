@@ -156,6 +156,10 @@ export class KunRuntimeProvider implements AgentProvider {
     workspace?: string
     title?: string
     mode?: KunThreadMode
+    agentId?: string
+    providerId?: string
+    model?: string
+    systemPrompt?: string
   }): Promise<NormalizedThread> {
     const settings = await rendererRuntimeClient.getSettings()
     const runtime = getKunRuntimeSettings(settings)
@@ -165,10 +169,13 @@ export class KunRuntimeProvider implements AgentProvider {
       JSON.stringify({
         workspace: input.workspace || settings.workspaceRoot || '~',
         title: input.title,
-        model: runtime.model,
+        model: input.model?.trim() || runtime.model,
         mode: normalizeThreadMode(input.mode),
         approvalPolicy: runtime.approvalPolicy,
-        sandboxMode: runtime.sandboxMode
+        sandboxMode: runtime.sandboxMode,
+        ...(input.providerId?.trim() ? { providerId: input.providerId.trim() } : {}),
+        ...(input.agentId?.trim() ? { agentId: input.agentId.trim() } : {}),
+        ...(input.systemPrompt?.trim() ? { systemPrompt: input.systemPrompt.trim() } : {})
       })
     )
     if (!response.ok) {

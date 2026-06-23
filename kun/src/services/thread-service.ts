@@ -122,6 +122,8 @@ export class ThreadService {
       workspace: request.workspace,
       model: request.model,
       ...(request.providerId?.trim() ? { providerId: request.providerId.trim() } : {}),
+      ...(request.agentId?.trim() ? { agentId: request.agentId.trim() } : {}),
+      ...(request.systemPrompt?.trim() ? { systemPrompt: request.systemPrompt.trim() } : {}),
       mode: request.mode,
       approvalPolicy: request.approvalPolicy,
       sandboxMode: request.sandboxMode,

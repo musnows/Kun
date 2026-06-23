@@ -26,6 +26,8 @@ export function createThreadRecord(input: {
   workspace: string
   model: string
   providerId?: string
+  agentId?: string
+  systemPrompt?: string
   mode?: ThreadMode
   status?: ThreadStatus
   approvalPolicy?: ApprovalPolicy
@@ -51,6 +53,8 @@ export function createThreadRecord(input: {
     workspace: input.workspace,
     model: input.model,
     ...(input.providerId ? { providerId: input.providerId } : {}),
+    ...(input.agentId ? { agentId: input.agentId } : {}),
+    ...(input.systemPrompt ? { systemPrompt: input.systemPrompt } : {}),
     mode: input.mode ?? 'agent',
     status: input.status ?? 'idle',
     approvalPolicy: input.approvalPolicy ?? DEFAULT_APPROVAL_POLICY,
@@ -81,7 +85,7 @@ export function toThreadSummary(
   thread: ThreadEntity
 ): Pick<
   ThreadEntity,
-  'id' | 'title' | 'workspace' | 'model' | 'providerId' | 'mode' | 'status' | 'approvalPolicy' | 'sandboxMode' | 'pinned' | 'createdAt' | 'updatedAt'
+  'id' | 'title' | 'workspace' | 'model' | 'providerId' | 'agentId' | 'systemPrompt' | 'mode' | 'status' | 'approvalPolicy' | 'sandboxMode' | 'pinned' | 'createdAt' | 'updatedAt'
   | 'costBudgetUsd' | 'costBudgetWarningSent'
   | 'relation' | 'parentThreadId'
   | 'forkedFromThreadId' | 'forkedFromTitle' | 'forkedAt' | 'forkedFromMessageCount' | 'forkedFromTurnCount'
@@ -93,6 +97,8 @@ export function toThreadSummary(
     workspace: thread.workspace,
     model: thread.model,
     ...(thread.providerId ? { providerId: thread.providerId } : {}),
+    ...(thread.agentId ? { agentId: thread.agentId } : {}),
+    ...(thread.systemPrompt ? { systemPrompt: thread.systemPrompt } : {}),
     mode: thread.mode,
     status: thread.status,
     approvalPolicy: thread.approvalPolicy,

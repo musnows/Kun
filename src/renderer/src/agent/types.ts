@@ -102,6 +102,12 @@ export type NormalizedThread = {
   status?: string
   approvalPolicy?: ApprovalPolicy
   sandboxMode?: SandboxMode
+  /** Optional provider id when this thread is pinned to a non-default provider. */
+  providerId?: string
+  /** Optional subagent profile id this thread is bound to (primary-agent persona). */
+  agentId?: string
+  /** Optional persona systemPrompt snapshot applied to every ModelRequest on this thread. */
+  systemPrompt?: string
   archived?: boolean
   pinned?: boolean
   preview?: string
@@ -424,7 +430,7 @@ export interface AgentProvider {
   }
   connect(): Promise<void>
   listThreads(options?: ThreadListOptions): Promise<NormalizedThread[]>
-  createThread(input: { workspace?: string; title?: string; mode?: string }): Promise<NormalizedThread>
+  createThread(input: { workspace?: string; title?: string; mode?: string; agentId?: string; providerId?: string; model?: string; systemPrompt?: string }): Promise<NormalizedThread>
   getThreadDetail(threadId: string): Promise<{
     blocks: ChatBlock[]
     latestSeq: number

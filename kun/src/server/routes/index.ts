@@ -45,6 +45,12 @@ import {
   memoryDiagnostics,
   updateMemory
 } from './memory.js'
+import {
+  delegationAbort,
+  delegationDiagnostics,
+  delegationProfiles
+} from './delegation.js'
+import { generateAgentProfile } from './agent-generate.js'
 import { isAuthorized, bearerToken } from '../auth.js'
 import { ERRORS } from './runtime-error.js'
 import type { ServerRuntime } from './server-runtime.js'
@@ -59,6 +65,9 @@ import type { ServerRuntime } from './server-runtime.js'
  * - `GET /v1/attachments/diagnostics` (auth)
  * - `GET /v1/attachments/{id}` and `{id}/content` (auth)
  * - `GET/POST /v1/memory`, `PATCH/DELETE /v1/memory/{id}`, diagnostics (auth)
+ * - `GET /v1/delegation/diagnostics` and `/v1/delegation/profiles` (auth)
+ * - `POST /v1/agents/generate` (auth)
+ * - `POST /v1/delegation/abort/{childId}` (auth)
  * - `GET /v1/workspace/status` (auth)
  * - `GET/POST /v1/threads` (auth)
  * - `GET/PATCH/DELETE /v1/threads/{id}` (auth)
@@ -128,6 +137,22 @@ export function buildRouter(runtime: ServerRuntime): Router {
   router.add('DELETE', '/v1/memory/:id', async (request, ctx) => {
     if (!authorize(request, runtime)) return ERRORS.unauthorized()
     return deleteMemory(runtime.memoryStore, ctx.params.id, request)
+  })
+  router.add('GET', '/v1/delegation/diagnostics', async (request) => {
+    if (!authorize(request, runtime)) return ERRORS.unauthorized()
+    return delegationDiagnostics(runtime.delegationRuntime, request)
+  })
+  router.add('GET', '/v1/delegation/profiles', async (request) => {
+    if (!authorize(request, runtime)) return ERRORS.unauthorized()
+    return delegationProfiles(runtime.delegationRuntime)
+  })
+  router.add('POST', '/v1/agents/generate', async (request) => {
+    if (!authorize(request, runtime)) return ERRORS.unauthorized()
+    return generateAgentProfile(runtime.modelClient, runtime.defaultModel, request)
+  })
+  router.add('POST', '/v1/delegation/abort/:childId', async (request, ctx) => {
+    if (!authorize(request, runtime)) return ERRORS.unauthorized()
+    return delegationAbort(runtime.delegationRuntime, ctx.params.childId)
   })
   router.add('GET', '/v1/workspace/status', async (request) => {
     if (!authorize(request, runtime)) return ERRORS.unauthorized()
