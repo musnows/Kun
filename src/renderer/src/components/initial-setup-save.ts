@@ -177,14 +177,23 @@ export function buildInitialSetupSettings(
   )
   const switchingProvider = (runtime.providerId.trim() || DEFAULT_MODEL_PROVIDER_ID) !== selectedId
   const wire = initialSetupAutoWirePlan(settings, drafts)
-  const permissionMode = selection.permissionMode && KUN_TOOL_PERMISSION_MODES.includes(selection.permissionMode)
+  // Only rewrite approvalPolicy/sandboxMode when the user actually moved the
+  // permission selector. The mode<->settings mapping is lossy (only 5 of the
+  // policy/sandbox combos are representable), so emitting the pair when the
+  // selection still matches the persisted policy would silently weaken values
+  // the UI cannot represent — e.g. demote approvalPolicy 'never'/'suggest' or
+  // escalate an 'external-sandbox' sandbox. When unchanged we omit the spread
+  // so applyKunRuntimePatch leaves the existing pair untouched.
+  const currentPermissionMode = kunToolPermissionModeFromSettings(runtime)
+  const selectedPermissionMode = selection.permissionMode && KUN_TOOL_PERMISSION_MODES.includes(selection.permissionMode)
     ? selection.permissionMode
-    : kunToolPermissionModeFromSettings(runtime)
+    : currentPermissionMode
+  const permissionChanged = selectedPermissionMode !== currentPermissionMode
   const kunPatch: KunRuntimeSettingsPatchV1 = {
     providerId: selectedId,
     apiKey: '',
     baseUrl: '',
-    ...kunToolPermissionModeSettings(permissionMode),
+    ...(permissionChanged ? kunToolPermissionModeSettings(selectedPermissionMode) : {}),
     ...(switchingProvider && selectedProfile?.models[0] ? { model: selectedProfile.models[0] } : {}),
     ...(wire.speechProviderId
       ? { speechToText: { enabled: true, providerId: wire.speechProviderId } }
