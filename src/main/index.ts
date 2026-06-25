@@ -14,6 +14,7 @@ import { createAppIcon, pickTrayIcon, prepareTrayIcon } from './app-icon'
 import { buildTrayMenuTemplate, parseTrayThreads, type TrayThreadSummary } from './tray-session-menu'
 import { configureLinuxWaylandImeSwitches } from './app-command-line'
 import { configureAppIdentity } from './app-identity'
+import { shouldStartHidden, syncLoginItemSettings } from './desktop-behavior'
 import { runLegacyKunDataMigration } from './legacy-data-migration'
 import {
   applyKunRuntimePatch,
@@ -98,7 +99,6 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 // 的 appId 一致才能让 Windows 通知 / 任务栏分组在升级前后连续,而
 // appId 因为 NSIS 升级 GUID 与 macOS 更新签名校验的原因永远不改。
 const APP_USER_MODEL_ID = 'com.xingyuzhong.deepseekgui'
-const HIDDEN_START_ARG = '--hidden'
 const startupTraceEnabled =
   process.env.KUN_STARTUP_TRACE === '1' || process.env.DEEPSEEK_GUI_STARTUP_TRACE === '1'
 const startupTraceStart = Date.now()
@@ -410,33 +410,6 @@ function windowCloseLabels(locale: AppSettingsV1['locale']): {
     quit: 'Quit app',
     cancel: 'Cancel',
     remember: 'Remember my choice and do not ask again'
-  }
-}
-
-function shouldStartHidden(settings: AppSettingsV1): boolean {
-  return (
-    process.platform === 'win32' &&
-    settings.appBehavior.openAtLogin &&
-    settings.appBehavior.startMinimized &&
-    process.argv.includes(HIDDEN_START_ARG)
-  )
-}
-
-function syncLoginItemSettings(settings: AppSettingsV1): void {
-  if (process.platform !== 'win32' && process.platform !== 'darwin') return
-  const behavior = settings.appBehavior
-  try {
-    app.setLoginItemSettings({
-      openAtLogin: behavior.openAtLogin,
-      args:
-        process.platform === 'win32' && behavior.openAtLogin && behavior.startMinimized
-          ? [HIDDEN_START_ARG]
-          : []
-    })
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
-    console.warn('[kun-gui] failed to update login item settings:', error)
-    logWarn('desktop-behavior', 'Failed to update login item settings.', { message })
   }
 }
 
