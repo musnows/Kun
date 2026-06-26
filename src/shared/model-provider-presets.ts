@@ -236,15 +236,17 @@ export const MODEL_PROVIDER_PRESETS: ModelProviderPreset[] = [
     kind: 'agent-sdk',
     baseUrl: 'https://api.anthropic.com',
     endpointFormat: 'messages',
-    models: ['claude-opus-4-8', 'claude-sonnet-4-6', 'claude-haiku-4-5-20251001'],
-    // Context window is cosmetic on the agent-sdk path (the embedded SDK enforces
-    // each model's real limit); Sonnet 4.x reaches 1M, so surface 1M for the
-    // capacity gauge. Preset model profiles are authoritative, so this is the
-    // place to change it — per-provider manual edits to preset models don't stick.
+    // Ids match what the SDK's supportedModels() returns (see claude-subscription-models).
+    models: ['claude-opus-4-8', 'claude-sonnet-4-6', 'claude-haiku-4-5'],
+    // The SDK does NOT report a context window, so we set it per Anthropic's specs:
+    // Sonnet 4.x supports 1M (beta, `context-1m-2025-08-07`), Opus/Haiku are 200K.
+    // All Claude 4.x models are vision-capable, so every profile uses visionChatProfile
+    // (inputModalities text+image). Cosmetic on the agent-sdk path (the SDK enforces
+    // the real limit); preset profiles are authoritative, so edit them here.
     modelProfiles: {
-      'claude-opus-4-8': visionChatProfile(1_000_000),
+      'claude-opus-4-8': visionChatProfile(200_000),
       'claude-sonnet-4-6': visionChatProfile(1_000_000),
-      'claude-haiku-4-5-20251001': visionChatProfile(1_000_000)
+      'claude-haiku-4-5': visionChatProfile(200_000)
     },
     docsUrl: 'https://code.claude.com/docs/en/authentication',
     apiKeyUrl: 'https://claude.ai'
