@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactElement } from 'react'
-import { AlertCircle, CheckCircle2, Copy, Loader2, LogIn } from 'lucide-react'
+import { AlertCircle, CheckCircle2, Copy, Download, Loader2, LogIn } from 'lucide-react'
 import type { ModelProviderProfileV1 } from '@shared/app-settings-types'
 import { SecretInput } from './settings-controls'
 
@@ -38,6 +38,37 @@ export function ClaudeSubscriptionSection({
   const [copied, setCopied] = useState(false)
   const [modelsBusy, setModelsBusy] = useState(false)
   const [modelsNote, setModelsNote] = useState<string | null>(null)
+  const [sdk, setSdk] = useState<'checking' | 'ready' | 'missing'>('checking')
+  const [sdkBusy, setSdkBusy] = useState(false)
+  const [sdkNote, setSdkNote] = useState<string | null>(null)
+
+  const checkSdk = async (): Promise<void> => {
+    try {
+      const s = await window.kunGui.claudeSubscriptionSdkStatus()
+      setSdk(s.installed ? 'ready' : 'missing')
+    } catch {
+      setSdk('missing')
+    }
+  }
+
+  // Download the ~222MB Claude Code binary on demand (it isn't bundled).
+  const installSdk = async (): Promise<void> => {
+    setSdkBusy(true)
+    setSdkNote(null)
+    try {
+      const result = await window.kunGui.claudeSubscriptionSdkInstall()
+      if (result.ok) {
+        setSdk('ready')
+        setSdkNote(t('claudeSubSdkReady'))
+      } else {
+        setSdkNote(`${t('claudeSubSdkFailed')}: ${result.message}`)
+      }
+    } catch (err) {
+      setSdkNote(`${t('claudeSubSdkFailed')}: ${err instanceof Error ? err.message : ''}`)
+    } finally {
+      setSdkBusy(false)
+    }
+  }
 
   // Pull the subscription's available models via the SDK and fill them in.
   const fetchModels = async (token?: string): Promise<void> => {
@@ -70,6 +101,7 @@ export function ClaudeSubscriptionSection({
   }
   useEffect(() => {
     void refreshStatus()
+    void checkSdk()
   }, [])
 
   const runLogin = async (): Promise<void> => {
@@ -110,6 +142,37 @@ export function ClaudeSubscriptionSection({
       <p className="rounded-lg border border-ds-border bg-ds-main/30 px-3 py-2 text-[12px] leading-5 text-ds-muted">
         {t('claudeSubTosNote')}
       </p>
+
+      {sdk !== 'ready' ? (
+        <div className="flex flex-col gap-2 rounded-lg border border-amber-300/50 bg-amber-50/40 px-3 py-2.5 dark:bg-amber-900/10">
+          <div className="flex items-center gap-2 text-[13px]">
+            {sdk === 'checking' ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin text-ds-muted" strokeWidth={1.9} />
+            ) : (
+              <AlertCircle className="h-3.5 w-3.5 text-amber-500" strokeWidth={1.9} />
+            )}
+            <span className="text-ds-ink">
+              {sdk === 'checking' ? t('claudeSubSdkChecking') : t('claudeSubSdkMissing')}
+            </span>
+          </div>
+          {sdk === 'missing' ? (
+            <button
+              type="button"
+              disabled={sdkBusy}
+              onClick={() => void installSdk()}
+              className="inline-flex h-9 items-center justify-center gap-2 self-start rounded-lg border border-accent/50 bg-ds-main/45 px-3 text-[13px] font-medium text-ds-ink transition hover:bg-ds-main/70 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {sdkBusy ? (
+                <Loader2 className="h-4 w-4 animate-spin" strokeWidth={1.9} />
+              ) : (
+                <Download className="h-4 w-4" strokeWidth={1.9} />
+              )}
+              {sdkBusy ? t('claudeSubSdkDownloading') : t('claudeSubSdkDownload')}
+            </button>
+          ) : null}
+          {sdkNote ? <span className="text-[12px] text-ds-muted">{sdkNote}</span> : null}
+        </div>
+      ) : null}
 
       <div className="flex items-center gap-2 text-[13px]">
         {hasToken ? (

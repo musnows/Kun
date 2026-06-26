@@ -56,6 +56,7 @@ import {
 } from './claw-schedule-mcp-config'
 import { defaultKunDataDir } from './runtime/kun-adapter'
 import { isKunHealthResponseBody } from './kun-health'
+import { resolveClaudeBinary } from './agent-sdk-installer'
 import { appendManagedLogLine } from './logger'
 import {
   comparableSkillRootPath,
@@ -385,11 +386,16 @@ async function startKunChildOnce(
   const activeProviderKind = (getModelProviderSettings(settings).providers as ModelProviderProfileV1[]).find(
     (provider) => provider.id?.trim() === getKunRuntimeSettings(settings).providerId.trim()
   )?.kind
+  // Point the runtime at the on-demand Claude Code binary (the ~222MB binary is
+  // not bundled; it's downloaded into userData). Absent in dev when it's still
+  // resolvable from kun/node_modules — the SDK auto-resolves it there.
+  const claudeBinary = resolveClaudeBinary(app.getPath('userData'), [join(appRoot(), 'kun')])
   const childEnv: NodeJS.ProcessEnv = {
     ...process.env,
     KUN_RUNTIME_TOKEN: runtime.runtimeToken,
     DEEPSEEK_API_KEY: runtime.apiKey || process.env.DEEPSEEK_API_KEY || '',
-    ...(activeProviderKind === 'agent-sdk' ? { KUN_RUNTIME_PROVIDER_KIND: 'agent-sdk' } : {})
+    ...(activeProviderKind === 'agent-sdk' ? { KUN_RUNTIME_PROVIDER_KIND: 'agent-sdk' } : {}),
+    ...(claudeBinary ? { KUN_CLAUDE_BINARY: claudeBinary } : {})
   }
   if (!runAsElectron) childEnv.ELECTRON_RUN_AS_NODE = '1'
   else delete childEnv.ELECTRON_RUN_AS_NODE

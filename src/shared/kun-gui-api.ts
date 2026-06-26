@@ -303,6 +303,12 @@ export type KunGuiApi = {
   claudeSubscriptionLogin: () => Promise<ClaudeSubscriptionLoginResult>
   /** List Claude models available to the subscription (via the SDK's supportedModels). */
   claudeSubscriptionModels: (token?: string) => Promise<string[]>
+  /** Whether the on-demand Claude Code binary is present (download not needed). */
+  claudeSubscriptionSdkStatus: () => Promise<{ installed: boolean; path?: string }>
+  /** Download + install the Claude Code binary into the user-data dir. */
+  claudeSubscriptionSdkInstall: () => Promise<
+    { ok: true; path: string } | { ok: false; message: string }
+  >
   setSettings: (partial: AppSettingsPatch) => Promise<AppSettingsV1>
   saveSettingsSilent: (partial: AppSettingsPatch) => Promise<AppSettingsV1>
   runtimeRequest: (path: string, method?: string, body?: string) => Promise<RuntimeRequestResult>

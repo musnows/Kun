@@ -30,6 +30,8 @@ function scopedEnv(token?: string): NodeJS.ProcessEnv {
 export function fetchSdkModels(options: {
   token?: string
   kunRoots: readonly string[]
+  /** Explicit Claude Code binary path (when not bundled in kun/node_modules). */
+  binaryPath?: string
   /** Node/Electron executable to run the eval with (defaults to the current one). */
   nodePath?: string
   spawnFn?: typeof spawn
@@ -46,7 +48,9 @@ export function fetchSdkModels(options: {
     // supportedModels() lives on the Query (from query()), NOT the WarmQuery from
     // startup(). It's a control request — we call it and interrupt() WITHOUT
     // iterating the prompt, so no turn runs and the subscription isn't charged.
-    `try { const q = query({ prompt: 'list-models', options: {} }); try { out = (await q.supportedModels()) || []; } finally { try { await q.interrupt?.(); } catch {} } } catch {}`,
+    `try { const q = query({ prompt: 'list-models', options: ${JSON.stringify(
+      options.binaryPath ? { pathToClaudeCodeExecutable: options.binaryPath } : {}
+    )} }); try { out = (await q.supportedModels()) || []; } finally { try { await q.interrupt?.(); } catch {} } } catch {}`,
     `process.stdout.write(${JSON.stringify(MARK)} + JSON.stringify(out) + ${JSON.stringify(MARK)});`,
     `process.exit(0);`
   ].join('\n')

@@ -458,7 +458,10 @@ export async function createKunServeRuntime(
           defaultApprovalPolicy: options.approvalPolicy,
           defaultIsAgentSdk,
           defaultToken: options.apiKey,
-          ...(attachmentStore ? { attachmentStore } : {})
+          ...(attachmentStore ? { attachmentStore } : {}),
+          ...(process.env.KUN_CLAUDE_BINARY
+            ? { pathToClaudeCodeExecutable: process.env.KUN_CLAUDE_BINARY }
+            : {})
         })
       : undefined
   const loop = new AgentLoop({

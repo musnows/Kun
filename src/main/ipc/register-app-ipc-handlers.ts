@@ -96,14 +96,15 @@ import {
   workspaceRootSchema,
   legacySessionImportPayloadSchema
 } from './app-ipc-schemas'
-import { DEFAULT_KUN_DATA_DIR, resolveKunRuntimeSettings } from '../../shared/app-settings'
-import { detectLegacySessions, importLegacySessions } from '../services/legacy-session-import-service'
 import {
-  claudeSubscriptionStatus,
-  resolveBundledClaudeBinary,
-  runClaudeSetupToken
-} from '../claude-subscription-auth'
+  DEFAULT_KUN_DATA_DIR,
+  resolveKunRuntimeSettings,
+  resolveModelProviderProxyUrl
+} from '../../shared/app-settings'
+import { detectLegacySessions, importLegacySessions } from '../services/legacy-session-import-service'
+import { claudeSubscriptionStatus, runClaudeSetupToken } from '../claude-subscription-auth'
 import { fetchSdkModels } from '../claude-subscription-models'
+import { agentSdkStatus, installClaudeBinary, resolveClaudeBinary } from '../agent-sdk-installer'
 import type { JsonSettingsStore } from '../settings-store'
 import { probeModelProvider } from '../provider-connection'
 import type { ClawRuntime } from '../claw-runtime'
@@ -495,22 +496,34 @@ export function registerAppIpcHandlers(options: RegisterAppIpcHandlersOptions): 
   // Claude Pro/Max subscription login (compliant path: official CLI does the
   // OAuth; we only detect it / capture the setup-token).
   ipcMain.handle('claude-subscription:status', async () => claudeSubscriptionStatus())
-  ipcMain.handle('claude-subscription:login', async () => {
-    // Use the Agent SDK's bundled per-platform Claude Code binary so the user
-    // needs no separate CLI install; fall back to a `claude` on PATH if absent.
-    const kunRoots = [
+  // The Claude Code binary (~222MB) is NOT bundled — it's downloaded on demand
+  // into userData/agent-sdk and resolved from there (or kun/node_modules in dev).
+  const claudeSubKunDirs = (): string[] =>
+    [
       app.isPackaged ? app.getAppPath().replace(/app\.asar$/, 'app.asar.unpacked') : app.getAppPath(),
       process.cwd()
     ].map((root) => join(root, 'kun'))
-    return runClaudeSetupToken({ binaryPath: resolveBundledClaudeBinary(kunRoots) })
-  })
-  ipcMain.handle('claude-subscription:models', async (_event, token: unknown) => {
-    const kunRoots = [
-      app.isPackaged ? app.getAppPath().replace(/app\.asar$/, 'app.asar.unpacked') : app.getAppPath(),
-      process.cwd()
-    ].map((root) => join(root, 'kun'))
-    return fetchSdkModels({ token: typeof token === 'string' ? token : undefined, kunRoots })
-  })
+  const claudeSubBinary = (): string | undefined =>
+    resolveClaudeBinary(app.getPath('userData'), claudeSubKunDirs())
+  ipcMain.handle('claude-subscription:sdk-status', async () =>
+    agentSdkStatus(app.getPath('userData'), claudeSubKunDirs())
+  )
+  ipcMain.handle('claude-subscription:sdk-install', async () =>
+    installClaudeBinary({
+      userDataDir: app.getPath('userData'),
+      proxyUrl: resolveModelProviderProxyUrl(await store.load())
+    })
+  )
+  ipcMain.handle('claude-subscription:login', async () =>
+    runClaudeSetupToken({ binaryPath: claudeSubBinary() })
+  )
+  ipcMain.handle('claude-subscription:models', async (_event, token: unknown) =>
+    fetchSdkModels({
+      token: typeof token === 'string' ? token : undefined,
+      kunRoots: claudeSubKunDirs(),
+      binaryPath: claudeSubBinary()
+    })
+  )
   ipcMain.handle('settings:set', async (_, partial: unknown) =>
     applySettingsPatch(
       parseIpcPayload('settings:set', settingsPatchSchema, partial) as AppSettingsPatch
