@@ -86,6 +86,31 @@ export function mapApprovalPolicyToPermissionMode(
   return 'default'
 }
 
+/**
+ * Claude Code (the subscription engine) only accepts Anthropic models. A kun
+ * thread can carry any provider's model id (e.g. `deepseek-v4-flash` from a
+ * thread created while a non-subscription provider was active); passing that to
+ * the SDK fails with "model may not exist / no access". Treat a model as
+ * SDK-compatible only when it is a Claude id.
+ */
+export function isAnthropicModel(model: string | undefined): boolean {
+  return typeof model === 'string' && /^claude/i.test(model.trim())
+}
+
+/**
+ * Pick the model to hand the SDK: the thread's own model when it's a Claude id,
+ * else the runtime's default Claude model, else undefined (let Claude Code use
+ * its built-in default). Guarantees we never send a non-Anthropic id to the SDK.
+ */
+export function resolveSdkModel(
+  threadModel: string | undefined,
+  defaultModel: string | undefined
+): string | undefined {
+  if (isAnthropicModel(threadModel)) return threadModel!.trim()
+  if (isAnthropicModel(defaultModel)) return defaultModel!.trim()
+  return undefined
+}
+
 /** Compose kun's persona append text for the claude_code system-prompt preset. */
 export function buildClaudeSystemPrompt(
   kunSystemPrompt: string,

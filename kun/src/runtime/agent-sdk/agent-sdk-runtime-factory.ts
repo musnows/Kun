@@ -4,7 +4,7 @@
  * keeping the orchestration (and its tests) free of both.
  */
 import { AgentSdkRuntime, type SdkRuntimeDeps, type SdkTurnContext } from './agent-sdk-runtime.js'
-import type { ToolApprovalDecision } from './sdk-options-builder.js'
+import { resolveSdkModel, type ToolApprovalDecision } from './sdk-options-builder.js'
 import type { BridgeableTool, KunToolResult } from './sdk-tool-bridge.js'
 import type { SdkApi } from './sdk-protocol.js'
 import type { RuntimeEventRecorder } from '../../services/runtime-event-recorder.js'
@@ -42,6 +42,8 @@ export interface AgentSdkRuntimeFactoryDeps {
   /** Provider ids whose kind is 'agent-sdk' (this runtime owns them). */
   agentSdkProviderIds: ReadonlySet<string>
   defaultApprovalPolicy: ApprovalPolicy
+  /** Runtime default model — used as the Claude model when a thread carries a non-Anthropic id. */
+  defaultModel?: string
   /** True when the runtime's own default provider is agent-sdk (Claude sub as main model). */
   defaultIsAgentSdk?: boolean
   /** Token for the default provider (used when a turn doesn't target a specific provider). */
@@ -187,7 +189,10 @@ export function createAgentSdkRuntime(deps: AgentSdkRuntimeFactoryDeps): AgentSd
         threadPersona: thread.systemPrompt?.trim() || undefined,
         approvalPolicy: deps.defaultApprovalPolicy,
         planMode,
-        model: thread.model || undefined,
+        // Claude Code only accepts Anthropic models; coerce a thread's non-Claude
+        // model (e.g. an old deepseek thread now routed to the subscription) to
+        // the runtime default so the turn doesn't fail "model may not exist".
+        model: resolveSdkModel(thread.model, deps.defaultModel),
         oauthToken: token || undefined,
         ...(images.length ? { images } : {}),
         bridgeableTools,

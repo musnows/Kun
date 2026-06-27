@@ -456,6 +456,7 @@ export async function createKunServeRuntime(
           providerConfigs: options.providers ?? {},
           agentSdkProviderIds,
           defaultApprovalPolicy: options.approvalPolicy,
+          defaultModel: options.model,
           defaultIsAgentSdk,
           defaultToken: options.apiKey,
           skillRuntime,

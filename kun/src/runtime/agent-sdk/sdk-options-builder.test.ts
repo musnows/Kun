@@ -5,8 +5,28 @@ import {
   buildCanUseTool,
   buildClaudeSystemPrompt,
   buildScopedEnv,
-  mapApprovalPolicyToPermissionMode
+  isAnthropicModel,
+  mapApprovalPolicyToPermissionMode,
+  resolveSdkModel
 } from './sdk-options-builder.js'
+
+describe('resolveSdkModel', () => {
+  test('keeps a Claude thread model as-is', () => {
+    expect(resolveSdkModel('claude-haiku-4-5', 'claude-opus-4-8')).toBe('claude-haiku-4-5')
+    expect(isAnthropicModel('claude-sonnet-4-6')).toBe(true)
+  })
+
+  test('coerces a non-Anthropic thread model to the runtime default Claude model', () => {
+    // the reported bug: an old deepseek thread routed to the subscription engine
+    expect(resolveSdkModel('deepseek-v4-flash', 'claude-haiku-4-5')).toBe('claude-haiku-4-5')
+    expect(isAnthropicModel('deepseek-v4-flash')).toBe(false)
+  })
+
+  test('falls back to undefined when neither model is a Claude id', () => {
+    expect(resolveSdkModel('deepseek-v4-flash', 'gpt-5')).toBeUndefined()
+    expect(resolveSdkModel(undefined, undefined)).toBeUndefined()
+  })
+})
 
 describe('buildScopedEnv', () => {
   test('strips auth overrides and injects the OAuth token', () => {
