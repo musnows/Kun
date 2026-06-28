@@ -256,7 +256,7 @@ export async function createKunServeRuntime(
       tool.name === 'bash'
         ? createBashLocalTool({
             backgroundShell: backgroundShellRuntime.bashHooks(),
-            backgroundShellDataDir: input.dataDir
+            backgroundShellDataDir: options.dataDir
           })
         : tool
     )
