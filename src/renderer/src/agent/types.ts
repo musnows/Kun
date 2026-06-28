@@ -72,6 +72,7 @@ export type WebCitationSource = {
 
 export type RuntimeDisclosureMetadata = {
   displayText?: string
+  messageSource?: 'background_shell'
   turnId?: string
   workspaceCheckpointId?: string
   attachmentIds?: string[]

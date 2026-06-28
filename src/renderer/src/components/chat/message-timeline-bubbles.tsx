@@ -3,13 +3,15 @@ import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { useTranslation } from 'react-i18next'
-import { ArrowDown, Check, ChevronDown, ChevronRight, Copy, Download, File, FileEdit, GitFork, ImageIcon, Loader2, MessageSquareQuote, PencilLine, RotateCcw, Terminal, Video, Wrench } from 'lucide-react'
+import { ArrowDown, Check, ChevronDown, ChevronRight, Copy, Download, File, FileEdit, GitFork, ImageIcon, Loader2, MessageSquareQuote, PencilLine, RotateCcw, SquareTerminal, Terminal, Video, Wrench } from 'lucide-react'
 import type { AttachmentReference, ChatBlock, GeneratedFileReference, RuntimeDisclosureMetadata, ToolBlock, UserFileReference, UserInputAnswer } from '../../agent/types'
 import { extractUnifiedDiffText } from '../../lib/diff-stats'
 import { useChatStore } from '../../store/chat-store'
 import { getProvider } from '../../agent/registry'
 import { parseWritePromptForDisplay } from '../../write/quoted-selection'
 import { parseClawUserPromptForDisplay, type ClawUserPromptDisplay } from '@shared/app-settings'
+import { parseBackgroundShellCompletionNotice } from '@shared/background-shell-notice'
+import { isBackgroundShellNoticeBlock } from './message-timeline-turns'
 import { openWorkspacePathInEditor } from '../../lib/open-workspace-path'
 import { DiffView } from '../DiffView'
 import { AssistantMarkdown } from './AssistantMarkdown'
@@ -19,6 +21,93 @@ import { readNumber, formatDuration, formatToolTitle } from './message-timeline-
 import { answersByQuestionId, shouldShowQuestionHeader } from './user-input-panel-logic'
 
 const COPY_FEEDBACK_RESET_MS = 1600
+
+function BackgroundShellNoticeBubble({
+  block,
+  nested = false
+}: {
+  block: Extract<ChatBlock, { kind: 'user' }>
+  nested?: boolean
+}): ReactElement {
+  const { t } = useTranslation('common')
+  const [outputExpanded, setOutputExpanded] = useState(false)
+  const parsed = useMemo(() => parseBackgroundShellCompletionNotice(block.text), [block.text])
+  const title =
+    block.meta?.displayText?.trim() ||
+    t('backgroundShellNotice.title', { defaultValue: 'Background shell completed' })
+  const outputPreview = parsed?.outputPreview ?? ''
+  const canExpandOutput = outputPreview.length > 180
+
+  return (
+    <div className={nested ? 'min-w-0' : 'ds-user-message'}>
+      <div className="rounded-[18px] border border-ds-border bg-ds-subtle/80 px-3.5 py-3 text-ds-muted shadow-sm">
+        <div className="flex items-start gap-2.5">
+          <SquareTerminal className="mt-0.5 h-4 w-4 shrink-0 text-accent" strokeWidth={1.8} />
+          <div className="min-w-0 flex-1">
+            <p className="text-[13px] font-medium text-ds-ink">{title}</p>
+            {parsed ? (
+              <dl className="mt-2 space-y-1.5 text-[12.5px] leading-5">
+                <div className="flex flex-wrap gap-x-2">
+                  <dt className="font-medium text-ds-muted">
+                    {t('backgroundShellNotice.sessionId', { defaultValue: 'Session' })}
+                  </dt>
+                  <dd className="font-mono text-ds-ink">{parsed.sessionId}</dd>
+                </div>
+                <div className="flex flex-wrap gap-x-2">
+                  <dt className="font-medium text-ds-muted">
+                    {t('backgroundShellNotice.command', { defaultValue: 'Command' })}
+                  </dt>
+                  <dd className="min-w-0 break-all font-mono text-ds-ink">{parsed.command}</dd>
+                </div>
+                <div className="flex flex-wrap gap-x-2">
+                  <dt className="font-medium text-ds-muted">
+                    {t('backgroundShellNotice.exitCode', { defaultValue: 'Exit code' })}
+                  </dt>
+                  <dd className="font-mono text-ds-ink">{parsed.exitCode}</dd>
+                </div>
+              </dl>
+            ) : null}
+            {outputPreview ? (
+              <div className="mt-2.5">
+                <button
+                  type="button"
+                  className={`flex w-full items-center justify-between gap-2 text-left text-[12px] font-medium text-ds-muted ${
+                    canExpandOutput ? 'hover:text-ds-ink' : 'cursor-default'
+                  }`}
+                  onClick={() => {
+                    if (canExpandOutput) setOutputExpanded((value) => !value)
+                  }}
+                  disabled={!canExpandOutput}
+                >
+                  <span>{t('backgroundShellNotice.outputPreview', { defaultValue: 'Output preview' })}</span>
+                  {canExpandOutput ? (
+                    outputExpanded ? (
+                      <ChevronDown className="h-3.5 w-3.5" />
+                    ) : (
+                      <ChevronRight className="h-3.5 w-3.5" />
+                    )
+                  ) : null}
+                </button>
+                <pre
+                  className={`mt-1 overflow-auto whitespace-pre-wrap break-words rounded-[10px] border border-ds-border/70 bg-ds-card/70 px-2.5 py-2 font-mono text-[11.5px] leading-5 text-ds-ink ${
+                    canExpandOutput && !outputExpanded ? 'max-h-24' : 'max-h-72'
+                  }`}
+                >
+                  {outputPreview}
+                </pre>
+              </div>
+            ) : null}
+            {parsed?.outputFile ? (
+              <p className="mt-2 truncate font-mono text-[11px] text-ds-muted" title={parsed.outputFile}>
+                {t('backgroundShellNotice.outputFile', { defaultValue: 'Full output file' })}: {parsed.outputFile}
+              </p>
+            ) : null}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 /**
  * User message bubble with hover affordance to rewind/edit. Click the rewind
@@ -1253,6 +1342,9 @@ function MessageBubbleImpl({
 }): ReactElement {
   const { t, i18n } = useTranslation('common')
   const resolveApproval = useChatStore((s) => s.resolveApproval)
+  if (block.kind === 'user' && isBackgroundShellNoticeBlock(block)) {
+    return <BackgroundShellNoticeBubble block={block} nested={nested} />
+  }
   if (block.kind === 'user') {
     return <UserMessageBubble block={block} />
   }

@@ -378,6 +378,7 @@ export type CoreTurnItemJson = {
   kind: string
   text?: string
   displayText?: string
+  messageSource?: 'background_shell'
   toolName?: string
   callId?: string
   toolKind?: 'tool_call' | 'command_execution' | 'file_change'

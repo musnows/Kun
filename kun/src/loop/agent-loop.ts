@@ -672,6 +672,8 @@ export type AgentLoopOptions = {
   skillRuntime?: SkillRuntime
   attachmentStore?: AttachmentStore
   memoryStore?: MemoryStore
+  /** Kun runtime data root for sandbox-safe background shell output reads. */
+  runtimeDataDir?: string
   tokenEconomy?: TokenEconomyConfig
   contextCompaction?: ContextCompactionConfig
   /** Internal-LLM role model routing (smallModel slot + title/summary/codeReview overrides). */
@@ -1269,18 +1271,15 @@ export class AgentLoop {
   private async drainSteering(threadId: string, turnId: string, signal: AbortSignal): Promise<void> {
     const pending = this.opts.steering.drain()
     if (pending.length === 0) return
-    for (const text of pending) {
-      const item: TurnItem = {
+    for (const entry of pending) {
+      const item = makeUserItem({
         id: this.opts.ids.next('item_steered'),
         turnId,
         threadId,
-        role: 'user',
-        status: 'completed',
-        createdAt: this.opts.nowIso(),
-        finishedAt: this.opts.nowIso(),
-        kind: 'user_message',
-        text
-      }
+        text: entry.text,
+        ...(entry.displayText ? { displayText: entry.displayText } : {}),
+        ...(entry.messageSource ? { messageSource: entry.messageSource } : {})
+      })
       await this.opts.turns.applyItem(threadId, item)
     }
     void signal
@@ -1466,6 +1465,7 @@ export class AgentLoop {
       ...(this.opts.blockedSkillIds ? { blockedSkillIds: this.opts.blockedSkillIds } : {}),
       approvalPolicy,
       sandboxMode,
+      ...(this.opts.runtimeDataDir ? { runtimeDataDir: this.opts.runtimeDataDir } : {}),
       abortSignal: signal,
       awaitApproval: async () => 'allow',
       ...(userInputDisabled
@@ -2244,6 +2244,7 @@ export class AgentLoop {
       ...(this.opts.blockedSkillIds ? { blockedSkillIds: this.opts.blockedSkillIds } : {}),
       approvalPolicy: input.approvalPolicy,
       sandboxMode: input.sandboxMode,
+      ...(this.opts.runtimeDataDir ? { runtimeDataDir: this.opts.runtimeDataDir } : {}),
       abortSignal: input.signal,
       awaitApproval: async (approval) => {
         await this.opts.events.record({

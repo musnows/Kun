@@ -22,6 +22,7 @@ import type { UiPluginLabelKey } from '@shared/ui-plugin'
 import { useUiPluginWorkLabel } from '../../store/ui-plugin-store'
 import {
   groupTurns,
+  isBackgroundShellNoticeBlock,
   sameTurnContent,
   splitThink,
   stableTurnKey,
@@ -90,6 +91,12 @@ function blockScrollStamp(block: ChatBlock | undefined): string {
 }
 
 function turnPreview(turn: Turn, fallback: string): string {
+  if (turn.user && isBackgroundShellNoticeBlock(turn.user)) {
+    const display = turn.user.meta?.displayText?.trim()
+    if (display) {
+      return display.length > 48 ? `${display.slice(0, 47).trimEnd()}...` : display
+    }
+  }
   const text = turn.user?.text.trim() ?? ''
   if (!text) return fallback
   const oneLine = text.replace(/\s+/g, ' ')

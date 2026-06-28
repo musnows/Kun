@@ -4,6 +4,7 @@ import type {
   RuntimeDisclosureMetadata,
   UserMessageEventPayload
 } from '../agent/types'
+import { isBackgroundShellNoticeSource } from '@shared/background-shell-notice'
 import { normalizeWorkspaceRoot } from '../lib/workspace-path'
 import { shouldAutoTitleThread } from '../lib/thread-title'
 import type { ChatState } from './chat-store-types'
@@ -40,6 +41,7 @@ export function threadHasPendingRuntimeWork(blocks: ChatBlock[]): boolean {
 
   for (const block of blocks) {
     if (block.kind === 'user') {
+      if (isBackgroundShellNoticeSource(block.meta?.messageSource)) continue
       pendingInCurrentTurn = false
       continue
     }

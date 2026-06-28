@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { TurnItem, UserFileReferenceSchema } from './items.js'
+import { TurnItem, UserFileReferenceSchema, UserMessageSource } from './items.js'
 import { isGuiPlanRelativePath } from '../shared/gui-plan.js'
 import { ApprovalPolicySchema, SandboxModeSchema } from './policy.js'
 
@@ -91,6 +91,7 @@ export type Turn = z.infer<typeof TurnSchema>
 export const StartTurnRequest = z.object({
   prompt: z.string().min(1),
   displayText: z.string().optional(),
+  messageSource: UserMessageSource.optional(),
   model: z.string().optional(),
   reasoningEffort: TurnReasoningEffortSchema.optional(),
   approvalPolicy: ApprovalPolicySchema.optional(),
@@ -135,7 +136,9 @@ export const StartTurnResponse = z.object({
 export type StartTurnResponse = z.infer<typeof StartTurnResponse>
 
 export const SteerTurnRequest = z.object({
-  text: z.string().min(1)
+  text: z.string().min(1),
+  displayText: z.string().optional(),
+  messageSource: UserMessageSource.optional()
 })
 export type SteerTurnRequest = z.infer<typeof SteerTurnRequest>
 

@@ -26,7 +26,9 @@ import {
   KUN_THREAD_TEMPLATE,
   KUN_USER_INPUT_TEMPLATE,
   KUN_USAGE_TEMPLATE,
-  KUN_DEBUG_LLM_ROUNDS_TEMPLATE
+  KUN_DEBUG_LLM_ROUNDS_TEMPLATE,
+  KUN_BACKGROUND_SHELLS_TEMPLATE,
+  KUN_BACKGROUND_SHELL_TEMPLATE
 } from '../../shared/kun-endpoints'
 import {
   IMAGE_GENERATION_PROTOCOLS,
@@ -173,7 +175,10 @@ const ENDPOINTS: readonly EndpointTemplate[] = [
   compileEndpoint(KUN_USER_INPUT_TEMPLATE, ['POST']),
   compileEndpoint(KUN_SESSION_RESUME_TEMPLATE, ['POST']),
   compileEndpoint(KUN_USAGE_TEMPLATE, ['GET']),
-  compileEndpoint(KUN_DEBUG_LLM_ROUNDS_TEMPLATE, ['GET'])
+  compileEndpoint(KUN_DEBUG_LLM_ROUNDS_TEMPLATE, ['GET']),
+  compileEndpoint(KUN_BACKGROUND_SHELLS_TEMPLATE, ['GET']),
+  compileEndpoint(KUN_BACKGROUND_SHELL_TEMPLATE, ['GET']),
+  compileEndpoint(`${KUN_BACKGROUND_SHELL_TEMPLATE}/stop`, ['POST'])
 ]
 
 function isAllowedRuntimeRequest(value: { path: string; method?: string }): boolean {

@@ -296,6 +296,9 @@ function applyRuntimeDisclosureMeta(
   if (displayText && displayText !== item.text?.trim()) {
     meta.displayText = displayText
   }
+  if (item.messageSource === 'background_shell') {
+    meta.messageSource = 'background_shell'
+  }
   if (attachmentIds) meta.attachmentIds = attachmentIds
   if (fileReferences) meta.fileReferences = fileReferences
   if (activeSkillIds) meta.activeSkillIds = activeSkillIds
