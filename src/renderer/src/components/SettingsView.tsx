@@ -1,5 +1,5 @@
-import type { ReactElement } from 'react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { ComponentProps, ReactElement } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   DEFAULT_WRITE_INLINE_COMPLETION_BASE_URL,
@@ -44,7 +44,6 @@ import {
 } from '../lib/settings-home-paths'
 import { useChatStore, type SettingsRouteSection } from '../store/chat-store'
 import { SettingsSidebar } from './SettingsSidebar'
-import { WriteDebugLogModal } from './settings-debug-log'
 import { useSettingsGuiUpdate } from './use-settings-gui-update'
 import {
   DEFAULT_WORKSPACE_ROOT,
@@ -56,23 +55,72 @@ import {
 } from './settings-utils'
 import { loadKunDiagnostics } from '../lib/load-kun-diagnostics'
 import { SETTINGS_CHANGED_EVENT, emitRendererSettingsChanged } from '../lib/keyboard-shortcut-settings'
-import {
-  AgentsSettingsSection,
-  ArchivedThreadsSettingsSection,
-  ClawSettingsSection,
-  EasterEggSettingsSection,
-  GeneralSettingsSection,
-  KeyboardShortcutsSettingsSection,
-  LlmDebugSettingsSection,
-  WorktreeSettingsSection,
-  MediaGenerationSettingsSection,
-  MemorySettingsSection,
-  ProvidersSettingsSection,
-  SpeechToTextSettingsSection,
-  UpdatesSettingsSection,
-  WriteSettingsSection,
-  TerminalSettingsSection
-} from './settings-sections'
+import { GeneralSettingsSection } from './settings-section-general'
+
+const ProvidersSettingsSection = lazy(() =>
+  import('./settings-section-providers').then((module) => ({ default: module.ProvidersSettingsSection }))
+)
+const WriteSettingsSection = lazy(() =>
+  import('./settings-section-write').then((module) => ({ default: module.WriteSettingsSection }))
+)
+const MediaGenerationSettingsSection = lazy(() =>
+  import('./settings-section-media-generation').then((module) => ({ default: module.MediaGenerationSettingsSection }))
+)
+const SpeechToTextSettingsSection = lazy(() =>
+  import('./settings-section-speech-to-text').then((module) => ({ default: module.SpeechToTextSettingsSection }))
+)
+const AgentsSettingsSection = lazy(() =>
+  import('./settings-section-agents').then((module) => ({ default: module.AgentsSettingsSection }))
+)
+const ArchivedThreadsSettingsSection = lazy(() =>
+  import('./settings-section-archives').then((module) => ({ default: module.ArchivedThreadsSettingsSection }))
+)
+const WorktreeSettingsSection = lazy(() =>
+  import('./settings-section-worktree').then((module) => ({ default: module.WorktreeSettingsSection }))
+)
+const MemorySettingsSection = lazy(() =>
+  import('./settings-section-memory').then((module) => ({ default: module.MemorySettingsSection }))
+)
+const KeyboardShortcutsSettingsSection = lazy(() =>
+  import('./settings-section-shortcuts').then((module) => ({ default: module.KeyboardShortcutsSettingsSection }))
+)
+const EasterEggSettingsSection = lazy(() =>
+  import('./settings-section-easter-egg').then((module) => ({ default: module.EasterEggSettingsSection }))
+)
+const ClawSettingsSection = lazy(() =>
+  import('./settings-section-claw').then((module) => ({ default: module.ClawSettingsSection }))
+)
+const UpdatesSettingsSection = lazy(() =>
+  import('./settings-section-updates').then((module) => ({ default: module.UpdatesSettingsSection }))
+)
+const TerminalSettingsSection = lazy(() =>
+  import('./settings-section-terminal').then((module) => ({ default: module.TerminalSettingsSection }))
+)
+const LlmDebugSettingsSection = lazy(() =>
+  import('./settings-section-llm-debug').then((module) => ({ default: module.LlmDebugSettingsSection }))
+)
+const WriteDebugLogModal = lazy(() =>
+  import('./settings-debug-log').then((module) => ({ default: module.WriteDebugLogModal }))
+)
+
+function LoadedAgentsSettingsSection({
+  onReady,
+  ...props
+}: ComponentProps<typeof AgentsSettingsSection> & { onReady: () => void }): ReactElement {
+  useEffect(() => {
+    onReady()
+  }, [onReady])
+  return <AgentsSettingsSection {...props} />
+}
+
+function SettingsSectionFallback(): ReactElement {
+  return (
+    <div aria-busy="true" className="space-y-3" data-testid="settings-section-fallback">
+      <div className="h-7 w-48 animate-pulse rounded-lg bg-ds-subtle" />
+      <div className="h-32 animate-pulse rounded-2xl bg-ds-subtle" />
+    </div>
+  )
+}
 
 type SettingsCategory = 'general' | 'providers' | 'write' | 'mediaGeneration' | 'speechToText' | 'agents' | 'archives' | 'permissions' | 'worktree' | 'memory' | 'shortcuts' | 'easterEgg' | 'claw' | 'updates' | 'debug' | 'terminal'
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error'
@@ -132,6 +180,7 @@ export function SettingsView(): ReactElement {
   const [memoryDiagnostics, setMemoryDiagnostics] = useState<CoreMemoryDiagnosticsJson | null>(null)
   const [runtimeDiagnosticsBusy, setRuntimeDiagnosticsBusy] = useState(false)
   const [runtimeDiagnosticsNotice, setRuntimeDiagnosticsNotice] = useState<InlineNotice | null>(null)
+  const [agentsSectionReady, setAgentsSectionReady] = useState(false)
   const [writeDebugModalOpen, setWriteDebugModalOpen] = useState(false)
   const [writeCompletionDebugEntries, setWriteCompletionDebugEntries] = useState<WriteInlineCompletionDebugEntry[]>([])
   const [writeCompletionDebugSelectedId, setWriteCompletionDebugSelectedId] = useState<string | null>(null)
@@ -159,6 +208,7 @@ export function SettingsView(): ReactElement {
   const formGuiUpdateChannel = form?.guiUpdate?.channel
   const formCursorSpotlight = form?.cursorSpotlight
   const formCursorSpotlightColor = form?.cursorSpotlightColor
+  const markAgentsSectionReady = useCallback(() => setAgentsSectionReady(true), [])
   const settingsPlatform = typeof window !== 'undefined' ? window.kunGui?.platform ?? '' : ''
   const settingsHomeDir = typeof window !== 'undefined' ? window.kunGui?.homeDir ?? '' : ''
   const compactHomePath = useCallback((value: string): string =>
@@ -355,6 +405,7 @@ export function SettingsView(): ReactElement {
     ) {
       return
     }
+    if (!agentsSectionReady) return
     const refs: Record<
       Exclude<SettingsRouteSection, 'general' | 'providers' | 'write' | 'imageGeneration' | 'mediaGeneration' | 'speechToText' | 'archives' | 'claw' | 'shortcuts' | 'easterEgg' | 'updates' | 'terminal'>,
       HTMLDivElement | null
@@ -369,7 +420,7 @@ export function SettingsView(): ReactElement {
     window.requestAnimationFrame(() => {
       target.scrollIntoView({ behavior: 'smooth', block: 'start' })
     })
-  }, [category, form, settingsSection])
+  }, [agentsSectionReady, category, form, settingsSection])
 
   useEffect(() => {
     return () => {
@@ -1107,20 +1158,24 @@ export function SettingsView(): ReactElement {
           ) : null}
 
           {category === 'general' ? <GeneralSettingsSection ctx={settingsSectionContext} /> : null}
-          {category === 'providers' ? <ProvidersSettingsSection ctx={settingsSectionContext} /> : null}
-          {category === 'write' ? <WriteSettingsSection ctx={settingsSectionContext} /> : null}
-          {category === 'mediaGeneration' ? <MediaGenerationSettingsSection ctx={settingsSectionContext} /> : null}
-          {category === 'speechToText' ? <SpeechToTextSettingsSection ctx={settingsSectionContext} /> : null}
-          {category === 'agents' ? <AgentsSettingsSection ctx={settingsSectionContext} /> : null}
-          {category === 'archives' ? <ArchivedThreadsSettingsSection ctx={settingsSectionContext} /> : null}
-          {category === 'worktree' ? <WorktreeSettingsSection ctx={settingsSectionContext} /> : null}
-          {category === 'memory' ? <MemorySettingsSection ctx={settingsSectionContext} /> : null}
-          {category === 'shortcuts' ? <KeyboardShortcutsSettingsSection ctx={settingsSectionContext} /> : null}
-          {category === 'easterEgg' ? <EasterEggSettingsSection ctx={settingsSectionContext} /> : null}
-          {category === 'claw' ? <ClawSettingsSection ctx={settingsSectionContext} /> : null}
-          {category === 'updates' ? <UpdatesSettingsSection ctx={settingsSectionContext} /> : null}
-          {category === 'terminal' ? <TerminalSettingsSection ctx={settingsSectionContext} /> : null}
-          {category === 'debug' ? <LlmDebugSettingsSection ctx={settingsSectionContext} /> : null}
+          <Suspense fallback={<SettingsSectionFallback />}>
+            {category === 'providers' ? <ProvidersSettingsSection ctx={settingsSectionContext} /> : null}
+            {category === 'write' ? <WriteSettingsSection ctx={settingsSectionContext} /> : null}
+            {category === 'mediaGeneration' ? <MediaGenerationSettingsSection ctx={settingsSectionContext} /> : null}
+            {category === 'speechToText' ? <SpeechToTextSettingsSection ctx={settingsSectionContext} /> : null}
+            {category === 'agents' ? (
+              <LoadedAgentsSettingsSection ctx={settingsSectionContext} onReady={markAgentsSectionReady} />
+            ) : null}
+            {category === 'archives' ? <ArchivedThreadsSettingsSection ctx={settingsSectionContext} /> : null}
+            {category === 'worktree' ? <WorktreeSettingsSection ctx={settingsSectionContext} /> : null}
+            {category === 'memory' ? <MemorySettingsSection ctx={settingsSectionContext} /> : null}
+            {category === 'shortcuts' ? <KeyboardShortcutsSettingsSection ctx={settingsSectionContext} /> : null}
+            {category === 'easterEgg' ? <EasterEggSettingsSection ctx={settingsSectionContext} /> : null}
+            {category === 'claw' ? <ClawSettingsSection ctx={settingsSectionContext} /> : null}
+            {category === 'updates' ? <UpdatesSettingsSection ctx={settingsSectionContext} /> : null}
+            {category === 'terminal' ? <TerminalSettingsSection ctx={settingsSectionContext} /> : null}
+            {category === 'debug' ? <LlmDebugSettingsSection ctx={settingsSectionContext} /> : null}
+          </Suspense>
         </div>
       </div>
       {saveStatus === 'error' && saveError ? (
@@ -1145,17 +1200,19 @@ export function SettingsView(): ReactElement {
         </div>
       ) : null}
       {writeDebugModalOpen ? (
-        <WriteDebugLogModal
-          completionEntries={writeCompletionDebugEntries}
-          completionSelectedId={writeCompletionDebugSelectedId}
-          loading={writeDebugLoading}
-          error={writeDebugError}
-          onSelectCompletion={setWriteCompletionDebugSelectedId}
-          onRefresh={() => void loadWriteDebugEntries()}
-          onClear={() => void clearWriteDebugEntries()}
-          onClose={() => setWriteDebugModalOpen(false)}
-          t={t}
-        />
+        <Suspense fallback={null}>
+          <WriteDebugLogModal
+            completionEntries={writeCompletionDebugEntries}
+            completionSelectedId={writeCompletionDebugSelectedId}
+            loading={writeDebugLoading}
+            error={writeDebugError}
+            onSelectCompletion={setWriteCompletionDebugSelectedId}
+            onRefresh={() => void loadWriteDebugEntries()}
+            onClear={() => void clearWriteDebugEntries()}
+            onClose={() => setWriteDebugModalOpen(false)}
+            t={t}
+          />
+        </Suspense>
       ) : null}
     </div>
   )

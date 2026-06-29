@@ -1,7 +1,5 @@
 import type { ReactElement } from 'react'
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
 import { useTranslation } from 'react-i18next'
 import { ArrowDown, Check, ChevronDown, ChevronRight, Copy, Download, File, FileEdit, GitFork, ImageIcon, Loader2, MessageSquareQuote, PencilLine, RotateCcw, Terminal, Video, Wrench } from 'lucide-react'
 import type { AttachmentReference, ChatBlock, GeneratedFileReference, RuntimeDisclosureMetadata, ToolBlock, UserFileReference, UserInputAnswer } from '../../agent/types'
@@ -1415,7 +1413,7 @@ function MessageBubbleImpl({
     return (
       <div className="ds-card-soft rounded-[20px] px-4 py-3 text-[13.5px] leading-6 text-ds-muted">
         <div className="ds-markdown">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{block.text}</ReactMarkdown>
+          <AssistantMarkdown text={block.text} streaming={false} />
         </div>
       </div>
     )
