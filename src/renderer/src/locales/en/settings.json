@@ -1163,7 +1163,7 @@
   "logRetentionSeven": "7 days",
   "gitCheckpointTitle": "Git checkpoint management",
   "checkpointCleanupEnabled": "Automatically clean up unused checkpoints",
-  "checkpointCleanupEnabledDesc": "When enabled, periodically delete Git checkpoint directories no longer referenced by any chat. Off by default.",
+  "checkpointCleanupEnabledDesc": "When enabled, periodically delete Git checkpoint directories no longer referenced by any chat. On by default.",
   "checkpointCleanupInterval": "Unused Git checkpoint cleanup",
   "checkpointCleanupIntervalDesc": "Delete Git checkpoint directories that are no longer referenced by any chat on this schedule.",
   "checkpointCleanupInterval1": "Every 1 day",
