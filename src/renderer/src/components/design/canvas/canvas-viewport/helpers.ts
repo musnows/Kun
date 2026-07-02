@@ -197,6 +197,61 @@ export function shouldResetCanvasTransientInteractionAfterDocumentSync(
   return removedShapeIds.length > 0
 }
 
+function cloneCanvasDocument(doc: CanvasDocument): CanvasDocument {
+  const objects: CanvasDocument['objects'] = {}
+  for (const [id, shape] of Object.entries(doc.objects)) {
+    objects[id] = { ...shape, children: [...shape.children] }
+  }
+  return { ...doc, objects }
+}
+
+function liveShapeShouldReplaceLoaded(
+  liveShape: CanvasDocument['objects'][string],
+  loadedShape: CanvasDocument['objects'][string] | undefined
+): boolean {
+  if (!loadedShape) return true
+  return Boolean(liveShape.htmlArtifactId && liveShape.htmlArtifactId !== loadedShape.htmlArtifactId)
+}
+
+export function mergeLoadedCanvasDocumentWithLiveChanges(
+  loaded: CanvasDocument,
+  live: CanvasDocument,
+  initial: CanvasDocument
+): CanvasDocument {
+  if (live === initial) return loaded
+  const liveRoot = live.objects[live.rootId]
+  if (!liveRoot || liveRoot.children.length === 0) return loaded
+
+  const next = cloneCanvasDocument(loaded)
+  const nextRoot = next.objects[next.rootId]
+  if (!nextRoot) return loaded
+
+  let changed = false
+  const copyLiveSubtree = (id: string): void => {
+    const liveShape = live.objects[id]
+    if (!liveShape) return
+    const loadedShape = next.objects[id]
+    if (liveShapeShouldReplaceLoaded(liveShape, loadedShape)) {
+      next.objects[id] = { ...liveShape, children: [...liveShape.children] }
+      changed = true
+    }
+    for (const childId of liveShape.children) copyLiveSubtree(childId)
+  }
+
+  const rootChildren = [...nextRoot.children]
+  for (const childId of liveRoot.children) {
+    copyLiveSubtree(childId)
+    if (!rootChildren.includes(childId) && next.objects[childId]) {
+      rootChildren.push(childId)
+      changed = true
+    }
+  }
+
+  if (!changed) return loaded
+  next.objects[next.rootId] = { ...nextRoot, children: rootChildren }
+  return next
+}
+
 const toolFactories: Record<CanvasTool, () => CanvasToolHandler> = {
   select: createSelectTool,
   rect: createRectTool,

@@ -5,6 +5,7 @@ import {
   shouldHandleCanvasKeyboardEvent,
   shouldRenderDesignArtifactOverlays,
   shouldOpenImageAnnotation,
+  mergeLoadedCanvasDocumentWithLiveChanges,
   resolveCanvasSelectionAfterDocumentSync,
   resolveHtmlFrameOverlayInteractionState,
   shouldResetCanvasTransientInteractionAfterDocumentSync,
@@ -158,5 +159,54 @@ describe('CanvasViewport surface behavior', () => {
   it('resets transient marquee and snap guides when sync removes shapes', () => {
     expect(shouldResetCanvasTransientInteractionAfterDocumentSync(['removed-frame'])).toBe(true)
     expect(shouldResetCanvasTransientInteractionAfterDocumentSync([])).toBe(false)
+  })
+
+  it('merges live-created frames when the initial disk load resolves late', () => {
+    const initial = createEmptyDocument()
+    const loaded = createEmptyDocument()
+    const persisted = createDefaultShape('rect', 10, 20)
+    loaded.objects[persisted.id] = { ...persisted, parentId: loaded.rootId }
+    loaded.objects[loaded.rootId]!.children.push(persisted.id)
+
+    const live = createEmptyDocument()
+    const screen = createHtmlFrameShape('Home', 100, 120, 'artifact-home', 'desktop')
+    live.objects[screen.id] = { ...screen, parentId: live.rootId }
+    live.objects[live.rootId]!.children.push(screen.id)
+
+    const merged = mergeLoadedCanvasDocumentWithLiveChanges(loaded, live, initial)
+
+    expect(merged.objects[persisted.id]).toBeTruthy()
+    expect(merged.objects[screen.id]?.htmlArtifactId).toBe('artifact-home')
+    expect(merged.objects[merged.rootId]?.children).toEqual([persisted.id, screen.id])
+  })
+
+  it('keeps a live html-frame upgrade over a stale loaded plain frame with the same id', () => {
+    const initial = createEmptyDocument()
+    const loaded = createEmptyDocument()
+    const stale = createDefaultShape('frame', 10, 20)
+    loaded.objects[stale.id] = { ...stale, parentId: loaded.rootId }
+    loaded.objects[loaded.rootId]!.children.push(stale.id)
+
+    const live = createEmptyDocument()
+    const upgraded = {
+      ...stale,
+      name: 'Home',
+      htmlArtifactId: 'artifact-home',
+      width: 1280,
+      height: 900,
+      parentId: live.rootId
+    }
+    live.objects[upgraded.id] = upgraded
+    live.objects[live.rootId]!.children.push(upgraded.id)
+
+    const merged = mergeLoadedCanvasDocumentWithLiveChanges(loaded, live, initial)
+
+    expect(merged.objects[stale.id]).toMatchObject({
+      name: 'Home',
+      htmlArtifactId: 'artifact-home',
+      width: 1280,
+      height: 900
+    })
+    expect(merged.objects[merged.rootId]?.children).toEqual([stale.id])
   })
 })

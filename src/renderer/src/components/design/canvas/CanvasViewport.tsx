@@ -66,7 +66,8 @@ import {
   resolveCanvasDesignSystemBaseDir,
   resolveCanvasSelectionAfterDocumentSync,
   resolveHtmlFrameOverlayInteractionState,
-  shouldResetCanvasTransientInteractionAfterDocumentSync
+  shouldResetCanvasTransientInteractionAfterDocumentSync,
+  mergeLoadedCanvasDocumentWithLiveChanges
 } from './canvas-viewport/helpers'
 
 export {
@@ -79,7 +80,8 @@ export {
   shouldToggleHtmlFrameInteractiveOnDoubleClick,
   resolveCanvasSelectionAfterDocumentSync,
   resolveHtmlFrameOverlayInteractionState,
-  shouldResetCanvasTransientInteractionAfterDocumentSync
+  shouldResetCanvasTransientInteractionAfterDocumentSync,
+  mergeLoadedCanvasDocumentWithLiveChanges
 } from './canvas-viewport/helpers'
 
 type Props = {
@@ -279,14 +281,23 @@ export function CanvasViewport({
     useCanvasSelectionStore.getState().clearSelection()
     useCanvasSelectionStore.getState().setMarquee(null)
     useCanvasSelectionStore.getState().setHoverTarget(null)
-    useCanvasShapeStore.getState().loadDocument(createEmptyDocument(), documentKey)
+    const initialDocument = createEmptyDocument()
+    useCanvasShapeStore.getState().loadDocument(initialDocument, documentKey)
     useCanvasViewportStore.getState().resetView()
     useCanvasUndoStore.getState().clear()
 
     // 2) Load from disk, fall back to empty document
     void loadCanvasDocument(workspaceRoot, artifactId, baseDir).then((loaded) => {
       if (cancelled) return
-      let doc = loaded ?? createEmptyDocument()
+      const currentShapeState = useCanvasShapeStore.getState()
+      const liveDocument = currentShapeState.documentKey === documentKey
+        ? currentShapeState.document
+        : initialDocument
+      let doc = mergeLoadedCanvasDocumentWithLiveChanges(
+        loaded ?? createEmptyDocument(),
+        liveDocument,
+        initialDocument
+      )
       let addedFrameIds: string[] = []
       if (htmlFrameSyncEnabled) {
         const synced = syncHtmlArtifactsToBoardDocument(

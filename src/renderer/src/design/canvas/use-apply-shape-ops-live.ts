@@ -1,7 +1,10 @@
 import { useEffect, useRef } from 'react'
 import type { ChatBlock, GeneratedFileReference, ToolBlock } from '../../agent/types'
 import { useChatStore } from '../../store/chat-store'
-import { collectAssistantTextForTurn } from '../../store/chat-store-runtime-helpers'
+import {
+  collectAssistantTextForTurn,
+  threadHasPendingRuntimeWork
+} from '../../store/chat-store-runtime-helpers'
 import {
   applyCanvasOpBlocks,
   applyCanvasOpsSince,
@@ -166,15 +169,17 @@ export function takeNextReadyScreenGeneration({
   document,
   currentTurnId,
   busy = false,
+  pendingRuntimeWork = false,
   htmlArtifactIds
 }: {
   pendingScreens: PendingScreenGeneration[]
   document: CanvasDocument
   currentTurnId: string | null
   busy?: boolean
+  pendingRuntimeWork?: boolean
   htmlArtifactIds?: ReadonlySet<string>
 }): PendingScreenGeneration | null {
-  if (currentTurnId || busy) return null
+  if (currentTurnId || busy || pendingRuntimeWork) return null
   while (pendingScreens.length > 0) {
     const next = pendingScreens.shift()
     if (!next) continue
@@ -364,11 +369,13 @@ export function useApplyShapeOpsLive(
     function drainPendingScreens(): void {
       if (pendingScreens.length === 0) return
       const chatState = useChatStore.getState()
+      const pendingRuntimeWork = threadHasPendingRuntimeWork(chatState.blocks)
       const next = takeNextReadyScreenGeneration({
         pendingScreens,
         document: useCanvasShapeStore.getState().document,
         currentTurnId: chatState.currentTurnId,
         busy: chatState.busy,
+        pendingRuntimeWork,
         htmlArtifactIds: new Set(
           useDesignWorkspaceStore.getState().artifacts
             .filter((artifact) => artifact.kind === 'html')
@@ -376,7 +383,7 @@ export function useApplyShapeOpsLive(
         )
       })
       if (!next) {
-        if (pendingScreens.length > 0 && (chatState.currentTurnId || chatState.busy)) {
+        if (pendingScreens.length > 0 && (chatState.currentTurnId || chatState.busy || pendingRuntimeWork)) {
           scheduleScreenDrain()
         }
         return
@@ -493,7 +500,12 @@ export function useApplyShapeOpsLive(
         scheduleStreaming()
       }
       if (turnEnded) finalizeTurn()
-      if (!state.currentTurnId && !state.busy && pendingScreens.length > 0) {
+      if (
+        !state.currentTurnId &&
+        !state.busy &&
+        !threadHasPendingRuntimeWork(state.blocks) &&
+        pendingScreens.length > 0
+      ) {
         scheduleScreenDrain(0)
       }
     })
