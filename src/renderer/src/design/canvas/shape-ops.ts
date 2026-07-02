@@ -13,6 +13,7 @@ import {
   createHtmlFrameShape,
   createShapeId,
   isHtmlFrame,
+  isImplicitImageSlot,
   shapeBounds,
   type DevicePreset
 } from './canvas-types'
@@ -951,6 +952,14 @@ function executeOne(
       }
       {
         const patch: Partial<CanvasShape> = { ...op.patch }
+        if (
+          typeof patch.imageUrl === 'string' &&
+          patch.imageUrl.trim() &&
+          existing.type !== 'image' &&
+          isImplicitImageSlot(existing)
+        ) {
+          patch.type = 'image'
+        }
         if (LINEAR_TYPES.has(existing.type) && patch.points && patch.points.length > 0) {
           Object.assign(patch, bboxRelative(patch.points))
         }

@@ -3,6 +3,7 @@ import {
   extractDesignCanvasToolBlocks,
   extractShapeOpsBlocks,
   extractCanvasOpBlocks,
+  applyCanvasOpBlocks,
   applyCanvasOpsSince,
   applyShapeOpsFromText,
   extractCanvasOpBlocksFromValue,
@@ -245,6 +246,25 @@ describe('extractCanvasOpBlocksFromValue (tool result payloads)', () => {
       })
     ).toEqual([[{ op: 'design-system-template', operation: 'create', name: 'Kit' }]])
   })
+
+  it('applies design_update_shapes imageUrl updates to empty slots as visible image shapes', () => {
+    const added = applyShapeOpsFromText(
+      '```shapeops\n[{ "op": "add", "shape": { "type": "rect", "width": 180, "height": 120 } }]\n```'
+    )
+    const id = added.affectedIds[0]
+    const blocks = extractCanvasOpBlocksFromValue({
+      ok: true,
+      tool: 'design_update_shapes',
+      ops: [{ op: 'update', id, patch: { imageUrl: '.deepseekgui-images/tool-img.png' } }]
+    })
+
+    const result = applyCanvasOpBlocks(blocks, 'tool:test')
+
+    const shape = useCanvasShapeStore.getState().document.objects[id]
+    expect(result.errors).toEqual([])
+    expect(shape?.type).toBe('image')
+    expect(shape?.imageUrl).toBe('.deepseekgui-images/tool-img.png')
+  })
 })
 
 describe('applyCanvasOpsSince (streaming application)', () => {
@@ -364,5 +384,41 @@ describe('imageUrl ShapeOp support', () => {
     expect(useCanvasShapeStore.getState().document.objects[id]?.imageUrl).toBe(
       '.deepseekgui-images/img-2.png'
     )
+  })
+
+  it('update op converts an empty rect slot with imageUrl into a renderable image shape', () => {
+    const added = applyShapeOpsFromText(
+      '```shapeops\n[{ "op": "add", "shape": { "type": "rect", "width": 120, "height": 80, "fills": [{ "type": "solid", "color": "#d9d9d9", "opacity": 1 }] } }]\n```'
+    )
+    const id = added.affectedIds[0]
+
+    const result = applyShapeOpsFromText(
+      `\`\`\`shapeops\n[{ "op": "update", "id": "${id}", "patch": { "imageUrl": ".deepseekgui-images/img-slot.png" } }]\n\`\`\``
+    )
+
+    const shape = useCanvasShapeStore.getState().document.objects[id]
+    expect(result.errors).toEqual([])
+    expect(result.affectedIds).toContain(id)
+    expect(shape?.type).toBe('image')
+    expect(shape?.imageUrl).toBe('.deepseekgui-images/img-slot.png')
+    expect(shape?.width).toBe(120)
+    expect(shape?.height).toBe(80)
+  })
+
+  it('update op converts an empty frame slot with imageUrl into a renderable image shape', () => {
+    const added = applyShapeOpsFromText(
+      '```shapeops\n[{ "op": "add", "shape": { "type": "frame", "width": 160, "height": 100, "aiImageHolder": true } }]\n```'
+    )
+    const id = added.affectedIds[0]
+
+    const result = applyShapeOpsFromText(
+      `\`\`\`shapeops\n[{ "op": "update", "id": "${id}", "patch": { "imageUrl": ".deepseekgui-images/img-frame.png" } }]\n\`\`\``
+    )
+
+    const shape = useCanvasShapeStore.getState().document.objects[id]
+    expect(result.errors).toEqual([])
+    expect(shape?.type).toBe('image')
+    expect(shape?.imageUrl).toBe('.deepseekgui-images/img-frame.png')
+    expect(shape?.children).toEqual([])
   })
 })
