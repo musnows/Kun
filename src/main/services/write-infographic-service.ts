@@ -171,6 +171,7 @@ export async function requestWriteInfographic(
         maxPromptChars: imagePromptMaxChars(imageGeneration)
       }),
       model: imageGeneration.model.trim(),
+      quality: imageGeneration.quality,
       ...(size && size !== 'auto' ? { size } : {}),
       timeoutMs: imageGeneration.timeoutMs,
       signal: AbortSignal.timeout(imageGeneration.timeoutMs)

@@ -21,6 +21,7 @@ const MAX_CODEX_IMAGE_SSE_EVENTS = 512
 const MAX_CODEX_IMAGE_BASE64_CHARS = 64 * 1024 * 1024
 
 type CodexImageToolChoiceMode = 'allowed_tools' | 'required' | 'none'
+type ImageGenerationQuality = 'auto' | 'low' | 'medium' | 'high'
 
 export type GeneratedImage = { data: Buffer; mimeType: string }
 
@@ -28,6 +29,7 @@ export type ImageGenRequest = {
   prompt: string
   model: string
   size?: string
+  quality?: ImageGenerationQuality
   timeoutMs: number
   signal: AbortSignal
 }
@@ -253,6 +255,7 @@ export function buildImageGenToolProviders(
           prompt,
           model,
           ...(size && size !== 'auto' ? { size } : {}),
+          quality: config.quality,
           timeoutMs: config.timeoutMs,
           signal: context.abortSignal
         }
@@ -322,6 +325,7 @@ export function buildImageGenToolProviders(
           attachments,
           model,
           ...(size ? { size } : {}),
+          quality: config.quality,
           endpoint,
           warnings,
           telemetry: telemetry(startedAt, client.id)
@@ -620,30 +624,32 @@ export class OpenAiCompatImageClient implements ImageGenClient {
   }
 
   async generate(request: ImageGenRequest): Promise<GeneratedImage> {
-    const body = (includeResponseFormat: boolean) =>
+    const body = (includeResponseFormat: boolean, includeQuality: boolean) =>
       JSON.stringify({
         model: request.model,
         prompt: request.prompt,
         n: 1,
         ...(request.size ? { size: request.size } : {}),
+        ...(includeQuality && request.quality && request.quality !== 'auto' ? { quality: request.quality } : {}),
         ...(includeResponseFormat ? { response_format: 'b64_json' } : {})
       })
     return this.requestImage(
       openAiCompatImageUrl(this.baseUrl, 'generations'),
-      (includeResponseFormat) => ({
+      (includeResponseFormat, includeQuality) => ({
         headers: { Authorization: `Bearer ${this.apiKey}`, 'Content-Type': 'application/json' },
-        body: body(includeResponseFormat)
+        body: body(includeResponseFormat, includeQuality)
       }),
       request
     )
   }
 
   async edit(request: ImageGenEditRequest): Promise<GeneratedImage> {
-    const buildForm = (includeResponseFormat: boolean) => {
+    const buildForm = (includeResponseFormat: boolean, includeQuality: boolean) => {
       const form = new FormData()
       form.set('model', request.model)
       form.set('prompt', request.prompt)
       if (request.size) form.set('size', request.size)
+      if (includeQuality && request.quality && request.quality !== 'auto') form.set('quality', request.quality)
       if (includeResponseFormat) form.set('response_format', 'b64_json')
       const field = request.images.length > 1 ? 'image[]' : 'image'
       for (const image of request.images) {
@@ -653,9 +659,9 @@ export class OpenAiCompatImageClient implements ImageGenClient {
     }
     return this.requestImage(
       openAiCompatImageUrl(this.baseUrl, 'edits'),
-      (includeResponseFormat) => ({
+      (includeResponseFormat, includeQuality) => ({
         headers: { Authorization: `Bearer ${this.apiKey}` },
-        body: buildForm(includeResponseFormat)
+        body: buildForm(includeResponseFormat, includeQuality)
       }),
       request
     )
@@ -668,22 +674,37 @@ export class OpenAiCompatImageClient implements ImageGenClient {
    */
   private async requestImage(
     url: string,
-    init: (includeResponseFormat: boolean) => { headers: Record<string, string>; body: string | FormData },
-    request: { timeoutMs: number; signal: AbortSignal }
+    init: (
+      includeResponseFormat: boolean,
+      includeQuality: boolean
+    ) => { headers: Record<string, string>; body: string | FormData },
+    request: { timeoutMs: number; signal: AbortSignal; quality?: ImageGenerationQuality }
   ): Promise<GeneratedImage> {
     const signal = withTimeout(request.signal, request.timeoutMs)
-    const post = async (includeResponseFormat: boolean): Promise<Response> => {
+    const post = async (includeResponseFormat: boolean, includeQuality: boolean): Promise<Response> => {
       try {
-        return await fetch(url, { method: 'POST', ...init(includeResponseFormat), signal })
+        return await fetch(url, { method: 'POST', ...init(includeResponseFormat, includeQuality), signal })
       } catch (error) {
         throw imageFetchFailure(url, error, request)
       }
     }
-    let response = await post(true)
+    let includeResponseFormat = true
+    let includeQuality = Boolean(request.quality && request.quality !== 'auto')
+    let response = await post(includeResponseFormat, includeQuality)
     if (!response.ok && response.status >= 400 && response.status < 500) {
-      const errorBody = await response.text()
-      if (!/response_format/i.test(errorBody)) throw new ImageGenHttpError(response.status, errorBody)
-      response = await post(false)
+      let errorBody = await response.text()
+      if (includeQuality && /quality/i.test(errorBody)) {
+        includeQuality = false
+        response = await post(includeResponseFormat, includeQuality)
+        if (!response.ok && response.status >= 400 && response.status < 500) {
+          errorBody = await response.text()
+        }
+      }
+      if (!response.ok && response.status >= 400 && response.status < 500) {
+        if (!/response_format/i.test(errorBody)) throw new ImageGenHttpError(response.status, errorBody)
+        includeResponseFormat = false
+        response = await post(includeResponseFormat, includeQuality)
+      }
     }
     if (!response.ok) {
       throw new ImageGenHttpError(response.status, await response.text())
@@ -755,7 +776,7 @@ export class CodexResponsesImageClient implements ImageGenClient {
           type: 'image_generation',
           action: 'generate',
           model: request.model,
-          quality: 'auto',
+          quality: request.quality ?? 'auto',
           output_format: 'png',
           background: 'opaque',
           partial_images: 1,

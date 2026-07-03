@@ -11,6 +11,8 @@ import {
   DEFAULT_WRITE_INLINE_COMPLETION_MODEL,
   DEFAULT_WRITE_INLINE_LONG_COMPLETION_MAX_TOKENS,
   DEFAULT_KUN_DATA_DIR,
+  DEFAULT_TOOL_OUTPUT_MAX_BYTES,
+  DEFAULT_TOOL_OUTPUT_MAX_LINES,
   MIN_KUN_LOCAL_PORT,
   WRITE_INLINE_COMPLETION_MODEL_IDS,
   defaultModelProviderSettings,
@@ -443,6 +445,10 @@ export function AgentsSettingsSection({ ctx }: { ctx: Record<string, any> }): Re
       maxStringBytes: 524288
     }
   }
+  const toolOutputLimits = kun.toolOutputLimits ?? {
+    maxLines: DEFAULT_TOOL_OUTPUT_MAX_LINES,
+    maxBytes: DEFAULT_TOOL_OUTPUT_MAX_BYTES
+  }
   const updateMcpSearch = (patch: Record<string, unknown>): void => {
     updateKun({
       mcpSearch: {
@@ -490,6 +496,14 @@ export function AgentsSettingsSection({ ctx }: { ctx: Record<string, any> }): Re
     updateKun({
       runtimeTuning: {
         ...runtimeTuning,
+        ...patch
+      }
+    })
+  }
+  const updateToolOutputLimits = (patch: Record<string, unknown>): void => {
+    updateKun({
+      toolOutputLimits: {
+        ...toolOutputLimits,
         ...patch
       }
     })
@@ -1567,6 +1581,39 @@ export function AgentsSettingsSection({ ctx }: { ctx: Record<string, any> }): Re
                             value={runtimeTuning.toolStorm.threshold}
                             disabled={!runtimeTuning.toolStorm.enabled}
                             onChange={(e) => updateToolStorm({ threshold: Number(e.target.value) })}
+                          />
+                        </label>
+                      </div>
+                    }
+                  />
+                  <SettingRow
+                    title={t('kunToolOutputLimits')}
+                    description={t('kunToolOutputLimitsDesc')}
+                    wideControl
+                    control={
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <label className="flex min-w-0 flex-col gap-1.5 text-[12px] font-medium text-ds-muted">
+                          {t('kunToolOutputMaxLines')}
+                          <input
+                            type="number"
+                            min={1}
+                            max={1000000}
+                            step={1000}
+                            className="rounded-xl border border-ds-border bg-ds-card px-3 py-2 text-[14px] text-ds-ink shadow-sm focus:border-accent/40 focus:outline-none focus:ring-1 focus:ring-accent/30"
+                            value={toolOutputLimits.maxLines}
+                            onChange={(e) => updateToolOutputLimits({ maxLines: Number(e.target.value) })}
+                          />
+                        </label>
+                        <label className="flex min-w-0 flex-col gap-1.5 text-[12px] font-medium text-ds-muted">
+                          {t('kunToolOutputMaxBytes')}
+                          <input
+                            type="number"
+                            min={1}
+                            max={67108864}
+                            step={1024}
+                            className="rounded-xl border border-ds-border bg-ds-card px-3 py-2 text-[14px] text-ds-ink shadow-sm focus:border-accent/40 focus:outline-none focus:ring-1 focus:ring-accent/30"
+                            value={toolOutputLimits.maxBytes}
+                            onChange={(e) => updateToolOutputLimits({ maxBytes: Number(e.target.value) })}
                           />
                         </label>
                       </div>

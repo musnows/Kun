@@ -24,6 +24,19 @@ The loop:
 5. Hand the approved design to the coding agent ("Implement in code"), which
    publishes a shared design system and opens a fresh code thread.
 
+Product positioning:
+
+| Mode | Primary job | Output |
+|---|---|---|
+| **Code** | Work against a real repository, edit files, run commands, review changes, and ship implementation. | Code diffs, plans, todos, reviews, runnable app changes. |
+| **Design** | Turn requirements, references, or existing UI into visual direction before implementation. | UI drafts, interactive HTML prototypes, graph artifacts, exported prototypes, shared `DESIGN_SYSTEM.md`. |
+| **Write** | Draft, edit, polish, and export long-form Markdown documents. | Markdown workspaces, inline completions/edits, `HTML / PDF / DOC / DOCX` exports. |
+
+Design mode is therefore not a legacy painting shortcut. It is the design leg
+of Kun's requirement -> design -> plan -> code -> verify loop, sharing the same
+runtime, provider configuration, approvals, and thread mechanics as Code and
+Write.
+
 Positioning: this is the only one of the surveyed tools where design lives **inside
 the coding-agent IDE** with an organic design↔code loop (see §11).
 

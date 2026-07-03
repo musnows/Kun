@@ -55,12 +55,19 @@ export type TurnServiceDeps = {
  * directly.
  */
 export class TurnService {
-  private readonly deps: TurnServiceDeps
+  private deps: TurnServiceDeps
   private readonly inflightTurns = new Map<string, AbortController>()
   private readonly threadMutationQueues = new Map<string, Promise<void>>()
 
   constructor(deps: TurnServiceDeps) {
     this.deps = deps
+  }
+
+  updateRuntimeConfig(patch: Partial<Pick<TurnServiceDeps, 'model' | 'defaultModel' | 'contextCompaction'>>): void {
+    this.deps = {
+      ...this.deps,
+      ...patch
+    }
   }
 
   async startTurn(input: {

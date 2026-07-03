@@ -169,7 +169,7 @@ export class DelegationRuntime {
    */
   private readonly detachedAborts = new Map<string, AbortController>()
 
-  constructor(private readonly options: {
+  constructor(private options: {
     config: SubagentsCapabilityConfig
     store: FileDelegationStore
     events?: RuntimeEventRecorder
@@ -178,6 +178,17 @@ export class DelegationRuntime {
     executor?: ChildRunExecutor
     recordExternalUsage?: (threadId: string, usage: UsageSnapshot) => void
   }) {}
+
+  replaceConfig(config: SubagentsCapabilityConfig): void {
+    this.options = {
+      ...this.options,
+      config
+    }
+  }
+
+  enabled(): boolean {
+    return this.options.config.enabled
+  }
 
   async runChild(input: {
     parentThreadId: string

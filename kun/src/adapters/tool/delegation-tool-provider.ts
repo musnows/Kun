@@ -4,6 +4,7 @@ import { LocalToolHost } from './local-tool-host.js'
 
 export function buildDelegationToolProviders(runtime: DelegationRuntime | undefined): CapabilityToolProvider[] {
   if (!runtime) return []
+  if (!runtime.enabled()) return []
   // Only subagent/all roles are delegation targets; primary-only personas
   // are for starting a session, not for delegate_task.
   const profiles = runtime.listProfiles().filter((profile) => profile.mode !== 'primary')

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { PenLine } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useCanvasShapeStore } from '../../../design/canvas/canvas-shape-store'
 import { useCanvasViewportStore } from '../../../design/canvas/canvas-viewport-store'
@@ -45,6 +46,7 @@ import {
   shouldRenderDesignArtifactOverlays,
   shouldSyncCanvasHtmlFrames,
   shouldToggleHtmlFrameInteractiveOnDoubleClick,
+  resolveSelectedImageAnnotationAction,
   resolveCanvasDesignSystemBaseDir,
   resolveHtmlFrameOverlayInteractionState
 } from './canvas-viewport/helpers'
@@ -54,6 +56,7 @@ export {
   resolveCanvasDesignSystemBaseDir,
   shouldHandleCanvasKeyboardEvent,
   shouldOpenImageAnnotation,
+  resolveSelectedImageAnnotationAction,
   shouldRenderCanvasMinimap,
   shouldRenderDesignArtifactOverlays,
   shouldSyncCanvasHtmlFrames,
@@ -110,6 +113,7 @@ export function CanvasViewport({
   const setActiveTool = useCanvasViewportStore((s) => s.setActiveTool)
   const gridVisible = useCanvasViewportStore((s) => s.gridVisible)
   const containerWidth = useCanvasViewportStore((s) => s.containerWidth)
+  const containerHeight = useCanvasViewportStore((s) => s.containerHeight)
   const setContainerSize = useCanvasViewportStore((s) => s.setContainerSize)
   const designArtifacts = useDesignWorkspaceStore((s) => s.artifacts)
   const activeArtifactId = useDesignWorkspaceStore((s) => s.activeArtifactId)
@@ -215,6 +219,20 @@ export function CanvasViewport({
     () => resolvePreferredPrototypeArtifactId(designArtifacts, selectedHtmlArtifactId, activeArtifactId),
     [activeArtifactId, designArtifacts, selectedHtmlArtifactId]
   )
+  const selectedImageAnnotationAction = useMemo(
+    () =>
+      resolveSelectedImageAnnotationAction(surface, document, selectedIds, {
+        vbox,
+        containerWidth,
+        containerHeight
+      }),
+    [containerHeight, containerWidth, document, selectedIds, surface, vbox]
+  )
+
+  const openImageAnnotation = useCallback((shapeId: string): void => {
+    useCanvasSelectionStore.getState().select([shapeId])
+    useImageAnnotationStore.getState().openImageAnnotation(shapeId)
+  }, [])
 
   // Container resize observer
   useEffect(() => {
@@ -497,6 +515,29 @@ export function CanvasViewport({
               </g>
             </svg>
           )}
+          {selectedImageAnnotationAction ? (
+            <button
+              type="button"
+              className="ds-no-drag absolute z-30 flex items-center justify-center gap-1.5 rounded-full border border-accent/20 bg-white/95 px-3 text-[12px] font-medium text-accent shadow-[0_8px_24px_rgba(15,23,42,0.14)] backdrop-blur transition hover:bg-accent-soft hover:shadow-[0_10px_28px_rgba(15,23,42,0.18)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 dark:bg-[#1f2430]/95"
+              style={{
+                left: selectedImageAnnotationAction.left,
+                top: selectedImageAnnotationAction.top,
+                width: selectedImageAnnotationAction.width,
+                height: selectedImageAnnotationAction.height
+              }}
+              title={t('canvasInspectorAnnotateOpen', '在图片上标注修改')}
+              aria-label={t('canvasInspectorAnnotate', 'AI 修改图片')}
+              onPointerDown={(e) => e.stopPropagation()}
+              onDoubleClick={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation()
+                openImageAnnotation(selectedImageAnnotationAction.shapeId)
+              }}
+            >
+              <PenLine className="h-3.5 w-3.5 shrink-0" strokeWidth={1.9} />
+              <span className="whitespace-nowrap">{t('canvasInspectorAnnotate', 'AI 修改图片')}</span>
+            </button>
+          ) : null}
           {designArtifactOverlaysEnabled ? (
             <HtmlFrameOverlay
               workspaceRoot={workspaceRoot}

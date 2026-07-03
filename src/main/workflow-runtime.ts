@@ -1902,6 +1902,7 @@ export class WorkflowRuntime {
         const image = await client.generate({
           prompt: interpolate(node.config.prompt, payload, scope),
           model: imageGen.model.trim(),
+          quality: imageGen.quality,
           ...(size && size !== 'auto' ? { size } : {}),
           timeoutMs: imageGen.timeoutMs,
           signal: AbortSignal.timeout(imageGen.timeoutMs)

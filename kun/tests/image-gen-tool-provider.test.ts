@@ -13,6 +13,7 @@ import {
   mapImageSize,
   MiniMaxImageClient,
   minimaxImageDimensionFields,
+  OpenAiCompatImageClient,
   openAiCompatImageUrl,
   protocolSupportsImageEdit,
   type ImageGenClient
@@ -318,6 +319,53 @@ describe('Image gen tool provider', () => {
     expect(image.data.byteLength).toBeGreaterThan(0)
   })
 
+  it('retries Codex image requests when a deployment rejects preferred tool_choice shapes', async () => {
+    const requests: string[] = []
+    const resultBase64 = png(8, 8).toString('base64')
+    vi.stubGlobal('fetch', vi.fn(async (_url: string | URL, init?: RequestInit) => {
+      requests.push(String(init?.body))
+      if (requests.length === 1) {
+        return new Response('Tool choice allowed_tools not found in tools parameter.', { status: 400 })
+      }
+      if (requests.length === 2) {
+        return new Response([
+          `data: ${JSON.stringify({
+            type: 'response.completed',
+            response: { status: 'completed', output: [{ type: 'message', content: [] }] }
+          })}`,
+          'data: [DONE]'
+        ].join('\n\n'), {
+          status: 200,
+          headers: { 'content-type': 'text/event-stream' }
+        })
+      }
+      return new Response([
+        `data: ${JSON.stringify({
+          type: 'response.output_item.done',
+          item: { type: 'image_generation_call', result: resultBase64 }
+        })}`,
+        'data: [DONE]'
+      ].join('\n\n'), {
+        status: 200,
+        headers: { 'content-type': 'text/event-stream' }
+      })
+    }))
+    const client = new CodexResponsesImageClient('https://chatgpt.com/backend-api/codex', 'codex-access')
+
+    const image = await client.generate({
+      prompt: 'tiny square',
+      model: 'gpt-image-2',
+      timeoutMs: 1_000,
+      signal: new AbortController().signal
+    })
+
+    expect(image.data.byteLength).toBeGreaterThan(0)
+    expect(requests).toHaveLength(3)
+    expect(JSON.parse(requests[0]).tool_choice).toMatchObject({ type: 'allowed_tools' })
+    expect(JSON.parse(requests[1]).tool_choice).toBe('required')
+    expect(JSON.parse(requests[2]).tool_choice).toBeUndefined()
+  })
+
   it('summarizes Codex responses that complete without image data', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response([
       `data: ${JSON.stringify({
@@ -371,22 +419,51 @@ describe('Image gen tool provider', () => {
       model: string
       size: string
       endpoint: string
+      quality: string
       warnings: string[]
     }
     expect(output.endpoint).toBe('generations')
     expect(output.model).toBe('test-image-model')
     expect(output.size).toBe('1024x576')
+    expect(output.quality).toBe('auto')
     expect(output.warnings).toEqual([])
     expect(output.files[0]).toMatchObject({ mimeType: 'image/png', width: 1024, height: 576 })
     expect(output.files[0].relativePath.startsWith('.deepseekgui-images/')).toBe(true)
     expect(existsSync(output.files[0].absolutePath)).toBe(true)
     expect(JSON.stringify(output)).not.toMatch(/base64|b64_json/)
-    expect(client.generateCalls[0]).toMatchObject({ prompt: 'a sunset over the sea', size: '1024x576' })
+    expect(client.generateCalls[0]).toMatchObject({
+      prompt: 'a sunset over the sea',
+      quality: 'auto',
+      size: '1024x576'
+    })
 
     expect(output.attachments).toHaveLength(1)
     const id = output.attachments[0].id
     await expect(store.resolveContent(id, { threadId: 'thr_1' })).resolves.toMatchObject({ mimeType: 'image/png' })
     await expect(store.resolveContent(id, { threadId: 'thr_other' })).rejects.toThrow(/not authorized/)
+  })
+
+  it('passes configured image quality through tool execution', async () => {
+    const client = fakeClient()
+    const host = new LocalToolHost({
+      registry: new CapabilityRegistry(
+        buildImageGenToolProviders(imageGenConfig({ quality: 'high' }), {
+          client,
+          nowIso: () => '2026-06-10T00:00:00.000Z'
+        }).providers
+      )
+    })
+
+    const result = await host.execute({
+      callId: 'call_1',
+      toolName: 'generate_image',
+      arguments: { prompt: 'a detailed product render' }
+    }, buildContext())
+
+    expect(result.item).toMatchObject({ kind: 'tool_result', isError: false })
+    if (result.item.kind !== 'tool_result') return
+    expect(result.item.output).toMatchObject({ quality: 'high' })
+    expect(client.generateCalls[0]).toMatchObject({ quality: 'high' })
   })
 
   it('posts generations as JSON and decodes b64_json responses', async () => {
@@ -417,6 +494,41 @@ describe('Image gen tool provider', () => {
       n: 1,
       response_format: 'b64_json'
     })
+    expect(JSON.parse(requests[0].body).quality).toBeUndefined()
+  })
+
+  it('sends OpenAI-compatible quality when configured and retries without it if rejected', async () => {
+    const requests: Array<{ url: string; body: string }> = []
+    vi.stubGlobal('fetch', vi.fn(async (url: string | URL, init?: RequestInit) => {
+      requests.push({ url: String(url), body: String(init?.body) })
+      if (requests.length === 1) {
+        return new Response(JSON.stringify({ error: { message: 'Unknown parameter: quality' } }), { status: 400 })
+      }
+      return new Response(JSON.stringify({ data: [{ b64_json: png(8, 8).toString('base64') }] }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' }
+      })
+    }))
+    const client = new OpenAiCompatImageClient('https://images.example.test/v1', 'sk-test')
+
+    const image = await client.generate({
+      prompt: 'high fidelity icon',
+      model: 'gpt-image-2',
+      quality: 'high',
+      timeoutMs: 1_000,
+      signal: new AbortController().signal
+    })
+
+    expect(image).toMatchObject({ mimeType: 'image/png' })
+    expect(requests).toHaveLength(2)
+    expect(JSON.parse(requests[0].body)).toMatchObject({
+      model: 'gpt-image-2',
+      prompt: 'high fidelity icon',
+      quality: 'high',
+      response_format: 'b64_json'
+    })
+    expect(JSON.parse(requests[1].body).quality).toBeUndefined()
+    expect(JSON.parse(requests[1].body).response_format).toBe('b64_json')
   })
 
   it('downloads url responses and retries once without response_format when rejected', async () => {

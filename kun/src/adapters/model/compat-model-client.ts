@@ -596,9 +596,16 @@ export class CompatModelClient implements ModelClient {
     }
     const reasoning = responsesReasoningForEffort(
       request.reasoningEffort,
-      this.modelReasoningFor(model)
+      this.modelReasoningFor(model),
+      {
+        maxEffort: isCodex ? 'xhigh' : 'high',
+        includeSummary: isCodex
+      }
     )
-    if (reasoning) body.reasoning = reasoning
+    if (reasoning) {
+      body.reasoning = reasoning
+      if (isCodex) body.include = ['reasoning.encrypted_content']
+    }
     const tools = normalizeToolSpecs(request.tools)
     if (tools.length > 0) {
       body.tools = tools.map((tool) => ({
@@ -1938,7 +1945,11 @@ type NormalizedReasoningEffort = ModelReasoningCapability['defaultEffort']
 
 function responsesReasoningForEffort(
   effort: string | undefined,
-  reasoning?: ModelReasoningCapability
+  reasoning?: ModelReasoningCapability,
+  options: {
+    maxEffort?: 'high' | 'xhigh'
+    includeSummary?: boolean
+  } = {}
 ): Record<string, unknown> | null {
   if (reasoning && reasoning.requestProtocol !== 'openai-responses') return null
   const resolved = reasoning
@@ -1946,14 +1957,19 @@ function responsesReasoningForEffort(
     : normalizeReasoningEffortValue(effort)
   if (resolved === 'auto' || resolved === 'off' || !resolved) return null
   const normalized = resolved
+  const payload = (wireEffort: string): Record<string, unknown> => ({
+    effort: wireEffort,
+    ...(options.includeSummary ? { summary: 'auto' } : {})
+  })
   switch (normalized) {
     case 'low':
-      return { effort: 'low' }
+      return payload('low')
     case 'medium':
-      return { effort: 'medium' }
+      return payload('medium')
     case 'high':
+      return payload('high')
     case 'max':
-      return { effort: 'high' }
+      return payload(options.maxEffort ?? 'high')
     default:
       return null
   }

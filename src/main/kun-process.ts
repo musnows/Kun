@@ -26,6 +26,7 @@ import {
 import { resolveCodexOAuthApiKey } from './codex-auth'
 import {
   KunConfigSchema,
+  type KunConfig,
   KunServeConfigSchema,
   ModelConfigSchema,
   ContextCompactionConfigSchema,
@@ -466,6 +467,7 @@ export async function syncGuiManagedKunConfig(
     | 'apiKey'
     | 'mcpSearch'
     | 'tokenEconomy'
+    | 'toolOutputLimits'
     | 'storage'
     | 'contextCompaction'
     | 'runtimeTuning'
@@ -494,7 +496,7 @@ export async function syncGuiManagedKunConfig(
     }
     mcpConfigPath?: string
   }
-): Promise<void> {
+): Promise<KunConfig> {
   const configPath = join(dataDir, 'config.json')
   const existing = sanitizeKunConfigSections(await readJsonObjectIfExists(configPath))
   const importedMcpServers = await readGuiManagedMcpServers(
@@ -544,6 +546,7 @@ export async function syncGuiManagedKunConfig(
       ...serve,
       storage,
       tokenEconomy: tokenEconomyConfigForRuntime(runtime.tokenEconomy, existingTokenEconomy),
+      toolOutputLimits: toolOutputLimitsConfigForRuntime(runtime.toolOutputLimits),
       headers: defaultClientHeaders,
       ...(providers && Object.keys(providers).length ? { providers } : {})
     },
@@ -614,9 +617,10 @@ export async function syncGuiManagedKunConfig(
     )
   }
   const nextText = `${JSON.stringify(next, null, 2)}\n`
-  if (existing && nextText === `${JSON.stringify(existing, null, 2)}\n`) return
+  if (existing && nextText === `${JSON.stringify(existing, null, 2)}\n`) return parsedNext.data
   await mkdir(dirname(configPath), { recursive: true })
   await writeFile(configPath, nextText, 'utf8')
+  return parsedNext.data
 }
 
 function buildGuiScheduleKunMcpServer(
@@ -942,6 +946,15 @@ function tokenEconomyConfigForRuntime(
   }
 }
 
+function toolOutputLimitsConfigForRuntime(
+  toolOutputLimits: Pick<KunRuntimeSettingsV1, 'toolOutputLimits'>['toolOutputLimits'] | undefined
+): Record<string, unknown> {
+  return {
+    maxLines: toolOutputLimits?.maxLines,
+    maxBytes: toolOutputLimits?.maxBytes
+  }
+}
+
 function storageConfigForRuntime(
   storage: Pick<KunRuntimeSettingsV1, 'storage'>['storage']
 ): Record<string, unknown> {
@@ -1045,7 +1058,8 @@ function imageGenConfigForRuntime(
     baseUrl: imageGeneration.baseUrl,
     apiKey: resolvedApiKey.apiKey,
     model: imageGeneration.model,
-    defaultSize: imageGeneration.defaultSize
+    defaultSize: imageGeneration.defaultSize,
+    quality: imageGeneration.quality
   }
   for (const [key, value] of Object.entries(fields)) {
     const trimmed = value.trim()

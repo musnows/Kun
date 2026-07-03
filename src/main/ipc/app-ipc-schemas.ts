@@ -35,6 +35,7 @@ import {
   KUN_BACKGROUND_SHELL_TEMPLATE
 } from '../../shared/kun-endpoints'
 import {
+  IMAGE_GENERATION_QUALITIES,
   IMAGE_GENERATION_PROTOCOLS,
   MUSIC_GENERATION_PROTOCOLS,
   MODEL_ENDPOINT_FORMATS,
@@ -244,6 +245,7 @@ const writeInlineCompletionModelSchema = z.union([
 ])
 const modelEndpointFormatSchema = z.enum(MODEL_ENDPOINT_FORMATS)
 const imageGenerationProtocolSchema = z.enum(IMAGE_GENERATION_PROTOCOLS)
+const imageGenerationQualitySchema = z.enum(IMAGE_GENERATION_QUALITIES)
 const speechToTextProtocolSchema = z.enum(SPEECH_TO_TEXT_PROTOCOLS)
 const localWhisperModelIdSchema = z.enum(LOCAL_WHISPER_MODELS.map((model) => model.id) as [string, ...string[]])
 const localWhisperDownloadSourceIds = LOCAL_WHISPER_DOWNLOAD_SOURCES.map((source) => source.id) as [
@@ -404,6 +406,10 @@ const kunRuntimePatchSchema = z.object({
       maxArrayItems: z.number().int().positive().max(10_000).optional()
     }).strict().optional()
   }).strict().optional(),
+  toolOutputLimits: z.object({
+    maxLines: z.number().int().positive().max(1_000_000).optional(),
+    maxBytes: z.number().int().positive().max(64 * 1024 * 1024).optional()
+  }).strict().optional(),
   insecure: z.boolean().optional(),
   mcpSearch: z.object({
     enabled: z.boolean().optional(),
@@ -453,6 +459,7 @@ const kunRuntimePatchSchema = z.object({
     apiKey: z.string().max(MAX_BODY_BYTES).optional(),
     model: optionalModelIdSchema,
     defaultSize: z.string().trim().max(16).optional(),
+    quality: imageGenerationQualitySchema.optional(),
     timeoutMs: z.number().int().positive().max(600_000).optional()
   }).strict().optional(),
   speechToText: z.object({

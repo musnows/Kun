@@ -2806,6 +2806,7 @@ describe('ClawRuntime', () => {
         apiKey: 'sk-image',
         model: 'test-image-model',
         defaultSize: '1024x1024',
+        quality: 'auto',
         timeoutMs: 180000
       }
       settings.claw.channels = [
@@ -2938,6 +2939,7 @@ describe('ClawRuntime', () => {
         apiKey: 'sk-image',
         model: 'test-image-model',
         defaultSize: '1024x1024',
+        quality: 'auto',
         timeoutMs: 180000
       }
       settings.claw.channels = [
@@ -3201,6 +3203,7 @@ describe('ClawRuntime', () => {
         apiKey: 'sk-image',
         model: 'test-image-model',
         defaultSize: '1024x1024',
+        quality: 'auto',
         timeoutMs: 180000
       }
       settings.claw.channels = [

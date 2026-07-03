@@ -12,6 +12,10 @@ import type { RuntimeEventRecorder } from '../../services/runtime-event-recorder
 import type { LlmDebugRecorder } from '../../services/llm-debug-recorder.js'
 import type { RuntimeInfoResponse } from '../../contracts/runtime-info.js'
 import type {
+  RuntimeConfigApplyRequest,
+  RuntimeConfigApplyResponse
+} from '../../contracts/runtime-config.js'
+import type {
   McpOAuthAuthorizeResult,
   McpOAuthClearResult,
   McpOAuthDiagnostic,
@@ -118,6 +122,7 @@ export type ServerRuntime = {
   allocateSeq: (threadId: string) => number
   nowIso: () => string
   info(): RuntimeInfoResponse
+  applyConfig(request: RuntimeConfigApplyRequest): Promise<RuntimeConfigApplyResponse>
   toolDiagnostics?(): RuntimeToolDiagnostics | Promise<RuntimeToolDiagnostics>
   mcpOAuth?(): McpOAuthDiagnostic[] | Promise<McpOAuthDiagnostic[]>
   clearMcpOAuth?(serverId?: string): Promise<McpOAuthClearResult>

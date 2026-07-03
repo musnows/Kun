@@ -164,7 +164,7 @@ describe('chat-store-thread-actions queued messages', () => {
       subscribeThreadEvents: vi.fn(async () => undefined)
     }
     registryMock.getProvider.mockReturnValue(provider)
-    const saveSettingsSilent = vi.fn(async () => ({
+    const setSettings = vi.fn(async () => ({
       agents: { kun: { providerId: 'xiaomi-token-plan', model: 'mimo-v2.5' } },
       codePromptPrefix: ''
     }))
@@ -175,7 +175,7 @@ describe('chat-store-thread-actions queued messages', () => {
           agents: { kun: { providerId: 'minimax-token-plan', model: 'MiniMax-M2' } },
           codePromptPrefix: ''
         })),
-        saveSettingsSilent,
+        setSettings,
         restartRuntime,
         logError: vi.fn(async () => undefined)
       }
@@ -187,10 +187,10 @@ describe('chat-store-thread-actions queued messages', () => {
 
     await expect(actions.sendMessage('hello', 'agent')).resolves.toBe(true)
 
-    expect(saveSettingsSilent).toHaveBeenCalledWith({
+    expect(setSettings).toHaveBeenCalledWith({
       agents: { kun: { providerId: 'xiaomi-token-plan', model: 'mimo-v2.5' } }
     })
-    expect(restartRuntime).toHaveBeenCalledTimes(1)
+    expect(restartRuntime).not.toHaveBeenCalled()
     expect(provider.connect).toHaveBeenCalledTimes(1)
     expect(provider.sendUserMessage).toHaveBeenCalledWith(
       'thr_existing',
@@ -244,7 +244,7 @@ describe('chat-store-thread-actions queued messages', () => {
       subscribeThreadEvents: vi.fn(async () => undefined)
     }
     registryMock.getProvider.mockReturnValue(provider)
-    const saveSettingsSilent = vi.fn(async () => ({
+    const setSettings = vi.fn(async () => ({
       agents: { kun: { providerId: 'minimax-token-plan', model: 'MiniMax-M3' } },
       codePromptPrefix: ''
     }))
@@ -255,7 +255,7 @@ describe('chat-store-thread-actions queued messages', () => {
           agents: { kun: { providerId: 'deepseek', model: 'deepseek-v4-pro' } },
           codePromptPrefix: ''
         })),
-        saveSettingsSilent,
+        setSettings,
         restartRuntime,
         logError: vi.fn(async () => undefined)
       }
@@ -270,10 +270,10 @@ describe('chat-store-thread-actions queued messages', () => {
       providerId: 'minimax-token-plan'
     })).resolves.toBe(true)
 
-    expect(saveSettingsSilent).toHaveBeenCalledWith({
+    expect(setSettings).toHaveBeenCalledWith({
       agents: { kun: { providerId: 'minimax-token-plan', model: 'MiniMax-M3' } }
     })
-    expect(restartRuntime).toHaveBeenCalledTimes(1)
+    expect(restartRuntime).not.toHaveBeenCalled()
     expect(provider.connect).toHaveBeenCalledTimes(1)
     expect(provider.sendUserMessage).toHaveBeenCalledWith(
       'thr_existing',

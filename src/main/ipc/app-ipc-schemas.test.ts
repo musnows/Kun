@@ -211,6 +211,10 @@ describe('app-ipc-schemas', () => {
             historyHygiene: {
               maxToolResultTokens: 4000
             }
+          },
+          toolOutputLimits: {
+            maxLines: 30000,
+            maxBytes: 1048576
           }
         }
       },
@@ -240,6 +244,8 @@ describe('app-ipc-schemas', () => {
     expect(payload.agents?.kun?.modelProfiles?.['custom-vision-model']?.maxOutputTokens).toBe(32000)
     expect(payload.agents?.kun?.tokenEconomy?.enabled).toBe(true)
     expect(payload.agents?.kun?.tokenEconomy?.historyHygiene?.maxToolResultTokens).toBe(4000)
+    expect(payload.agents?.kun?.toolOutputLimits?.maxLines).toBe(30000)
+    expect(payload.agents?.kun?.toolOutputLimits?.maxBytes).toBe(1048576)
     expect(payload.write?.inlineCompletion?.model).toBe('deepseek-v4-pro')
     expect(payload.write?.selectionAssist?.infographicPrompt).toBe('手绘风格信息图。')
     expect(payload.write?.selectionAssist?.quickActions).toHaveLength(2)
@@ -371,7 +377,8 @@ describe('app-ipc-schemas', () => {
             }
           },
           imageGeneration: {
-            model: longModelId
+            model: longModelId,
+            quality: 'high'
           }
         }
       },
@@ -385,6 +392,7 @@ describe('app-ipc-schemas', () => {
 
     expect(payload.provider?.providers?.[0]?.models).toEqual([longModelId])
     expect(payload.agents?.kun?.model).toBe(longModelId)
+    expect(payload.agents?.kun?.imageGeneration?.quality).toBe('high')
     expect(payload.schedule?.model).toBe(longModelId)
     expect(payload.workflow?.model).toBe(longModelId)
   })
@@ -600,6 +608,14 @@ describe('app-ipc-schemas', () => {
     expect(() =>
       settingsPatchSchema.parse({
         agents: { kun: { runtimeTuning: { streamIdleTimeoutMs: -1 } } }
+      })
+    ).toThrow()
+  })
+
+  it('rejects out-of-range tool output limits', () => {
+    expect(() =>
+      settingsPatchSchema.parse({
+        agents: { kun: { toolOutputLimits: { maxBytes: 128 * 1024 * 1024 } } }
       })
     ).toThrow()
   })

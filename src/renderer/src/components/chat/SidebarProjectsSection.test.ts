@@ -12,6 +12,7 @@ import {
   resolveThreadPreviewPosition,
   sortSidebarThreads,
   SddDraftHistoryRows,
+  SidebarActionDialog,
   ThreadRow,
   ThreadRenameDialog
 } from './SidebarProjectsSection'
@@ -384,6 +385,33 @@ describe('ThreadRenameDialog', () => {
     expect(html).toContain('sidebarThreadRename')
     expect(html).toContain('value="Build rename dialog"')
     expect(html).toContain('type="submit" disabled=""')
+  })
+})
+
+describe('SidebarActionDialog', () => {
+  it('uses an opaque card and stronger backdrop so sidebar controls cannot bleed through', () => {
+    const html = renderToStaticMarkup(
+      createElement(SidebarActionDialog, {
+        state: {
+          title: 'Remove AI training?',
+          description: 'This removes the project from Kun.',
+          detail: 'Files on disk will not be deleted.',
+          confirmLabel: 'Remove',
+          danger: true,
+          submitting: false,
+          onConfirm: async () => undefined
+        },
+        onClose: vi.fn(),
+        onConfirm: vi.fn(),
+        t: (key: string) => key
+      })
+    )
+
+    expect(html).toContain('bg-slate-950/28')
+    expect(html).toContain('dark:bg-black/45')
+    expect(html).toContain('bg-[var(--surface-3)]')
+    expect(html).not.toContain('bg-ds-elevated')
+    expect(html).not.toContain('bg-ds-card/96')
   })
 })
 

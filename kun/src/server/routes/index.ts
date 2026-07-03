@@ -32,6 +32,7 @@ import { resumeSession } from './sessions.js'
 import { usageJsonResponse } from './usage.js'
 import { llmDebugRoundsResponse } from './debug-llm.js'
 import { runtimeInfoJsonResponse, runtimeToolDiagnosticsJsonResponse } from './runtime-info.js'
+import { applyRuntimeConfig } from './runtime-config.js'
 import { listSkills } from './skills.js'
 import {
   attachmentDiagnostics,
@@ -67,6 +68,7 @@ import type { ServerRuntime } from './server-runtime.js'
  * - `GET /health` (unauthenticated)
  * - `GET /v1/runtime/info` (auth)
  * - `GET /v1/runtime/tools` (auth)
+ * - `POST /v1/runtime/config/apply` (auth)
  * - `GET /v1/mcp/oauth`, `DELETE /v1/mcp/oauth/{id}` (auth)
  * - `GET /v1/skills` (auth)
  * - `POST /v1/attachments` (auth)
@@ -106,6 +108,10 @@ export function buildRouter(runtime: ServerRuntime): Router {
   router.add('GET', '/v1/runtime/tools', async (request) => {
     if (!authorize(request, runtime)) return ERRORS.unauthorized()
     return runtimeToolDiagnosticsJsonResponse(runtime)
+  })
+  router.add('POST', '/v1/runtime/config/apply', async (request) => {
+    if (!authorize(request, runtime)) return ERRORS.unauthorized()
+    return applyRuntimeConfig(runtime, request)
   })
   router.add('GET', '/v1/mcp/oauth', async (request) => {
     if (!authorize(request, runtime)) return ERRORS.unauthorized()

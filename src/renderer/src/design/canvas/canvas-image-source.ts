@@ -2,10 +2,11 @@ import { useEffect, useState } from 'react'
 import { useCanvasWorkspaceRoot } from './canvas-workspace-context'
 
 const DIRECT_URL_RE = /^(data:|https?:|blob:)/i
+const ABSOLUTE_LOCAL_PATH_RE = /^(\/|[A-Za-z]:[\\/]|\\\\)/
+const LOAD_RETRY_DELAYS_MS = [0, 250, 750, 1500, 3000] as const
 // Generated image filenames are content-stamped and immutable, so a path→dataUrl
 // map never goes stale and can live for the whole session.
 const cache = new Map<string, string>()
-const failed = new Set<string>()
 
 function cacheKey(workspaceRoot: string, path: string): string {
   return `${workspaceRoot}::${path}`
@@ -15,6 +16,22 @@ export function isDirectImageUrl(url: string): boolean {
   return DIRECT_URL_RE.test(url)
 }
 
+export function isAbsoluteLocalImagePath(url: string): boolean {
+  return ABSOLUTE_LOCAL_PATH_RE.test(url.trim())
+}
+
+async function readImageDataUrl(
+  workspaceRoot: string,
+  path: string
+): Promise<string | null> {
+  if (typeof window.kunGui?.readWorkspaceImage !== 'function') return null
+  const result = await window.kunGui.readWorkspaceImage({
+    path,
+    ...(workspaceRoot ? { workspaceRoot } : {})
+  })
+  return result.ok ? result.dataUrl : null
+}
+
 async function resolveWorkspaceImage(
   workspaceRoot: string,
   path: string,
@@ -22,21 +39,19 @@ async function resolveWorkspaceImage(
 ): Promise<string | null> {
   const hit = cache.get(key)
   if (hit) return hit
-  if (failed.has(key)) return null
-  if (typeof window.kunGui?.readWorkspaceImage !== 'function') return null
+  const trimmedPath = path.trim()
+  if (!trimmedPath || typeof window.kunGui?.readWorkspaceImage !== 'function') return null
   try {
-    const result = await window.kunGui.readWorkspaceImage({
-      path,
-      ...(workspaceRoot ? { workspaceRoot } : {})
-    })
-    if (result.ok) {
-      cache.set(key, result.dataUrl)
-      return result.dataUrl
+    const dataUrl = isAbsoluteLocalImagePath(trimmedPath)
+      ? await readImageDataUrl('', trimmedPath)
+      : await readImageDataUrl(workspaceRoot, trimmedPath)
+    if (dataUrl) {
+      cache.set(key, dataUrl)
+      return dataUrl
     }
   } catch {
     // fall through to failure
   }
-  failed.add(key)
   return null
 }
 
@@ -80,12 +95,28 @@ export function useWorkspaceImageSrc(imageUrl: string | undefined): string | nul
       setResolved(hit)
       return
     }
+    setResolved(null)
     let active = true
-    void resolveWorkspaceImage(workspaceRoot, imageUrl, key).then((url) => {
-      if (active) setResolved(url)
-    })
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const attempt = (index: number): void => {
+      void resolveWorkspaceImage(workspaceRoot, imageUrl, key).then((url) => {
+        if (!active) return
+        if (url) {
+          setResolved(url)
+          return
+        }
+        const nextDelay = LOAD_RETRY_DELAYS_MS[index + 1]
+        if (nextDelay === undefined) {
+          setResolved(null)
+          return
+        }
+        timer = setTimeout(() => attempt(index + 1), nextDelay)
+      })
+    }
+    attempt(0)
     return () => {
       active = false
+      if (timer) clearTimeout(timer)
     }
   }, [workspaceRoot, imageUrl, direct])
 

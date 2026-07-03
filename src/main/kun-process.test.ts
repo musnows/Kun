@@ -7,6 +7,8 @@ import { configureLogger } from './logger'
 import {
   defaultClawSettings,
   DEFAULT_LOG_RETENTION_DAYS,
+  DEFAULT_TOOL_OUTPUT_MAX_BYTES,
+  DEFAULT_TOOL_OUTPUT_MAX_LINES,
   defaultDesignSettings,
   defaultKeyboardShortcuts,
   defaultKunRuntimeSettings,
@@ -538,6 +540,10 @@ describe('syncGuiManagedKunConfig', () => {
         maxArrayItems: 80
       }
     })
+    expect(parsed.serve.toolOutputLimits).toEqual({
+      maxLines: DEFAULT_TOOL_OUTPUT_MAX_LINES,
+      maxBytes: DEFAULT_TOOL_OUTPUT_MAX_BYTES
+    })
     expect(parsed.contextCompaction).toMatchObject({
       defaultSoftThreshold: 96000,
       defaultHardThreshold: 108800,
@@ -572,6 +578,7 @@ describe('syncGuiManagedKunConfig', () => {
     expect(parsed.capabilities.imageGen).toEqual({
       enabled: false,
       protocol: 'openai-images',
+      quality: 'auto',
       timeoutMs: 180000
     })
     expect(parsed.capabilities.speechGen).toEqual({
@@ -651,6 +658,7 @@ describe('syncGuiManagedKunConfig', () => {
         apiKey: 'sk-image-test',
         model: 'Kwai-Kolors/Kolors',
         defaultSize: '',
+        quality: 'high' as const,
         timeoutMs: 240000
       }
     }
@@ -664,6 +672,7 @@ describe('syncGuiManagedKunConfig', () => {
       baseUrl: 'https://api.siliconflow.cn/v1',
       apiKey: 'sk-image-test',
       model: 'Kwai-Kolors/Kolors',
+      quality: 'high',
       timeoutMs: 240000
     })
     expect(KunConfigSchema.safeParse(parsed).success).toBe(true)
@@ -701,6 +710,7 @@ describe('syncGuiManagedKunConfig', () => {
         apiKey: codexCredentials,
         model: 'gpt-image-2',
         defaultSize: '',
+        quality: 'medium',
         timeoutMs: 180000
       }
     })
@@ -712,6 +722,7 @@ describe('syncGuiManagedKunConfig', () => {
       baseUrl: 'https://chatgpt.com/backend-api/codex',
       apiKey: 'codex-access-token',
       model: 'gpt-image-2',
+      quality: 'medium',
       timeoutMs: 180000,
       headers: {
         'ChatGPT-Account-Id': 'acct_123',
@@ -793,6 +804,7 @@ describe('syncGuiManagedKunConfig', () => {
         apiKey: 'sk-image-test',
         model: 'Kwai-Kolors/Kolors',
         defaultSize: '1024x1024',
+        quality: 'auto' as const,
         timeoutMs: 180000
       }
     }
@@ -1143,6 +1155,10 @@ describe('syncGuiManagedKunConfig', () => {
             maxToolArgumentStringTokens: 1000,
             maxArrayItems: 40
           }
+        },
+        toolOutputLimits: {
+          maxLines: 30000,
+          maxBytes: 2 * 1024 * 1024
         }
       },
       { mcpConfigPath: join(tempRoot, 'missing-mcp.json') }
@@ -1172,6 +1188,10 @@ describe('syncGuiManagedKunConfig', () => {
     })
     expect(parsed.serve.tokenEconomy.customTokenEconomyFlag).toBeUndefined()
     expect(parsed.serve.tokenEconomy.historyHygiene.customHistoryFlag).toBeUndefined()
+    expect(parsed.serve.toolOutputLimits).toEqual({
+      maxLines: 30000,
+      maxBytes: 2 * 1024 * 1024
+    })
     expect(parsed.contextCompaction).toMatchObject({
       defaultSoftThreshold: 32000,
       defaultHardThreshold: 64000,

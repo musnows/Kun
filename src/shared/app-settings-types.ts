@@ -4,6 +4,7 @@ import type { LocalWhisperDownloadSourceId } from './local-whisper'
 import type { ApprovalPolicy, SandboxMode } from '../../kun/src/contracts/policy.js'
 import type { ComputerUseMode } from '../../kun/src/contracts/capabilities.js'
 import type { ModelEndpointFormat } from '../../kun/src/contracts/model-endpoint-format.js'
+import type { ToolOutputLimitsConfig } from '../../kun/src/contracts/tool-output-limits.js'
 export {
   DEFAULT_MODEL_ENDPOINT_FORMAT,
   inferModelEndpointFormatFromUrl,
@@ -21,6 +22,11 @@ export {
   type ApprovalPolicy,
   type SandboxMode
 } from '../../kun/src/contracts/policy.js'
+export {
+  DEFAULT_TOOL_OUTPUT_MAX_BYTES,
+  DEFAULT_TOOL_OUTPUT_MAX_LINES,
+  type ToolOutputLimitsConfig
+} from '../../kun/src/contracts/tool-output-limits.js'
 export const KUN_TOOL_PERMISSION_MODES = ['always-ask', 'read-only', 'sensitive-ask', 'workspace-write', 'bypass'] as const
 export type KunToolPermissionMode = (typeof KUN_TOOL_PERMISSION_MODES)[number]
 /**
@@ -72,6 +78,8 @@ export const CUSTOM_IMAGE_GENERATION_PROVIDER_ID = 'custom'
 export const IMAGE_GENERATION_PROTOCOLS = ['openai-images', 'minimax-image', 'codex-responses-image'] as const
 export type ImageGenerationProtocol = (typeof IMAGE_GENERATION_PROTOCOLS)[number]
 export const DEFAULT_IMAGE_GENERATION_PROTOCOL: ImageGenerationProtocol = 'openai-images'
+export const IMAGE_GENERATION_QUALITIES = ['auto', 'low', 'medium', 'high'] as const
+export type ImageGenerationQuality = (typeof IMAGE_GENERATION_QUALITIES)[number]
 export const CUSTOM_SPEECH_TO_TEXT_PROVIDER_ID = 'custom'
 export const SPEECH_TO_TEXT_PROTOCOLS = ['openai-transcriptions', 'mimo-asr', 'local-whisper'] as const
 export type SpeechToTextProtocol = (typeof SPEECH_TO_TEXT_PROTOCOLS)[number]
@@ -298,6 +306,8 @@ export type KunRuntimeSettingsV1 = {
   tokenEconomyMode: boolean
   /** Detailed token-saving behavior used when building Kun model requests. */
   tokenEconomy: KunTokenEconomySettingsV1
+  /** Model-visible output caps for builtin read/bash-style tools. */
+  toolOutputLimits: KunToolOutputLimitsSettingsV1
   /** When true, the runtime skips bearer-token auth. Local dev only. */
   insecure: boolean
   /** GUI-managed MCP progressive discovery/search settings written into Kun config.json. */
@@ -427,6 +437,8 @@ export type KunImageGenerationSettingsV1 = {
   model: string
   /** Default "WxH" or "auto" used when the model omits aspect ratio and size. Empty means provider default. */
   defaultSize: string
+  /** Provider quality/precision hint. "auto" lets the provider decide. */
+  quality: ImageGenerationQuality
   timeoutMs: number
 }
 
@@ -532,6 +544,8 @@ export type KunTokenEconomySettingsV1 = {
   historyHygiene: KunHistoryHygieneSettingsV1
 }
 
+export type KunToolOutputLimitsSettingsV1 = Required<ToolOutputLimitsConfig>
+
 export type KunContextCompactionSettingsV1 = {
   defaultSoftThreshold: number
   defaultHardThreshold: number
@@ -593,11 +607,12 @@ export type KunTokenEconomySettingsPatchV1 = Partial<
 export type KunRuntimeSettingsPatchV1 = Partial<
   Omit<
     KunRuntimeSettingsV1,
-    'mcpSearch' | 'storage' | 'contextCompaction' | 'runtimeTuning' | 'tokenEconomy' | 'imageGeneration' | 'speechToText' | 'textToSpeech' | 'musicGeneration' | 'videoGeneration' | 'computerUse' | 'quality' | 'modelProfiles'
+    'mcpSearch' | 'storage' | 'contextCompaction' | 'runtimeTuning' | 'tokenEconomy' | 'toolOutputLimits' | 'imageGeneration' | 'speechToText' | 'textToSpeech' | 'musicGeneration' | 'videoGeneration' | 'computerUse' | 'quality' | 'modelProfiles'
   >
 > & {
   mcpSearch?: Partial<KunMcpSearchSettingsV1>
   tokenEconomy?: KunTokenEconomySettingsPatchV1
+  toolOutputLimits?: Partial<KunToolOutputLimitsSettingsV1>
   storage?: Partial<KunStorageSettingsV1>
   contextCompaction?: Partial<KunContextCompactionSettingsV1>
   runtimeTuning?: KunRuntimeTuningSettingsPatchV1

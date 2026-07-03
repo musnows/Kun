@@ -12,6 +12,8 @@ import {
   DEFAULT_SANDBOX_MODE,
   DEFAULT_WEIXIN_BRIDGE_RPC_URL,
   DEFAULT_SCHEDULE_INTERNAL_PORT,
+  DEFAULT_TOOL_OUTPUT_MAX_BYTES,
+  DEFAULT_TOOL_OUTPUT_MAX_LINES,
   buildClawRuntimePrompt,
   defaultClawSettings,
   defaultModelProviderSettings,
@@ -216,6 +218,15 @@ describe('kun defaults', () => {
     })
   })
 
+  it('defaults tool output limits to 500kb and 20000 lines', () => {
+    expect(defaultKunRuntimeSettings().toolOutputLimits).toEqual({
+      maxLines: DEFAULT_TOOL_OUTPUT_MAX_LINES,
+      maxBytes: DEFAULT_TOOL_OUTPUT_MAX_BYTES
+    })
+    expect(defaultKunRuntimeSettings().toolOutputLimits.maxLines).toBe(20_000)
+    expect(defaultKunRuntimeSettings().toolOutputLimits.maxBytes).toBe(500 * 1024)
+  })
+
   it('defaults MCP search discovery to off', () => {
     expect(defaultKunRuntimeSettings().mcpSearch).toMatchObject({
       enabled: false,
@@ -235,6 +246,7 @@ describe('kun defaults', () => {
       apiKey: '',
       model: '',
       defaultSize: '',
+      quality: 'auto',
       timeoutMs: 180000
     })
   })
@@ -580,6 +592,27 @@ describe('mergeKunRuntimeSettings', () => {
     expect(legacySwitch.tokenEconomy.enabled).toBe(false)
   })
 
+  it('deep-merges tool output limits and normalizes out-of-range values', () => {
+    const current = defaultKunRuntimeSettings()
+    const next = mergeKunRuntimeSettings(current, {
+      toolOutputLimits: {
+        maxBytes: 2 * 1024 * 1024
+      }
+    })
+
+    expect(next.toolOutputLimits.maxLines).toBe(current.toolOutputLimits.maxLines)
+    expect(next.toolOutputLimits.maxBytes).toBe(2 * 1024 * 1024)
+
+    const clamped = mergeKunRuntimeSettings(next, {
+      toolOutputLimits: {
+        maxLines: 9_999_999,
+        maxBytes: 999 * 1024 * 1024
+      }
+    })
+    expect(clamped.toolOutputLimits.maxLines).toBe(1_000_000)
+    expect(clamped.toolOutputLimits.maxBytes).toBe(64 * 1024 * 1024)
+  })
+
   it('deep-merges MCP search settings', () => {
     const current = defaultKunRuntimeSettings()
     const next = mergeKunRuntimeSettings(current, {
@@ -703,20 +736,23 @@ describe('mergeKunRuntimeSettings', () => {
       apiKey: 'sk-image',
       model: 'Kwai-Kolors/Kolors',
       defaultSize: '',
+      quality: 'auto',
       timeoutMs: 180000
     })
 
     const sized = mergeKunRuntimeSettings(next, {
-      imageGeneration: { defaultSize: '1536x1024', timeoutMs: 240000 }
+      imageGeneration: { defaultSize: '1536x1024', quality: 'high', timeoutMs: 240000 }
     })
     expect(sized.imageGeneration.defaultSize).toBe('1536x1024')
+    expect(sized.imageGeneration.quality).toBe('high')
     expect(sized.imageGeneration.timeoutMs).toBe(240000)
     expect(sized.imageGeneration.apiKey).toBe('sk-image')
 
     const invalidSize = mergeKunRuntimeSettings(sized, {
-      imageGeneration: { defaultSize: 'huge', timeoutMs: -5 }
+      imageGeneration: { defaultSize: 'huge', quality: 'maximum' as never, timeoutMs: -5 }
     })
     expect(invalidSize.imageGeneration.defaultSize).toBe('')
+    expect(invalidSize.imageGeneration.quality).toBe('auto')
     expect(invalidSize.imageGeneration.timeoutMs).toBe(180000)
   })
 
@@ -978,6 +1014,7 @@ describe('legacy Kun defaults migration', () => {
       apiKey: '',
       model: '',
       defaultSize: '',
+      quality: 'auto',
       timeoutMs: 180000
     })
   })
@@ -1219,6 +1256,7 @@ describe('claw runtime prompts', () => {
       apiKey: 'sk-image',
       model: 'test-image-model',
       defaultSize: '1024x1024',
+      quality: 'auto',
       timeoutMs: 180000
     }
 

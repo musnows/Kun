@@ -124,6 +124,7 @@ export function parseServeOptions(
       ...(configServe.tokenEconomy ?? {}),
       enabled: tokenEconomyMode
     },
+    toolOutputLimits: configServe.toolOutputLimits ?? DEFAULT_SERVE_OPTIONS.toolOutputLimits,
     insecure:
       typeof raw.insecure === 'string'
         ? raw.insecure !== 'false' && raw.insecure !== '0'

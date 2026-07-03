@@ -4,9 +4,11 @@ import {
   activeCanvasTurnMatchesThread,
   canvasReplayStateForStoreUpdate,
   latestGeneratedImageRelativePathForTurn,
+  latestGeneratedImageUrlForTurn,
   looksLikeExistingCanvasImageEditRequest,
   replayActiveCanvasTurn,
   resolveGeneratedImageFallbackTarget,
+  rewriteGeneratedImageUrlsForTurn,
   shouldApplyDesignCanvasToolBlock,
   takeNextReadyScreenGeneration
 } from './use-apply-shape-ops-live'
@@ -318,6 +320,46 @@ describe('generated image canvas fallback helpers', () => {
     ]
 
     expect(latestGeneratedImageRelativePathForTurn(blocks)).toBe('.deepseekgui-images/new.png')
+  })
+
+  it('prefers absolute generated image paths for canvas image URLs', () => {
+    const blocks: ChatBlock[] = [
+      {
+        kind: 'tool',
+        id: 'tool-1',
+        summary: 'generate',
+        status: 'success',
+        meta: {
+          toolName: 'generate_image',
+          generatedFiles: [{
+            relativePath: '.deepseekgui-images/new.png',
+            absolutePath: '/Users/zxy/.kun/default_workspace/.deepseekgui-images/new.png'
+          }]
+        }
+      }
+    ]
+
+    expect(latestGeneratedImageUrlForTurn(blocks)).toBe('/Users/zxy/.kun/default_workspace/.deepseekgui-images/new.png')
+    expect(
+      rewriteGeneratedImageUrlsForTurn(
+        {
+          action: 'update_shapes',
+          ops: [{
+            op: 'update',
+            id: 'shape-1',
+            patch: { imageUrl: '.deepseekgui-images/new.png' }
+          }]
+        },
+        blocks
+      )
+    ).toEqual({
+      action: 'update_shapes',
+      ops: [{
+        op: 'update',
+        id: 'shape-1',
+        patch: { imageUrl: '/Users/zxy/.kun/default_workspace/.deepseekgui-images/new.png' }
+      }]
+    })
   })
 
   it('extracts generated image paths from assistant markdown image output', () => {

@@ -22,6 +22,7 @@ function settingsWithImageGen(overrides: Record<string, unknown> = {}): AppSetti
           apiKey: 'sk-image',
           model: 'test-image-model',
           defaultSize: '',
+          quality: 'auto',
           timeoutMs: 180000,
           ...overrides
         }
@@ -95,6 +96,7 @@ describe('write infographic service', () => {
 
     expect(client.requests).toHaveLength(1)
     expect(client.requests[0].model).toBe('test-image-model')
+    expect(client.requests[0].quality).toBe('auto')
     expect(client.requests[0].size).toBe('768x1024')
     expect(client.requests[0].prompt).toContain('季度营收增长 25%')
     expect(client.requests[0].prompt).toContain('infographic')
@@ -124,6 +126,18 @@ describe('write infographic service', () => {
 
     expect(result.ok).toBe(true)
     expect(client.requests[0].size).toBe('1024x1536')
+  })
+
+  it('passes the configured image quality to the provider', async () => {
+    const client = fakeClient()
+    const result = await requestWriteInfographic(settingsWithImageGen({ quality: 'medium' }), {
+      text: 'quality-specific content',
+      filePath: join(workspace, 'doc.md'),
+      workspaceRoot: workspace
+    }, { client })
+
+    expect(result.ok).toBe(true)
+    expect(client.requests[0].quality).toBe('medium')
   })
 
   it('unwraps Codex OAuth credentials for direct Write image generation', async () => {
@@ -312,6 +326,7 @@ describe('write infographic service', () => {
       name: 'source.png',
       mimeType: 'image/png'
     })
+    expect(client.edits[0].quality).toBe('auto')
     expect(client.edits[0].prompt).toContain('旅行社区首页')
     if (!result.ok) return
     expect(result.relativePath).toMatch(/^img\/design-\d{14}-[0-9a-f]{4}\.png$/)

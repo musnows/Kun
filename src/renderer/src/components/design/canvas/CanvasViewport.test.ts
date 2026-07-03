@@ -5,6 +5,7 @@ import {
   shouldHandleCanvasKeyboardEvent,
   shouldRenderDesignArtifactOverlays,
   shouldOpenImageAnnotation,
+  resolveSelectedImageAnnotationAction,
   mergeLoadedCanvasDocumentWithLiveChanges,
   resolveCanvasSelectionAfterDocumentSync,
   resolveHtmlFrameOverlayInteractionState,
@@ -41,6 +42,84 @@ describe('CanvasViewport surface behavior', () => {
     expect(shouldOpenImageAnnotation('code', image)).toBe(true)
     expect(shouldOpenImageAnnotation('code', emptyImage)).toBe(false)
     expect(shouldOpenImageAnnotation('code', rect)).toBe(false)
+  })
+
+  it('positions the selected image annotation action near the image top edge', () => {
+    const doc = createEmptyDocument()
+    const image = createDefaultShape('image', 100, 100)
+    image.width = 200
+    image.height = 120
+    image.imageUrl = 'assets/image.png'
+    doc.objects[image.id] = { ...image, parentId: doc.rootId }
+    doc.objects[doc.rootId]!.children.push(image.id)
+
+    expect(
+      resolveSelectedImageAnnotationAction('design', doc, new Set([image.id]), {
+        vbox: { x: 0, y: 0, width: 500, height: 400 },
+        containerWidth: 500,
+        containerHeight: 400
+      })
+    ).toEqual({
+      shapeId: image.id,
+      left: 188,
+      top: 60,
+      width: 112,
+      height: 30,
+      placement: 'above'
+    })
+  })
+
+  it('moves the selected image annotation action below when there is no room above', () => {
+    const doc = createEmptyDocument()
+    const image = createDefaultShape('image', 100, 20)
+    image.width = 200
+    image.height = 120
+    image.imageUrl = 'assets/image.png'
+    doc.objects[image.id] = { ...image, parentId: doc.rootId }
+    doc.objects[doc.rootId]!.children.push(image.id)
+
+    expect(
+      resolveSelectedImageAnnotationAction('design', doc, new Set([image.id]), {
+        vbox: { x: 0, y: 0, width: 500, height: 400 },
+        containerWidth: 500,
+        containerHeight: 400
+      })?.placement
+    ).toBe('below')
+  })
+
+  it('hides the selected image annotation action for empty or multi-selection', () => {
+    const doc = createEmptyDocument()
+    const image = createDefaultShape('image', 100, 100)
+    const rect = createDefaultShape('rect', 320, 100)
+    doc.objects[image.id] = { ...image, parentId: doc.rootId }
+    doc.objects[rect.id] = { ...rect, parentId: doc.rootId }
+    doc.objects[doc.rootId]!.children.push(image.id, rect.id)
+
+    expect(
+      resolveSelectedImageAnnotationAction('design', doc, new Set([image.id]), {
+        vbox: { x: 0, y: 0, width: 500, height: 400 },
+        containerWidth: 500,
+        containerHeight: 400
+      })
+    ).toBeNull()
+
+    image.imageUrl = 'assets/image.png'
+    doc.objects[image.id] = { ...image, parentId: doc.rootId }
+    expect(
+      resolveSelectedImageAnnotationAction('design', doc, new Set([image.id, rect.id]), {
+        vbox: { x: 0, y: 0, width: 500, height: 400 },
+        containerWidth: 500,
+        containerHeight: 400
+      })
+    ).toBeNull()
+
+    expect(
+      resolveSelectedImageAnnotationAction('design', doc, new Set([image.id]), {
+        vbox: { x: 600, y: 0, width: 500, height: 400 },
+        containerWidth: 500,
+        containerHeight: 400
+      })
+    ).toBeNull()
   })
 
   it('toggles live HTML frame interaction from design-surface double-clicks only', () => {

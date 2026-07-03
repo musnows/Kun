@@ -10,9 +10,13 @@ import { createArrowTool, createLineTool } from '../../../../design/canvas/tools
 import { createDrawTool } from '../../../../design/canvas/tools/draw-tool'
 import type { CanvasToolHandler } from '../../../../design/canvas/tools/tool-types'
 import type { CanvasDocument, CanvasTool, Rect, ViewBox } from '../../../../design/canvas/canvas-types'
-import { isHtmlFrame, shapeBounds } from '../../../../design/canvas/canvas-types'
+import { isHtmlFrame, shapeBounds, shapeGeometry } from '../../../../design/canvas/canvas-types'
 
 const CANVAS_VIEWPORT_STORAGE_PREFIX = 'kun.design.canvasViewport'
+const IMAGE_ANNOTATION_ACTION_WIDTH = 112
+const IMAGE_ANNOTATION_ACTION_HEIGHT = 30
+const IMAGE_ANNOTATION_ACTION_GAP = 10
+const IMAGE_ANNOTATION_ACTION_MARGIN = 8
 
 export function shouldRenderDesignArtifactOverlays(surface: 'design' | 'code'): boolean {
   return surface === 'design'
@@ -34,6 +38,79 @@ export function shouldOpenImageAnnotation(
   shape: CanvasDocument['objects'][string] | undefined
 ): boolean {
   return (surface === 'design' || surface === 'code') && shape?.type === 'image' && Boolean(shape.imageUrl)
+}
+
+export type SelectedImageAnnotationAction = {
+  shapeId: string
+  left: number
+  top: number
+  width: number
+  height: number
+  placement: 'above' | 'below'
+}
+
+function clamp(value: number, min: number, max: number): number {
+  if (max < min) return min
+  return Math.max(min, Math.min(max, value))
+}
+
+export function resolveSelectedImageAnnotationAction(
+  surface: 'design' | 'code',
+  doc: CanvasDocument,
+  selectedIds: ReadonlySet<string>,
+  viewport: {
+    vbox: ViewBox
+    containerWidth: number
+    containerHeight: number
+  }
+): SelectedImageAnnotationAction | null {
+  if (selectedIds.size !== 1) return null
+  const shapeId = selectedIds.values().next().value
+  if (!shapeId) return null
+  const shape = doc.objects[shapeId]
+  if (!shape?.visible || !shouldOpenImageAnnotation(surface, shape)) return null
+  if (viewport.vbox.width <= 0 || viewport.vbox.height <= 0) return null
+  if (viewport.containerWidth <= 0 || viewport.containerHeight <= 0) return null
+
+  const bounds = shapeGeometry(shape).selrect
+  const scaleX = viewport.containerWidth / viewport.vbox.width
+  const scaleY = viewport.containerHeight / viewport.vbox.height
+  const shapeLeft = (bounds.x - viewport.vbox.x) * scaleX
+  const shapeTop = (bounds.y - viewport.vbox.y) * scaleY
+  const shapeRight = (bounds.x + bounds.width - viewport.vbox.x) * scaleX
+  const shapeBottom = (bounds.y + bounds.height - viewport.vbox.y) * scaleY
+  if (
+    shapeRight < 0 ||
+    shapeLeft > viewport.containerWidth ||
+    shapeBottom < 0 ||
+    shapeTop > viewport.containerHeight
+  ) {
+    return null
+  }
+  const minLeft = IMAGE_ANNOTATION_ACTION_MARGIN
+  const maxLeft = viewport.containerWidth - IMAGE_ANNOTATION_ACTION_WIDTH - IMAGE_ANNOTATION_ACTION_MARGIN
+  const left = clamp(shapeRight - IMAGE_ANNOTATION_ACTION_WIDTH, minLeft, maxLeft)
+
+  let placement: SelectedImageAnnotationAction['placement'] = 'above'
+  let top = shapeTop - IMAGE_ANNOTATION_ACTION_HEIGHT - IMAGE_ANNOTATION_ACTION_GAP
+  if (top < IMAGE_ANNOTATION_ACTION_MARGIN) {
+    placement = 'below'
+    top = shapeBottom + IMAGE_ANNOTATION_ACTION_GAP
+  }
+  top = clamp(
+    top,
+    IMAGE_ANNOTATION_ACTION_MARGIN,
+    viewport.containerHeight - IMAGE_ANNOTATION_ACTION_HEIGHT - IMAGE_ANNOTATION_ACTION_MARGIN
+  )
+
+  return {
+    shapeId,
+    left: Math.round(left),
+    top: Math.round(top),
+    width: IMAGE_ANNOTATION_ACTION_WIDTH,
+    height: IMAGE_ANNOTATION_ACTION_HEIGHT,
+    placement
+  }
 }
 
 export function shouldToggleHtmlFrameInteractiveOnDoubleClick(

@@ -48,6 +48,7 @@ import {
   normalizeAppBehaviorSettings,
   normalizeCheckpointCleanupSettings,
   normalizeKeyboardShortcuts,
+  resolveModelProviderProxyUrl,
   resolveKunRuntimeSettings,
   resolveTerminalColorMode,
   type AppBehaviorConfigV1,
@@ -71,9 +72,11 @@ import { waitForRuntimeTurnsIdle } from './runtime/managed-runtime-idle'
 import {
   resolveKunDataDir,
   setKunUnexpectedExitHandler,
+  syncGuiManagedKunConfig,
   waitForKunStartupSettled,
   type KunUnexpectedExitInfo
 } from './kun-process'
+import { resolveCodexOAuthApiKey } from './codex-auth'
 import { expandHomePath } from './settings-store'
 import { RestartBudget, type KunRuntimeStatus } from './kun-runtime-supervisor'
 import { configureLogger, logError, logWarn, pruneOnStartup } from './logger'
@@ -83,11 +86,15 @@ import { createScheduleRuntime, type ScheduleRuntime } from './schedule-runtime'
 import { createWorkflowRuntime, type WorkflowRuntime } from './workflow-runtime'
 import { runClawScheduleMcpServerFromArgv } from './claw-schedule-mcp-server'
 import {
-  clawScheduleMcpSettingsChanged,
   resolveKunMcpJsonPath,
   syncClawScheduleMcpConfig,
   type ClawScheduleMcpLaunchConfig
 } from './claw-schedule-mcp-config'
+import {
+  runtimeProcessConfigChanged,
+  runtimeSettingsApplyMode,
+  stableSettingsStringify
+} from './runtime-settings-apply-mode'
 import { registerAppIpcHandlers } from './ipc/register-app-ipc-handlers'
 import {
   configureManagedWeixinBridgeUrlResolver,
@@ -956,15 +963,23 @@ function queueRuntimeSettingsApply(prev: AppSettingsV1, next: AppSettingsV1): vo
   // original `prev` captured when this call was queued.
   const anchor = lastAppliedSettings ?? prev
   lastAppliedSettings = next
-  const startupConfigChanged = runtimeStartupConfigChanged(anchor, next)
-  if (!startupConfigChanged) return
+  const applyMode = runtimeSettingsApplyMode(anchor, next)
+  if (applyMode === 'none') return
 
   const previousTask = runtimeSettingsApplyPromise ?? Promise.resolve()
   const task = previousTask
     .catch(() => undefined)
     .then(async () => {
       const current = lastAppliedSettings ?? next
-      await restartManagedRuntimeForSettingsChange(anchor, current)
+      const currentMode = runtimeSettingsApplyMode(anchor, current)
+      if (currentMode === 'restart') {
+        await restartManagedRuntimeForSettingsChange(anchor, current)
+      } else if (currentMode === 'hot') {
+        const result = await applyManagedRuntimeSettingsHot(current, 'settings-apply')
+        if (result === 'restart_required') {
+          await restartManagedRuntimeForSettingsChange(anchor, current, true)
+        }
+      }
     })
     .catch((error: unknown) => {
       logWarn('settings-apply', 'Failed to apply Kun runtime settings in background', {
@@ -988,7 +1003,10 @@ function queueRuntimeMcpConfigApply(settings: AppSettingsV1): void {
     .catch(() => undefined)
     .then(async () => {
       const current = lastAppliedSettings ?? settings
-      await restartManagedRuntimeForMcpConfigChange(current)
+      const result = await applyManagedRuntimeSettingsHot(current, 'mcp-config')
+      if (result === 'restart_required') {
+        await restartManagedRuntimeForMcpConfigChange(current)
+      }
     })
     .catch((error: unknown) => {
       logWarn('mcp-config', 'Failed to apply Kun MCP config change in background', {
@@ -1332,44 +1350,6 @@ function createWindow(options: { suppressInitialShow?: boolean } = {}): void {
 }
 
 /**
- * Stable equality for the Kun runtime settings. Most fields are flat,
- * but GUI-managed capability options can be nested, so compare values
- * structurally while still surviving future field additions.
- */
-function kunRuntimeConfigChanged(prev: AppSettingsV1, next: AppSettingsV1): boolean {
-  const a = resolveKunRuntimeSettings(prev)
-  const b = resolveKunRuntimeSettings(next)
-  const keys = new Set([...Object.keys(a), ...Object.keys(b)] as Array<keyof typeof a>)
-  for (const key of keys) {
-    if (!stableSettingsValueEqual(a[key], b[key])) return true
-  }
-  return false
-}
-
-function stableSettingsValueEqual(a: unknown, b: unknown): boolean {
-  if (a === b) return true
-  return stableSettingsStringify(a) === stableSettingsStringify(b)
-}
-
-function stableSettingsStringify(value: unknown): string {
-  return JSON.stringify(canonicalSettingsValue(value))
-}
-
-function canonicalSettingsValue(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(canonicalSettingsValue)
-  if (!value || typeof value !== 'object') return value
-  const out: Record<string, unknown> = {}
-  for (const key of Object.keys(value as Record<string, unknown>).sort()) {
-    out[key] = canonicalSettingsValue((value as Record<string, unknown>)[key])
-  }
-  return out
-}
-
-function runtimeStartupConfigChanged(prev: AppSettingsV1, next: AppSettingsV1): boolean {
-  return kunRuntimeConfigChanged(prev, next) || clawScheduleMcpSettingsChanged(prev, next)
-}
-
-/**
  * Reject runtime-affecting values that would persist a config kun can
  * never boot with. Runs before the settings patch is written to disk.
  */
@@ -1432,11 +1412,94 @@ function isFullSettingsSnapshotPatch(partial: AppSettingsPatch): boolean {
     partial.guiUpdate !== undefined
 }
 
+type ManagedRuntimeHotApplyResult = 'applied' | 'skipped' | 'restart_required'
+
+async function applyManagedRuntimeSettingsHot(
+  settings: AppSettingsV1,
+  source: string
+): Promise<ManagedRuntimeHotApplyResult> {
+  await waitForKunStartupSettled()
+  const adapter = kunRuntimeAdapter
+  if (!adapter.isChildRunning()) return 'skipped'
+
+  const runtime = resolveKunRuntimeSettings(settings)
+  const dataDir = resolveKunDataDir(runtime)
+  const config = await syncGuiManagedKunConfig(dataDir, runtime, {
+    scheduleMcp: {
+      settings,
+      launch: getClawScheduleMcpLaunchConfig()
+    }
+  })
+  const serve = config.serve ?? {}
+  const defaultClientApiKey = resolveCodexOAuthApiKey(runtime.apiKey).apiKey
+  const body = {
+    ...config,
+    serve: {
+      ...serve,
+      apiKey: defaultClientApiKey || runtime.apiKey,
+      baseUrl: runtime.baseUrl,
+      modelProxyUrl: resolveModelProviderProxyUrl(settings),
+      endpointFormat: runtime.endpointFormat,
+      model: runtime.model,
+      approvalPolicy: runtime.approvalPolicy,
+      sandboxMode: runtime.sandboxMode,
+      tokenEconomyMode: runtime.tokenEconomyMode,
+      tokenEconomy: runtime.tokenEconomy,
+      toolOutputLimits: runtime.toolOutputLimits,
+      providers: serve.providers ?? {}
+    }
+  }
+
+  const headers = runtimeAuthHeaders(settings)
+  headers.set('content-type', 'application/json')
+  try {
+    const response = await fetch(
+      `${getRuntimeBaseUrlForSettings(settings)}/v1/runtime/config/apply`,
+      {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body)
+      }
+    )
+    const text = await response.text()
+    if (response.status === 404 || response.status === 405) {
+      logWarn(source, 'Kun runtime does not support hot config apply; falling back to restart.')
+      return 'restart_required'
+    }
+    let parsed: unknown = null
+    if (text.trim()) {
+      try {
+        parsed = JSON.parse(text)
+      } catch {
+        parsed = null
+      }
+    }
+    if (response.ok && parsed && typeof parsed === 'object' && (parsed as { ok?: unknown }).ok === true) {
+      noteRuntimeHealthy(source)
+      return 'applied'
+    }
+    const code = parsed && typeof parsed === 'object' ? (parsed as { code?: unknown }).code : undefined
+    const message = parsed && typeof parsed === 'object'
+      ? String((parsed as { message?: unknown }).message ?? text)
+      : text
+    if (code === 'restart_required') {
+      logWarn(source, `Kun hot config apply requested restart: ${message}`)
+      return 'restart_required'
+    }
+    throw new Error(message || `Kun hot config apply failed with HTTP ${response.status}`)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    logWarn(source, `Kun hot config apply failed; falling back to restart: ${message}`)
+    return 'restart_required'
+  }
+}
+
 async function restartManagedRuntimeForSettingsChange(
   prev: AppSettingsV1,
-  next: AppSettingsV1
+  next: AppSettingsV1,
+  force = false
 ): Promise<void> {
-  if (!runtimeStartupConfigChanged(prev, next)) return
+  if (!force && !runtimeProcessConfigChanged(prev, next)) return
 
   // Let any in-flight boot launch finish (or fail) before we read liveness
   // and stop the child. Killing a kun that is still inside its startup window

@@ -110,6 +110,18 @@ function generatedFileRelativePath(file: unknown): string {
     : ''
 }
 
+function generatedFileAbsolutePath(file: unknown): string {
+  if (!file || typeof file !== 'object') return ''
+  const candidate = file as GeneratedFileReference
+  return typeof candidate.absolutePath === 'string' && candidate.absolutePath.trim()
+    ? candidate.absolutePath.trim()
+    : ''
+}
+
+function generatedFileImageUrl(file: unknown): string {
+  return generatedFileAbsolutePath(file) || generatedFileRelativePath(file)
+}
+
 function latestGeneratedImageMarkdownPath(text: string): string | null {
   let latest: string | null = null
   const re = /!\[[^\]]*]\(([^)\s]+)\)/g
@@ -118,6 +130,48 @@ function latestGeneratedImageMarkdownPath(text: string): string | null {
     if (path?.startsWith('.deepseekgui-images/')) latest = path
   }
   return latest
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+function generatedImageUrlAliasesForTurn(blocks: readonly ChatBlock[]): Map<string, string> {
+  const aliases = new Map<string, string>()
+  for (const block of blocks) {
+    if (block.kind !== 'tool' || block.status !== 'success') continue
+    if (!isGenerateImageToolName(block.meta?.toolName)) continue
+    const files = block.meta?.generatedFiles
+    if (!Array.isArray(files)) continue
+    for (const file of files) {
+      const relativePath = generatedFileRelativePath(file)
+      const imageUrl = generatedFileImageUrl(file)
+      if (relativePath && imageUrl) aliases.set(relativePath, imageUrl)
+    }
+  }
+  return aliases
+}
+
+export function rewriteGeneratedImageUrlsForTurn(value: unknown, blocks: readonly ChatBlock[]): unknown {
+  const aliases = generatedImageUrlAliasesForTurn(blocks)
+  if (aliases.size === 0) return value
+  return rewriteGeneratedImageUrls(value, aliases)
+}
+
+function rewriteGeneratedImageUrls(value: unknown, aliases: ReadonlyMap<string, string>): unknown {
+  if (Array.isArray(value)) return value.map((item) => rewriteGeneratedImageUrls(item, aliases))
+  if (!isRecord(value)) return value
+  let changed = false
+  const next: Record<string, unknown> = {}
+  for (const [key, entry] of Object.entries(value)) {
+    const rewritten =
+      key === 'imageUrl' && typeof entry === 'string'
+        ? aliases.get(entry.trim()) ?? entry
+        : rewriteGeneratedImageUrls(entry, aliases)
+    if (rewritten !== entry) changed = true
+    next[key] = rewritten
+  }
+  return changed ? next : value
 }
 
 export function latestGeneratedImageRelativePathForTurn(blocks: readonly ChatBlock[]): string | null {
@@ -134,6 +188,25 @@ export function latestGeneratedImageRelativePathForTurn(blocks: readonly ChatBlo
     for (const file of files) {
       const relativePath = generatedFileRelativePath(file)
       if (relativePath) latest = relativePath
+    }
+  }
+  return latest
+}
+
+export function latestGeneratedImageUrlForTurn(blocks: readonly ChatBlock[]): string | null {
+  let latest: string | null = null
+  for (const block of blocks) {
+    if (block.kind === 'assistant') {
+      latest = latestGeneratedImageMarkdownPath(block.text) ?? latest
+      continue
+    }
+    if (block.kind !== 'tool' || block.status !== 'success') continue
+    if (!isGenerateImageToolName(block.meta?.toolName)) continue
+    const files = block.meta?.generatedFiles
+    if (!Array.isArray(files)) continue
+    for (const file of files) {
+      const imageUrl = generatedFileImageUrl(file)
+      if (imageUrl) latest = imageUrl
     }
   }
   return latest
@@ -326,6 +399,16 @@ export function useApplyShapeOpsLive(
       } catch {
         return
       }
+      const chatState = useChatStore.getState()
+      parsed = rewriteGeneratedImageUrlsForTurn(
+        parsed,
+        blocksForActiveCanvasTurn({
+          activeThreadId: chatState.activeThreadId,
+          currentTurnId: chatState.currentTurnId,
+          currentTurnUserId: chatState.currentTurnUserId,
+          blocks: chatState.blocks
+        })
+      )
       const blocks = extractCanvasOpBlocksFromValue(parsed)
       if (blocks.length === 0) {
         return
@@ -434,7 +517,7 @@ export function useApplyShapeOpsLive(
         : []
       const generatedImagePath =
         affectedThisTurn.size === 0
-          ? latestGeneratedImageRelativePathForTurn(turnBlocks)
+          ? latestGeneratedImageUrlForTurn(turnBlocks)
           : null
       if (generatedImageFallbackTarget && generatedImagePath) {
         const shape = useCanvasShapeStore.getState().document.objects[generatedImageFallbackTarget.id]
