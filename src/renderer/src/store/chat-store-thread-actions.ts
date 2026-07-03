@@ -786,6 +786,8 @@ export function createThreadActions(
                 title: generatedTitle,
                 // Provisional first-message title; let the backend LLM titler upgrade it.
                 titleAuto: true,
+                ...(composerModel ? { model: composerModel } : {}),
+                ...(composerProviderId ? { providerId: composerProviderId } : {}),
                 mode: mode ?? 'agent'
               })
             : null
@@ -847,9 +849,7 @@ export function createThreadActions(
       }
       await ensureRuntimeProviderForSend({
         providerId: channel ? undefined : composerProviderId,
-        model: composerModel,
-        set,
-        get
+        model: composerModel
       })
       const settings = await rendererRuntimeClient.getSettings()
       let workspaceCheckpointId: string | undefined
@@ -898,6 +898,7 @@ export function createThreadActions(
       const { turnId, userMessageItemId } = await p.sendUserMessage(activeThreadId, runtimeText, {
         mode,
         ...(composerModel ? { model: composerModel } : {}),
+        ...(composerProviderId ? { providerId: composerProviderId } : {}),
         ...(reasoningEffort ? { reasoningEffort } : {}),
         ...(runtimeDisplayText ? { displayText: runtimeDisplayText } : {}),
         ...((queued?.guiPlan ?? overrides?.guiPlan) ? { guiPlan: queued?.guiPlan ?? overrides?.guiPlan } : {}),
@@ -1056,6 +1057,8 @@ export function createThreadActions(
       set({ error: i18n.t('common:composerQueuePlaceholder') })
       return false
     }
+    const composerModel = get().composerModel.trim()
+    const composerProviderId = get().composerProviderId.trim()
     let activeThreadId = get().activeThreadId
     try {
       if (!activeThreadId) {
@@ -1078,6 +1081,8 @@ export function createThreadActions(
             ? await p.createThread({
                 workspace: workspaceRoot,
                 title: i18n.t('common:slashCommandReviewTitle'),
+                ...(composerModel ? { model: composerModel } : {}),
+                ...(composerProviderId ? { providerId: composerProviderId } : {}),
                 mode: 'agent'
               })
             : null
@@ -1095,8 +1100,6 @@ export function createThreadActions(
         }))
       }
       const threadSnap = get().threads.find((thread) => thread.id === activeThreadId)
-      const composerModel = get().composerModel.trim()
-      const composerProviderId = get().composerProviderId.trim()
       const userModelChip = optimisticUserModelLabel(composerModel, threadSnap?.model)
       const seqAtSend = get().lastSeq
       resetBusyRecoveryAttempts()
@@ -1113,12 +1116,11 @@ export function createThreadActions(
       })
       await ensureRuntimeProviderForSend({
         providerId: composerProviderId,
-        model: composerModel,
-        set,
-        get
+        model: composerModel
       })
       const { turnId, userMessageItemId } = await p.reviewThread(activeThreadId, target, {
-        ...(composerModel ? { model: composerModel } : {})
+        ...(composerModel ? { model: composerModel } : {}),
+        ...(composerProviderId ? { providerId: composerProviderId } : {})
       })
       if (userMessageItemId && userModelChip) {
         rememberTurnModel(activeThreadId, userMessageItemId, userModelChip)

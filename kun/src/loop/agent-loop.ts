@@ -1572,7 +1572,9 @@ export class AgentLoop {
       threadId,
       turnId,
       model,
-      ...(thread?.providerId?.trim() ? { providerId: thread.providerId.trim() } : {}),
+      ...((turn?.providerId?.trim() || thread?.providerId?.trim())
+        ? { providerId: turn?.providerId?.trim() || thread?.providerId?.trim() }
+        : {}),
       // Thread-level systemPrompt (primary-agent persona snapshot) is
       // appended to the runtime base — same augment strategy as child agents
       // (child-agent-executor) — so the agent keeps kun's tool/safety

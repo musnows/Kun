@@ -268,6 +268,7 @@ export class KunRuntimeProvider implements AgentProvider {
     options?: {
       mode?: KunThreadMode
       model?: string
+      providerId?: string
       reasoningEffort?: string
       displayText?: string
       guiPlan?: {
@@ -288,6 +289,7 @@ export class KunRuntimeProvider implements AgentProvider {
     const body: Record<string, unknown> = {
       prompt: text,
       model: options?.model,
+      providerId: options?.providerId,
       approvalPolicy: runtime.approvalPolicy,
       sandboxMode: runtime.sandboxMode
     }
@@ -353,11 +355,14 @@ export class KunRuntimeProvider implements AgentProvider {
   async reviewThread(
     threadId: string,
     target: ReviewTarget,
-    options?: { model?: string }
+    options?: { model?: string; providerId?: string }
   ): Promise<{ turnId: string; threadId: string; userMessageItemId?: string; reviewItemId?: string }> {
     const body: Record<string, unknown> = { target }
     if (options?.model?.trim()) {
       body.model = options.model.trim()
+    }
+    if (options?.providerId?.trim()) {
+      body.providerId = options.providerId.trim()
     }
     const response = await rendererRuntimeClient.runtimeRequest(
       kunThreadReviewPath(threadId),
