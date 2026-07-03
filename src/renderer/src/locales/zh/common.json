@@ -474,6 +474,7 @@
   "designRailChildBack": "返回设计主会话",
   "designRailChildLoading": "加载子代理输出中…",
   "designRailChildError": "子代理会话加载失败",
+  "designRailDrawingFallback": "设计绘画 {{number}}",
   "designPagesToggle": "多页",
   "designPagesToggleHint": "用一句话生成多个风格统一的页面",
   "designTargetWeb": "Web",

@@ -45,13 +45,17 @@ export function designThreadToSelectForDocument(options: DesignThreadSelectorOpt
   const root = options.workspaceRoot?.trim()
   const docId = options.docId?.trim()
   if (options.route !== 'design' || !root || !docId) return null
+  const activeThreadId = options.activeThreadId?.trim()
+  if (!activeThreadId) {
+    return designThreadsForDocument(options)[0]?.id ?? null
+  }
   const existing = activeDesignThreadForWorkspace(
     root,
     docId,
     options.threads,
     options.registry ?? readDesignThreadRegistry()
   )
-  if (!existing || existing.id === options.activeThreadId) return null
+  if (!existing || existing.id === activeThreadId) return null
   return existing.id
 }
 
@@ -65,9 +69,10 @@ export function designThreadSelectionSyncForDocument(options: DesignThreadSelect
   route: string
 }): DesignThreadSelectionSync {
   const activeThreadId = options.activeThreadId?.trim()
-  if (options.route !== 'design' || !activeThreadId) return { action: 'none' }
+  if (options.route !== 'design') return { action: 'none' }
   const threadId = designThreadToSelectForDocument(options)
   if (threadId) return { action: 'select', threadId }
+  if (!activeThreadId) return { action: 'none' }
   return designThreadBelongsToDocument(options)
     ? { action: 'none' }
     : { action: 'clear' }

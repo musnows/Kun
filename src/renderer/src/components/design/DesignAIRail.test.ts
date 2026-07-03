@@ -2,7 +2,11 @@ import { createElement, type ComponentProps } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { useDesignWorkspaceStore } from '../../design/design-workspace-store'
-import { DesignAIRail } from './DesignAIRail'
+import {
+  DesignAIRail,
+  deriveDesignThreadTitleFromBlocks,
+  designThreadTitleLooksDefault
+} from './DesignAIRail'
 import { DesignTargetToggle } from './DesignTargetToggle'
 
 type DesignAIRailProps = ComponentProps<typeof DesignAIRail>
@@ -50,6 +54,43 @@ beforeEach(() => {
 })
 
 describe('DesignAIRail target toggle', () => {
+  it('derives visible drawing titles from the first design request', () => {
+    expect(designThreadTitleLooksDefault('Design Assistant', '设计助手')).toBe(true)
+    expect(designThreadTitleLooksDefault('设计助手', '设计助手')).toBe(true)
+    expect(designThreadTitleLooksDefault('Kun mobile settings')).toBe(false)
+    expect(deriveDesignThreadTitleFromBlocks([
+      {
+        kind: 'user',
+        id: 'u1',
+        text: '帮我设计一个 Kun 移动端设置页。需要深色主题和账号设置。'
+      }
+    ])).toBe('帮我设计一个 Kun 移动端设置页')
+  })
+
+  it('shows a derived drawing title instead of the default assistant title', () => {
+    const html = renderToStaticMarkup(createElement(DesignAIRail, props({
+      activeThreadId: 'thread-current-document',
+      blocks: [
+        {
+          kind: 'user',
+          id: 'u1',
+          text: '帮我设计一个 Kun 线程列表页面。包含搜索、会话分组和底部导航。'
+        }
+      ],
+      designThreads: [{
+        id: 'thread-current-document',
+        title: 'Design Assistant',
+        workspace: '/tmp/kun-design',
+        model: 'deepseek-chat',
+        mode: 'agent',
+        updatedAt: '2026-07-03T00:00:00.000Z'
+      }]
+    })))
+
+    expect(html).toContain('帮我设计一个 Kun 线程列表页面')
+    expect(html).not.toContain('>Design Assistant</span>')
+  })
+
   it('does not render blocks from a thread outside the active design document', () => {
     const html = renderToStaticMarkup(
       createElement(DesignAIRail, props({

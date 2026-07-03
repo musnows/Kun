@@ -474,6 +474,7 @@
   "designRailChildBack": "Back to design main thread",
   "designRailChildLoading": "Loading subagent output…",
   "designRailChildError": "Failed to load subagent session",
+  "designRailDrawingFallback": "Design drawing {{number}}",
   "designPagesToggle": "Multi-page",
   "designPagesToggleHint": "Generate several cohesive pages from one brief",
   "designTargetWeb": "Web",

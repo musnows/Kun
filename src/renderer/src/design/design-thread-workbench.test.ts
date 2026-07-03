@@ -97,6 +97,36 @@ describe('design thread workbench helpers', () => {
     })).toBeNull()
   })
 
+  it('selects the latest design drawing when entering a document with no active thread', () => {
+    const registry = markDesignThread(
+      '/workspace',
+      'doc',
+      'thr_old',
+      markDesignThread('/workspace', 'doc', 'thr_latest', emptyDesignThreadRegistry())
+    )
+    const threads = [
+      thread('thr_old', '2026-07-01T00:00:00.000Z'),
+      thread('thr_latest', '2026-07-03T00:00:00.000Z')
+    ]
+
+    expect(designThreadToSelectForDocument({
+      route: 'design',
+      activeThreadId: null,
+      threads,
+      workspaceRoot: '/workspace',
+      docId: 'doc',
+      registry
+    })).toBe('thr_latest')
+    expect(designThreadSelectionSyncForDocument({
+      route: 'design',
+      activeThreadId: null,
+      threads,
+      workspaceRoot: '/workspace',
+      docId: 'doc',
+      registry
+    })).toEqual({ action: 'select', threadId: 'thr_latest' })
+  })
+
   it('asks the workbench to clear a stale active thread when the selected design document has no session', () => {
     const registry = markDesignThread('/workspace', 'other-doc', 'thr_other', emptyDesignThreadRegistry())
 

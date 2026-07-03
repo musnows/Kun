@@ -14,11 +14,13 @@ import {
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { formatRelativeTime } from '../../lib/format-relative-time'
+import { deriveThreadTitleFromPrompt } from '../../lib/thread-title'
 import type { AttachmentReference, NormalizedThread, RuntimeConnectionStatus, ChatBlock } from '../../agent/types'
 import { getProvider } from '../../agent/registry'
 import type { QueuedUserMessage } from '../../store/chat-store-types'
 import { threadSnapshotLooksRunning } from '../../store/chat-store-runtime-helpers'
 import type { ModelProviderModelGroup } from '@shared/kun-gui-api'
+import { DESIGN_ASSISTANT_THREAD_TITLE } from '../../design/design-thread-registry'
 import { useDesignWorkspaceStore } from '../../design/design-workspace-store'
 import { defaultFrameSizeForDesignTarget } from '../../design/design-context'
 import { cancelDesignPagesRun } from '../../design/design-pages-run'
@@ -67,6 +69,23 @@ type Props = {
   onSwitchThread: (threadId: string) => void
   onCollapse: () => void
   className?: string
+}
+
+export function designThreadTitleLooksDefault(
+  title: string | null | undefined,
+  localizedDefaultTitle?: string
+): boolean {
+  const raw = title?.trim() ?? ''
+  if (!raw) return true
+  return raw === DESIGN_ASSISTANT_THREAD_TITLE || raw === localizedDefaultTitle?.trim()
+}
+
+export function deriveDesignThreadTitleFromBlocks(blocks: readonly ChatBlock[]): string {
+  const firstUser = blocks.find((block) => block.kind === 'user')
+  if (!firstUser || firstUser.kind !== 'user') return ''
+  const text = (firstUser.meta?.displayText ?? firstUser.text).trim()
+  if (!text) return ''
+  return deriveThreadTitleFromPrompt(text)
 }
 
 function DesignAIRailInner({
@@ -127,6 +146,7 @@ function DesignAIRailInner({
   const [childStatus, setChildStatus] = useState<string | undefined>(undefined)
   const [childLoading, setChildLoading] = useState(false)
   const [childError, setChildError] = useState<string | null>(null)
+  const [threadTitleOverrides, setThreadTitleOverrides] = useState<Record<string, string>>({})
 
   useEffect(() => {
     if (!threadListOpen) return
@@ -147,6 +167,32 @@ function DesignAIRailInner({
       window.removeEventListener('keydown', onKeyDown)
     }
   }, [threadListOpen])
+
+  useEffect(() => {
+    const missing = designThreads.filter(
+      (thread) =>
+        designThreadTitleLooksDefault(thread.title, t('designRailTitle')) &&
+        !threadTitleOverrides[thread.id]
+    )
+    if (missing.length === 0) return
+    let cancelled = false
+    for (const thread of missing) {
+      void getProvider()
+        .getThreadDetail(thread.id)
+        .then((detail) => {
+          if (cancelled) return
+          const title = deriveDesignThreadTitleFromBlocks(detail.blocks)
+          if (!title || designThreadTitleLooksDefault(title, t('designRailTitle'))) return
+          setThreadTitleOverrides((current) =>
+            current[thread.id] ? current : { ...current, [thread.id]: title }
+          )
+        })
+        .catch(() => undefined)
+    }
+    return () => {
+      cancelled = true
+    }
+  }, [designThreads, t, threadTitleOverrides])
 
   useEffect(() => {
     setChildThreadId(null)
@@ -197,9 +243,6 @@ function DesignAIRailInner({
   const activeThread = designThreads.find((th) => th.id === activeThreadId) ?? null
   const showingDocumentThread = Boolean(activeThread)
   const viewingChildThread = Boolean(childThreadId)
-  const headerTitle = viewingChildThread
-    ? t('subagentSessionBannerTitle')
-    : activeThread?.title || t('designRailTitle')
 
   const timelineBlocks = viewingChildThread ? childBlocks : showingDocumentThread ? blocks : []
   const timelineThreadId = viewingChildThread ? childThreadId : showingDocumentThread ? activeThreadId : null
@@ -236,6 +279,26 @@ function DesignAIRailInner({
     : ''
   const showContextControls =
     !viewingChildThread && (runActive || Boolean(primaryContextChip) || showMultiPageToggle)
+  const titleForDesignThread = (thread: NormalizedThread, index: number): string => {
+    const localizedDefault = t('designRailTitle')
+    if (!designThreadTitleLooksDefault(thread.title, localizedDefault)) return thread.title
+    const fromActiveBlocks =
+      thread.id === activeThreadId && !viewingChildThread
+        ? deriveDesignThreadTitleFromBlocks(blocks)
+        : ''
+    return (
+      fromActiveBlocks ||
+      threadTitleOverrides[thread.id] ||
+      t('designRailDrawingFallback', { number: index + 1 })
+    )
+  }
+  const activeThreadIndex = activeThread
+    ? Math.max(0, designThreads.findIndex((thread) => thread.id === activeThread.id))
+    : 0
+  const activeThreadTitle = activeThread ? titleForDesignThread(activeThread, activeThreadIndex) : ''
+  const headerTitle = viewingChildThread
+    ? t('subagentSessionBannerTitle')
+    : activeThreadTitle || t('designRailTitle')
 
   const openChildThread = (threadId: string): void => {
     setThreadListOpen(false)
@@ -310,7 +373,7 @@ function DesignAIRailInner({
                 {t('designRailEmpty')}
               </p>
             ) : (
-              designThreads.map((thread) => (
+              designThreads.map((thread, index) => (
                 <button
                   key={thread.id}
                   type="button"
@@ -324,7 +387,7 @@ function DesignAIRailInner({
                       : 'text-ds-ink hover:bg-ds-hover'
                   }`}
                 >
-                  <span className="min-w-0 flex-1 truncate text-[13px]">{thread.title}</span>
+                  <span className="min-w-0 flex-1 truncate text-[13px]">{titleForDesignThread(thread, index)}</span>
                   <span className="shrink-0 text-[11px] text-ds-faint tabular-nums">
                     {formatRelativeTime(thread.updatedAt, i18n.language)}
                   </span>

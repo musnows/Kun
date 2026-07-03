@@ -401,6 +401,7 @@ export function createNavigationActions(
       const thread = await provider.createThread({
         workspace: targetWorkspace,
         title: DESIGN_ASSISTANT_THREAD_TITLE,
+        titleAuto: true,
         mode: 'agent'
       })
       const nextRegistry = markDesignThread(targetWorkspace, targetDoc, thread.id)
