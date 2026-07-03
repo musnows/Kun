@@ -459,6 +459,7 @@ export async function syncGuiManagedKunConfig(
   runtime: Pick<
     KunRuntimeSettingsV1,
     | 'mcpSearch'
+    | 'retry'
     | 'tokenEconomy'
     | 'storage'
     | 'contextCompaction'
@@ -532,6 +533,7 @@ export async function syncGuiManagedKunConfig(
     serve: {
       ...serve,
       storage,
+      retry: runtime.retry,
       tokenEconomy: tokenEconomyConfigForRuntime(runtime.tokenEconomy, existingTokenEconomy),
       ...(providers && Object.keys(providers).length ? { providers } : {})
     },
@@ -885,6 +887,7 @@ function providersConfigForRuntime(settings: AppSettingsV1): Record<string, Reco
       ...(baseUrl ? { baseUrl } : {}),
       ...(provider.kind ? { kind: provider.kind } : {}),
       ...(provider.endpointFormat ? { endpointFormat: provider.endpointFormat } : {}),
+      retry: provider.retry,
       ...(proxyUrl ? { modelProxyUrl: proxyUrl } : {})
     }
   }

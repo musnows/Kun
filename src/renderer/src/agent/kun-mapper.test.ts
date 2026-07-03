@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { chatBlockFromItem, dispatchKunRuntimeEvent, mergeChatBlocks } from './kun-mapper'
 import type { CoreRuntimeEventJson, CoreTurnItemJson } from './kun-contract'
 import type { ThreadErrorOptions, ThreadEventSink } from './types'
@@ -768,6 +768,46 @@ describe('streaming runtime status events', () => {
 	      message: 'read repeated the same arguments'
 	    })
 	  })
+
+  it('surfaces model request retries as runtime status events', async () => {
+    let captured: unknown = null
+    const runtimeError = vi.fn()
+    const sink: ThreadEventSink = {
+      ...makeSink(),
+      onRuntimeStatus: (event) => {
+        captured = event
+      },
+      onRuntimeError: runtimeError
+    }
+
+    await dispatchKunRuntimeEvent(
+      {
+        kind: 'model_request_retry',
+        seq: 24,
+        timestamp: '2026-06-03T10:00:03.000Z',
+        threadId: 'thr_1',
+        turnId: 'turn_1',
+        status: 429,
+        attempt: 1,
+        maxAttempts: 3,
+        delayMs: 3000
+      },
+      sink,
+      async () => undefined
+    )
+
+    expect(captured).toMatchObject({
+      kind: 'model_request_retry',
+      itemId: 'runtime_status_turn_1_model_retry',
+      turnId: 'turn_1',
+      createdAt: '2026-06-03T10:00:03.000Z',
+      status: 429,
+      attempt: 1,
+      maxAttempts: 3,
+      delayMs: 3000
+    })
+    expect(runtimeError).not.toHaveBeenCalled()
+  })
 	})
 
 describe('Kun extension metadata mapping', () => {

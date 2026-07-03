@@ -54,6 +54,7 @@ import {
   type QualityConfig,
   type RolesConfig,
   type RuntimeTuningConfig,
+  type ModelRequestRetryConfig,
   type ServeProviderConfig,
   type StorageConfig
 } from '../config/kun-config.js'
@@ -97,6 +98,7 @@ export type KunServeRuntimeOptions = {
   baseUrl: string
   modelProxyUrl?: string
   endpointFormat?: ModelEndpointFormat
+  retry?: ModelRequestRetryConfig
   /**
    * Extra providers the runtime can route to per request. Keyed by
    * provider id (matched against `ModelRequest.providerId`); each entry
@@ -187,6 +189,7 @@ export async function createKunServeRuntime(
     apiKey: options.apiKey,
     modelProxyUrl: options.modelProxyUrl,
     endpointFormat: options.endpointFormat ?? DEFAULT_MODEL_ENDPOINT_FORMAT,
+    retry: options.retry,
     model: options.model,
     modelCapabilities,
     debugSink: llmDebug,
@@ -214,6 +217,7 @@ export async function createKunServeRuntime(
         apiKey: provider.apiKey,
         modelProxyUrl: provider.modelProxyUrl ?? options.modelProxyUrl,
         endpointFormat: provider.endpointFormat ?? options.endpointFormat ?? DEFAULT_MODEL_ENDPOINT_FORMAT,
+        retry: provider.retry ?? options.retry,
         model: options.model,
         modelCapabilities,
         debugSink: llmDebug,

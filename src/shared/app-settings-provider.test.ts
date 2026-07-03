@@ -19,6 +19,7 @@ import {
   defaultWorkflowSettings,
   defaultTerminalSettings,
   defaultWriteSettings,
+  defaultModelRequestRetrySettings,
   listMusicGenerationProviderProfiles,
   listSpeechToTextProviderProfiles,
   listTextToSpeechProviderProfiles,
@@ -37,6 +38,42 @@ import {
   resolveKunVideoGenerationSettings,
   type AppSettingsV1
 } from './app-settings'
+
+describe('model provider retry settings', () => {
+  it('adds default retry settings to default providers', () => {
+    const settings = defaultModelProviderSettings()
+
+    expect(settings.providers[0].retry).toEqual(defaultModelRequestRetrySettings())
+  })
+
+  it('normalizes retry attempts, delay, and HTTP status codes', () => {
+    const settings = normalizeModelProviderSettings({
+      providers: [
+        {
+          id: 'custom',
+          name: 'Custom',
+          apiKey: 'k',
+          baseUrl: 'https://example.com/v1',
+          endpointFormat: 'chat_completions',
+          retry: {
+            maxAttempts: 99,
+            initialDelayMs: 700_000,
+            httpStatusCodes: [503, 429, 200, 503, 599]
+          },
+          models: ['m'],
+          modelProfiles: {}
+        }
+      ]
+    })
+
+    const provider = settings.providers.find((item) => item.id === 'custom')
+    expect(provider?.retry).toEqual({
+      maxAttempts: 10,
+      initialDelayMs: 600_000,
+      httpStatusCodes: [429, 503, 599]
+    })
+  })
+})
 
 function settings(): AppSettingsV1 {
   return {

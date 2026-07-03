@@ -238,6 +238,37 @@ describe('busy watchdog re-arming on live ticks (#goal-recovering-banner)', () =
 })
 
 describe('thread event sink runtime errors', () => {
+  it('adds model request retry events as runtime status instead of a banner error', () => {
+    const { getState, set, get } = makeSinkHarness({
+      activeThreadId: 'thread-current',
+      busy: true,
+      blocks: [{ kind: 'user', id: 'user-current', text: 'hello' }]
+    })
+    const sink = buildThreadEventSink(set, get, { threadId: 'thread-current' })
+
+    sink.onRuntimeStatus?.({
+      kind: 'model_request_retry',
+      itemId: 'runtime_status_turn-current_model_retry',
+      turnId: 'turn-current',
+      createdAt: '2026-06-08T00:00:00.000Z',
+      status: 429,
+      attempt: 1,
+      maxAttempts: 3,
+      delayMs: 3000
+    })
+
+    const systemBlocks = getState().blocks.filter((block) => block.kind === 'system')
+    expect(systemBlocks).toHaveLength(1)
+    expect(systemBlocks[0]).toMatchObject({
+      kind: 'system',
+      id: 'runtime_status_turn-current_model_retry'
+    })
+    expect(systemBlocks[0].text).toContain('429')
+    expect(systemBlocks[0].text).toContain('1')
+    expect(systemBlocks[0].text).toContain('3')
+    expect(getState().error).toBeNull()
+  })
+
   it('adds runtime error events to the timeline with details', () => {
     const { getState, set, get } = makeSinkHarness({
       activeThreadId: 'thread-current',

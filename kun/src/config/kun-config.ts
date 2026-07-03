@@ -29,6 +29,21 @@ export const DEFAULT_KUN_MODEL = 'deepseek-v4-pro'
 const PositiveInt = z.number().int().positive()
 const PositiveRatio = z.number().positive().max(1)
 
+export const DEFAULT_MODEL_REQUEST_RETRY_CONFIG = {
+  maxAttempts: 0,
+  initialDelayMs: 3_000,
+  httpStatusCodes: [429, 503]
+} as const
+
+export const ModelRequestRetryConfigSchema = z
+  .object({
+    maxAttempts: z.number().int().min(0).max(10).default(DEFAULT_MODEL_REQUEST_RETRY_CONFIG.maxAttempts).optional(),
+    initialDelayMs: z.number().int().min(0).max(600_000).default(DEFAULT_MODEL_REQUEST_RETRY_CONFIG.initialDelayMs).optional(),
+    httpStatusCodes: z.array(z.number().int().min(400).max(599)).max(64).default([...DEFAULT_MODEL_REQUEST_RETRY_CONFIG.httpStatusCodes]).optional()
+  })
+  .strict()
+export type ModelRequestRetryConfig = z.infer<typeof ModelRequestRetryConfigSchema>
+
 export const ModelContextCompactionProfileConfigSchema = z
   .object({
     softRatio: PositiveRatio.optional(),
@@ -225,6 +240,7 @@ export const ServeProviderConfigSchema = z
       .preprocess(normalizeModelEndpointFormat, z.enum(MODEL_ENDPOINT_FORMATS))
       .default(DEFAULT_MODEL_ENDPOINT_FORMAT)
       .optional(),
+    retry: ModelRequestRetryConfigSchema.optional(),
     modelProxyUrl: z.string().optional()
   })
   .strict()
@@ -252,6 +268,7 @@ export const KunServeConfigSchema = z
       normalizeModelEndpointFormat,
       z.enum(MODEL_ENDPOINT_FORMATS)
     ).default(DEFAULT_MODEL_ENDPOINT_FORMAT).optional(),
+    retry: ModelRequestRetryConfigSchema.optional(),
     model: z.string().min(1).optional(),
     approvalPolicy: ApprovalPolicySchema.default(DEFAULT_APPROVAL_POLICY).optional(),
     sandboxMode: SandboxModeSchema.default(DEFAULT_SANDBOX_MODE).optional(),

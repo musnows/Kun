@@ -46,6 +46,11 @@ const labels: Record<string, string> = {
   modelProviderApiKeyPlaceholder: 'Enter provider API key',
   modelProviderBaseUrl: 'Provider base URL',
   modelProviderEndpointFormat: 'Endpoint format',
+  modelProviderRetrySection: 'Failure retry',
+  modelProviderRetryMaxAttempts: 'Retry attempts',
+  modelProviderRetryInitialDelayMs: 'Initial retry delay (ms)',
+  modelProviderRetryStatusCodes: 'Retry HTTP status codes',
+  modelProviderRetryStatusCodesHint: 'Separate multiple status codes with commas, for example 429,503.',
   modelProviderFetchEmpty: 'No models found',
   modelEndpointChatCompletions: '/v1/chat/completions (openai)',
   modelEndpointResponses: '/v1/responses (openai)',
@@ -515,6 +520,45 @@ describe('AgentsSettingsSection Kun diagnostics smoke', () => {
     expect(html).toContain('Danger zone')
     expect(html).toContain('In use')
     expect(html).toContain('No API key')
+  })
+
+  it('renders retry status codes without spaces and explains comma separation before retry fields', () => {
+    const provider = defaultModelProviderSettings()
+    const customProvider = {
+      id: 'retry-provider',
+      name: 'Retry Provider',
+      apiKey: 'sk-test',
+      baseUrl: 'https://api.example.com/v1',
+      endpointFormat: 'chat_completions',
+      retry: {
+        maxAttempts: 3,
+        initialDelayMs: 3000,
+        httpStatusCodes: [429, 503]
+      },
+      models: ['retry-model'],
+      modelProfiles: {}
+    } satisfies ModelProviderProfileV1
+    const html = renderToStaticMarkup(createElement(ProvidersSettingsSection, {
+      ctx: {
+        ...baseCtx(),
+        provider: {
+          ...provider,
+          providers: [...provider.providers, customProvider]
+        },
+        kun: {
+          ...defaultKunRuntimeSettings(),
+          providerId: customProvider.id
+        }
+      }
+    }))
+
+    expect(html).toContain('Failure retry')
+    expect(html).toContain('Retry HTTP status codes')
+    expect(html).toContain('value="429,503"')
+    expect(html).not.toContain('value="429, 503"')
+    expect(html).toContain('Separate multiple status codes with commas, for example 429,503.')
+    expect(html.indexOf('Separate multiple status codes with commas, for example 429,503.'))
+      .toBeLessThan(html.indexOf('Retry attempts'))
   })
 
   it('locks preset and default provider ids and shows the danger zone only for removable providers', () => {

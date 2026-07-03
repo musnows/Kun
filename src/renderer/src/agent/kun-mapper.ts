@@ -1096,33 +1096,46 @@ function runtimeStatusFromEvent(event: CoreRuntimeEventJson): RuntimeStatusEvent
       toolResultCount: typeof event.toolResultCount === 'number' ? event.toolResultCount : 0
     }
   }
-	  if (event.kind === 'tool_catalog_changed') {
-	    const key = event.fingerprint ?? event.seq ?? Date.now()
-	    return {
-	      kind: 'tool_catalog_changed',
-	      itemId: `runtime_status_tool_catalog_${key}`,
-	      turnId: event.turnId,
-	      createdAt: event.timestamp,
-	      ...(event.changeKind ? { changeKind: event.changeKind } : {}),
-	      message: event.message
-	    }
-	  }
-	  if (event.kind === 'tool_storm_suppressed') {
-	    const callId = typeof event.callId === 'string' && event.callId.trim() ? event.callId.trim() : ''
-	    const toolName = typeof event.toolName === 'string' && event.toolName.trim() ? event.toolName.trim() : ''
-	    if (!callId || !toolName) return null
-	    return {
-	      kind: 'tool_storm_suppressed',
-	      itemId: event.itemId ?? `runtime_status_tool_storm_${callId}`,
-	      turnId: event.turnId,
-	      createdAt: event.timestamp,
-	      message: event.message,
-	      toolName,
-	      callId
-	    }
-	  }
-	  return null
-	}
+  if (event.kind === 'model_request_retry') {
+    const turnKey = event.turnId ?? event.threadId ?? event.seq ?? Date.now()
+    return {
+      kind: 'model_request_retry',
+      itemId: `runtime_status_${turnKey}_model_retry`,
+      turnId: event.turnId,
+      createdAt: event.timestamp,
+      status: typeof event.status === 'number' ? event.status : undefined,
+      attempt: typeof event.attempt === 'number' ? event.attempt : undefined,
+      maxAttempts: typeof event.maxAttempts === 'number' ? event.maxAttempts : undefined,
+      delayMs: typeof event.delayMs === 'number' ? event.delayMs : undefined
+    }
+  }
+  if (event.kind === 'tool_catalog_changed') {
+    const key = event.fingerprint ?? event.seq ?? Date.now()
+    return {
+      kind: 'tool_catalog_changed',
+      itemId: `runtime_status_tool_catalog_${key}`,
+      turnId: event.turnId,
+      createdAt: event.timestamp,
+      ...(event.changeKind ? { changeKind: event.changeKind } : {}),
+      message: event.message
+    }
+  }
+  if (event.kind === 'tool_storm_suppressed') {
+    const callId = typeof event.callId === 'string' && event.callId.trim() ? event.callId.trim() : ''
+    const toolName = typeof event.toolName === 'string' && event.toolName.trim() ? event.toolName.trim() : ''
+    if (!callId || !toolName) return null
+    return {
+      kind: 'tool_storm_suppressed',
+      itemId: event.itemId ?? `runtime_status_tool_storm_${callId}`,
+      turnId: event.turnId,
+      createdAt: event.timestamp,
+      message: event.message,
+      toolName,
+      callId
+    }
+  }
+  return null
+}
 
 /**
  * Dispatches a batch of runtime events, coalescing consecutive text and
@@ -1187,16 +1200,13 @@ export async function dispatchKunRuntimeEvent(
       if (status) sink.onRuntimeStatus?.(status)
       return
     }
-	    case 'tool_catalog_changed': {
-	      const status = runtimeStatusFromEvent(event)
-	      if (status) sink.onRuntimeStatus?.(status)
-	      return
-	    }
-	    case 'tool_storm_suppressed': {
-	      const status = runtimeStatusFromEvent(event)
-	      if (status) sink.onRuntimeStatus?.(status)
-	      return
-	    }
+    case 'model_request_retry':
+    case 'tool_catalog_changed':
+    case 'tool_storm_suppressed': {
+      const status = runtimeStatusFromEvent(event)
+      if (status) sink.onRuntimeStatus?.(status)
+      return
+    }
     case 'approval_requested':
       await handleApprovalRequest(event, sink)
       return
@@ -1261,7 +1271,7 @@ export async function dispatchKunRuntimeEvent(
         threadId: event.threadId ?? '',
         ...(event.title !== undefined ? { title: event.title } : {}),
         ...(event.titleAuto !== undefined ? { titleAuto: event.titleAuto } : {}),
-        ...(event.status !== undefined ? { status: event.status } : {})
+        ...(typeof event.status === 'string' ? { status: event.status } : {})
       })
       return
     case 'turn_completed':

@@ -14,6 +14,11 @@ import type {
   TextToSpeechProtocol,
   VideoGenerationProtocol
 } from './app-settings-types'
+import {
+  DEFAULT_MODEL_REQUEST_RETRY_HTTP_STATUS_CODES,
+  DEFAULT_MODEL_REQUEST_RETRY_INITIAL_DELAY_MS,
+  DEFAULT_MODEL_REQUEST_RETRY_MAX_ATTEMPTS
+} from './app-settings-types'
 
 export type ModelProviderPresetId =
   | 'litellm'
@@ -665,6 +670,14 @@ export function getModelProviderPreset(id: string): ModelProviderPreset | null {
   return MODEL_PROVIDER_PRESETS.find((preset) => preset.id === id) ?? null
 }
 
+function defaultPresetRetrySettings() {
+  return {
+    maxAttempts: DEFAULT_MODEL_REQUEST_RETRY_MAX_ATTEMPTS,
+    initialDelayMs: DEFAULT_MODEL_REQUEST_RETRY_INITIAL_DELAY_MS,
+    httpStatusCodes: [...DEFAULT_MODEL_REQUEST_RETRY_HTTP_STATUS_CODES]
+  }
+}
+
 export function modelProviderPresetProfile(
   preset: ModelProviderPreset,
   apiKey = ''
@@ -675,6 +688,7 @@ export function modelProviderPresetProfile(
     apiKey: apiKey.trim(),
     baseUrl: preset.baseUrl,
     endpointFormat: preset.endpointFormat,
+    retry: defaultPresetRetrySettings(),
     ...(preset.kind ? { kind: preset.kind } : {}),
     models: [...preset.models],
     modelProfiles: copyModelProfiles(preset.modelProfiles),
@@ -706,6 +720,7 @@ export function modelProviderTokenPlanProfile(
     apiKey: apiKey.trim(),
     baseUrl: resolvedBaseUrl,
     endpointFormat: tokenPlan.endpointFormat,
+    retry: defaultPresetRetrySettings(),
     models: [...tokenPlan.models],
     modelProfiles: copyModelProfiles(tokenPlan.modelProfiles),
     ...(tokenPlan.image

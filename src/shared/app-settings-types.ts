@@ -133,6 +133,14 @@ export type NetworkProxySettingsV1 = {
   url: string
 }
 export type { ModelEndpointFormat }
+export const DEFAULT_MODEL_REQUEST_RETRY_MAX_ATTEMPTS = 0
+export const DEFAULT_MODEL_REQUEST_RETRY_INITIAL_DELAY_MS = 3_000
+export const DEFAULT_MODEL_REQUEST_RETRY_HTTP_STATUS_CODES = [429, 503] as const
+export type ModelRequestRetrySettingsV1 = {
+  maxAttempts: number
+  initialDelayMs: number
+  httpStatusCodes: number[]
+}
 export const MODEL_PROVIDER_INPUT_MODALITIES = ['text', 'image'] as const
 export type ModelProviderInputModality = (typeof MODEL_PROVIDER_INPUT_MODALITIES)[number]
 export const MODEL_PROVIDER_MESSAGE_PARTS = ['text', 'image_url', 'input_image'] as const
@@ -196,6 +204,8 @@ export type ModelProviderProfileV1 = {
   apiKey: string
   baseUrl: string
   endpointFormat: ModelEndpointFormat
+  /** 模型请求遇到临时失败或限流响应时使用的 HTTP 重试策略。 */
+  retry?: ModelRequestRetrySettingsV1
   /**
    * Transport kind. `agent-sdk` delegates whole turns to the embedded Claude
    * Agent SDK (Claude Pro/Max subscription); `apiKey` then carries the
@@ -224,6 +234,7 @@ export type ModelProviderMusicCapabilityPatchV1 = Partial<ModelProviderMusicCapa
 export type ModelProviderVideoCapabilityPatchV1 = Partial<ModelProviderVideoCapabilityV1>
 export type ModelProviderModelProfilePatchV1 = Partial<ModelProviderModelProfileV1>
 export type ModelProviderProfilePatchV1 = Partial<Omit<ModelProviderProfileV1, 'image' | 'speech' | 'textToSpeech' | 'music' | 'video' | 'modelProfiles'>> & {
+  retry?: Partial<ModelRequestRetrySettingsV1>
   modelProfiles?: Record<string, ModelProviderModelProfilePatchV1 | null>
   image?: ModelProviderImageCapabilityPatchV1 | null
   speech?: ModelProviderSpeechCapabilityPatchV1 | null
@@ -289,6 +300,8 @@ export type KunRuntimeSettingsV1 = {
   providerId: string
   /** Effective model request format. Resolved from the selected model provider. */
   endpointFormat: ModelEndpointFormat
+  /** 当前生效的模型请求重试策略,由所选模型供应商解析得到。 */
+  retry: ModelRequestRetrySettingsV1
   runtimeToken: string
   dataDir: string
   model: string

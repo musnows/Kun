@@ -1720,6 +1720,17 @@ export class AgentLoop {
           break
         case 'tool_call_delta':
           break
+        case 'retrying':
+          await this.opts.events.record({
+            kind: 'model_request_retry',
+            threadId,
+            turnId,
+            status: chunk.status,
+            attempt: chunk.attempt,
+            maxAttempts: chunk.maxAttempts,
+            delayMs: chunk.delayMs
+          })
+          break
         case 'tool_call_complete': {
           const provider = toolProviderMetadata.get(chunk.toolName)
           const toolKind = toolKinds.get(chunk.toolName)
