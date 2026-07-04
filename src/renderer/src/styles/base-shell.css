@@ -3151,6 +3151,32 @@ pre {
 
 .ds-composer-toolbar {
   min-width: 0;
+  flex-wrap: nowrap;
+  overflow: hidden;
+}
+
+.ds-composer-toolbar-start {
+  flex: 0 1 auto;
+  max-width: min(42%, 22rem);
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+
+.ds-composer-toolbar-start::-webkit-scrollbar {
+  display: none;
+}
+
+.ds-composer-toolbar-actions {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.ds-composer-toolbar-actions .ds-composer-model-picker {
+  flex-shrink: 1;
+  min-width: 0;
 }
 
 .ds-composer-footer {
@@ -3187,18 +3213,20 @@ pre {
 
 @container (max-width: 640px) {
   .ds-composer-toolbar {
-    align-items: stretch;
-    flex-direction: column;
-    gap: 0.5rem;
+    align-items: center;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    gap: 0.375rem;
   }
 
   .ds-composer-toolbar > div {
-    width: 100%;
+    width: auto;
   }
 
   .ds-composer-toolbar > div:first-child {
-    overflow-x: auto;
-    scrollbar-width: none;
+    flex: 0 1 auto;
+    max-width: 44%;
+    min-width: 0;
   }
 
   .ds-composer-toolbar > div:first-child::-webkit-scrollbar {
@@ -3206,7 +3234,17 @@ pre {
   }
 
   .ds-composer-toolbar > div:last-child {
+    flex: 1 1 0;
+    min-width: 0;
     justify-content: flex-end;
+  }
+
+  .ds-composer-toolbar-actions {
+    gap: 0.25rem;
+  }
+
+  .ds-composer-toolbar-actions .ds-composer-model-picker {
+    max-width: min(220px, 44vw);
   }
 
   .ds-composer-intent-detail {
@@ -3231,6 +3269,16 @@ pre {
 
   .ds-composer-usage {
     flex: 0 1 100%;
+  }
+}
+
+@container (max-width: 420px) {
+  .ds-composer-toolbar > div:first-child {
+    max-width: 38%;
+  }
+
+  .ds-composer-toolbar-actions .ds-composer-model-picker {
+    max-width: min(180px, 40vw);
   }
 }
 

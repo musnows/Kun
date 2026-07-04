@@ -62,6 +62,16 @@ export type RuntimeChildMetadata = {
   childToolPolicy?: 'readOnly' | 'inherit'
   childStatus: 'queued' | 'running' | 'completed' | 'failed' | 'aborted'
   childSeq: number
+  detached?: boolean
+  prefixReused?: boolean
+  inheritedHistoryItems?: number
+  toolInvocations?: number
+  durationMs?: number
+  queuedMs?: number
+  totalTokens?: number
+  cacheHitRate?: number | null
+  costUsd?: number
+  costCny?: number
 }
 
 export type WebCitationSource = {
@@ -323,6 +333,8 @@ export type ToolEventPayload = {
   itemId: string
   summary: string
   status: 'running' | 'success' | 'error'
+  updateOnly?: boolean
+  createdAt?: string
   toolKind?: ToolItemKind
   detail?: string
   filePath?: string

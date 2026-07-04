@@ -4,6 +4,8 @@ import { z } from 'zod'
 import { SubagentToolPolicy, type SubagentMode, type SubagentProfileConfig, type SubagentsCapabilityConfig } from '../contracts/capabilities.js'
 import type { RuntimeEventRecorder } from '../services/runtime-event-recorder.js'
 import type { UsageSnapshot } from '../contracts/usage.js'
+import type { ThreadStore } from '../ports/thread-store.js'
+import type { TurnService } from '../services/turn-service.js'
 import { loadWorkspaceAgentProfiles } from './workspace-agents.js'
 
 const ChildRunUsage = z.object({
@@ -41,6 +43,8 @@ export const ChildRunRecord = z.object({
   profile: z.string().optional(),
   /** Effective tool policy applied to the child (read-only vs inherited). */
   toolPolicy: SubagentToolPolicy.optional(),
+  /** True when this child is detached from the parent turn lifecycle. */
+  detached: z.boolean().optional(),
   status: z.enum(['queued', 'running', 'completed', 'failed', 'aborted']),
   summary: z.string().optional(),
   evidence: z.array(z.string().min(1).max(2_000)).max(32).optional(),
@@ -60,6 +64,8 @@ export const ChildRunRecord = z.object({
   durationMs: z.number().int().nonnegative().optional(),
   /** Wall-clock spent waiting for a parallel slot before starting. */
   queuedMs: z.number().int().nonnegative().optional(),
+  /** Stable display order for this child inside its parent turn. */
+  childSeq: z.number().int().nonnegative().optional(),
   createdAt: z.string(),
   /** When the child left the queue and began running. */
   startedAt: z.string().optional(),
@@ -151,9 +157,12 @@ type SlotWaiter = {
   onAbort: () => void
 }
 
+type RunTurnFn = (threadId: string, turnId: string) => Promise<unknown>
+
 export class DelegationRuntime {
   private active = 0
   private childSeq = 0
+  private readonly childSeqById = new Map<string, number>()
   /** Children waiting for a parallel slot, in FIFO order. */
   private readonly slotWaiters: SlotWaiter[] = []
   /** Per-thread child counts (persisted + in-flight) for the budget cap. */
@@ -166,16 +175,23 @@ export class DelegationRuntime {
    * GUI even after the parent turn finished.
    */
   private readonly detachedAborts = new Map<string, AbortController>()
+  private runTurn: RunTurnFn | null = null
 
   constructor(private readonly options: {
     config: SubagentsCapabilityConfig
     store: FileDelegationStore
     events?: RuntimeEventRecorder
+    threadStore?: ThreadStore
+    turns?: TurnService
     nowIso?: () => string
     idGenerator?: () => string
     executor?: ChildRunExecutor
     recordExternalUsage?: (threadId: string, usage: UsageSnapshot) => void
   }) {}
+
+  bindAgentLoop(input: { runTurn: RunTurnFn }): void {
+    this.runTurn = input.runTurn
+  }
 
   async runChild(input: {
     parentThreadId: string
@@ -260,7 +276,9 @@ export class DelegationRuntime {
       tokenBudget,
       timeBudgetMs,
       returnFormat,
+      ...(input.detach ? { detached: true } : {}),
       status: 'queued',
+      childSeq: this.nextChildSeq(id),
       createdAt: queuedAt,
       updatedAt: queuedAt
     })
@@ -301,7 +319,10 @@ export class DelegationRuntime {
         parentTurnId: input.parentTurnId,
         prompt: input.prompt,
         signal: detachedController.signal
-      }).finally(() => this.detachedAborts.delete(record.id))
+      })
+        .then((settled) => this.notifyDetachedChild(settled))
+        .catch(() => undefined)
+        .finally(() => this.detachedAborts.delete(record.id))
       return record
     }
 
@@ -677,7 +698,8 @@ export class DelegationRuntime {
         childId: record.id,
         childLabel: record.label,
         childStatus: record.status,
-        childSeq: ++this.childSeq,
+        childSeq: this.stableChildSeq(record),
+        ...(record.detached ? { detached: true } : {}),
         ...(record.model ? { childModel: record.model } : {}),
         ...(record.providerId ? { childProviderId: record.providerId } : {}),
         ...(record.profile ? { childProfile: record.profile } : {}),
@@ -695,10 +717,56 @@ export class DelegationRuntime {
     })
   }
 
+  private nextChildSeq(childId: string): number {
+    const existing = this.childSeqById.get(childId)
+    if (existing !== undefined) return existing
+    const next = ++this.childSeq
+    this.childSeqById.set(childId, next)
+    return next
+  }
+
+  private stableChildSeq(record: ChildRunRecord): number {
+    if (record.childSeq !== undefined) {
+      this.childSeqById.set(record.id, record.childSeq)
+      this.childSeq = Math.max(this.childSeq, record.childSeq)
+      return record.childSeq
+    }
+    return this.nextChildSeq(record.id)
+  }
+
   private recordExternalUsage(record: ChildRunRecord): void {
     const usage = toUsageSnapshot(record.usage)
     if (usage.totalTokens <= 0 && usage.costUsd === undefined && usage.costCny === undefined) return
     this.options.recordExternalUsage?.(record.parentThreadId, usage)
+  }
+
+  private async notifyDetachedChild(record: ChildRunRecord): Promise<void> {
+    if (record.status !== 'completed' && record.status !== 'failed') return
+    if (!this.options.threadStore || !this.options.turns || !this.runTurn) return
+    const thread = await this.options.threadStore.get(record.parentThreadId)
+    if (!thread) return
+    const notice = formatDetachedChildNotice(record)
+    const displayText = formatDetachedChildDisplayText(record)
+    if (thread.status === 'running') {
+      const runningTurn = [...thread.turns].reverse().find((turn) => turn.status === 'running')
+      if (runningTurn) {
+        await this.options.turns.steerTurn({
+          threadId: record.parentThreadId,
+          turnId: runningTurn.id,
+          text: notice,
+          displayText
+        })
+        return
+      }
+    }
+    const started = await this.options.turns.startTurn({
+      threadId: record.parentThreadId,
+      request: {
+        prompt: notice,
+        displayText
+      }
+    })
+    void this.runTurn(record.parentThreadId, started.turnId)
   }
 
   private now(): string {
@@ -825,6 +893,26 @@ function positiveInteger(value: number | undefined): number | undefined {
   if (value === undefined) return undefined
   if (!Number.isInteger(value) || value <= 0) throw new Error('child budgets must be positive integers')
   return value
+}
+
+function formatDetachedChildDisplayText(record: ChildRunRecord): string {
+  const label = record.label?.trim() || record.profile?.trim() || record.id
+  return `Background subagent ${label} ${record.status}`
+}
+
+function formatDetachedChildNotice(record: ChildRunRecord): string {
+  const label = record.label?.trim() || record.profile?.trim() || record.id
+  const lines = [
+    `Background subagent "${label}" ${record.status}.`,
+    `Child id: ${record.id}`
+  ]
+  if (record.summary?.trim()) {
+    lines.push('', 'Summary:', record.summary.trim())
+  }
+  if (record.error?.trim()) {
+    lines.push('', 'Error:', record.error.trim())
+  }
+  return lines.join('\n')
 }
 
 const defaultExecutor: ChildRunExecutor = async (input) => {

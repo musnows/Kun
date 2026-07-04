@@ -213,6 +213,134 @@ describe('create_plan tool mapping', () => {
     expect(capturedErrorOptions).toEqual({ terminal: true })
   })
 
+  it('does not finish the parent turn for child lifecycle events', async () => {
+    let completed = 0
+    let fatalErrors = 0
+    let childUpdate: unknown = null
+    const sink: ThreadEventSink = {
+      ...makeSink(),
+      onTurnComplete: () => {
+        completed += 1
+      },
+      onTool: (event) => {
+        childUpdate = event
+      },
+      onError: () => {
+        fatalErrors += 1
+      }
+    }
+    const child = {
+      parentThreadId: 'thr_1',
+      parentTurnId: 'turn_1',
+      childId: 'child_1',
+      childLabel: 'child',
+      childStatus: 'completed' as const,
+      childSeq: 1,
+      detached: true
+    }
+
+    await dispatchKunRuntimeEvent({
+      kind: 'turn_started',
+      seq: 8,
+      timestamp: '2024-01-01T00:00:00.000Z',
+      threadId: 'thr_1',
+      turnId: 'turn_1',
+      child: { ...child, childStatus: 'running' }
+    }, sink, async () => undefined)
+    expect(childUpdate).toMatchObject({
+      status: 'running',
+      updateOnly: true,
+      meta: {
+        child: {
+          childId: 'child_1',
+          childStatus: 'running',
+          detached: true
+        }
+      }
+    })
+
+    await dispatchKunRuntimeEvent({
+      kind: 'turn_completed',
+      seq: 9,
+      timestamp: '2024-01-01T00:00:00.000Z',
+      threadId: 'thr_1',
+      turnId: 'turn_1',
+      child
+    }, sink, async () => undefined)
+    await dispatchKunRuntimeEvent({
+      kind: 'turn_aborted',
+      seq: 10,
+      timestamp: '2024-01-01T00:00:01.000Z',
+      threadId: 'thr_1',
+      turnId: 'turn_1',
+      child: { ...child, childStatus: 'aborted' }
+    }, sink, async () => undefined)
+    await dispatchKunRuntimeEvent({
+      kind: 'turn_failed',
+      seq: 11,
+      timestamp: '2024-01-01T00:00:02.000Z',
+      threadId: 'thr_1',
+      turnId: 'turn_1',
+      child: { ...child, childStatus: 'failed' },
+      message: 'child failed'
+    }, sink, async () => undefined)
+
+    expect(completed).toBe(0)
+    expect(fatalErrors).toBe(0)
+    expect(childUpdate).toMatchObject({
+      status: 'error',
+      updateOnly: true,
+      meta: {
+        child: {
+          childId: 'child_1',
+          childStatus: 'failed',
+          detached: true
+        }
+      }
+    })
+  })
+
+  it('keeps detached delegate_task results running until the child settles', async () => {
+    let captured: unknown = null
+    const sink: ThreadEventSink = {
+      ...makeSink(),
+      onTool: (event) => {
+        captured = event
+      }
+    }
+
+    await dispatchKunRuntimeEvent({
+      kind: 'item_completed',
+      seq: 12,
+      item: {
+        id: 'item_delegate',
+        turnId: 'turn_1',
+        threadId: 'thr_1',
+        role: 'tool',
+        status: 'completed',
+        createdAt: '2024-01-01T00:00:00.000Z',
+        kind: 'tool_result',
+        toolName: 'delegate_task',
+        callId: 'call_delegate',
+        output: {
+          childId: 'child_background',
+          status: 'queued',
+          detached: true
+        }
+      }
+    }, sink, async () => undefined)
+
+    expect(captured).toMatchObject({
+      itemId: 'tool_call_delegate',
+      status: 'running'
+    })
+    expect(JSON.parse((captured as { detail: string }).detail)).toMatchObject({
+      childId: 'child_background',
+      status: 'queued',
+      detached: true
+    })
+  })
+
   it('routes live error items to runtime error timeline events without fatal stream errors', async () => {
     let fatalCalled = false
     let capturedRuntimeError: unknown = null

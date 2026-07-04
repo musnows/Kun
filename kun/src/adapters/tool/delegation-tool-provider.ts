@@ -77,7 +77,12 @@ export function buildDelegationToolProviders(runtime: DelegationRuntime | undefi
             // child is still running — not only after it completes.
             onStart: (childId, profile) => {
               void onUpdate?.({
-                output: { childId, status: 'running', ...(profile ? { profile } : {}) },
+                output: {
+                  childId,
+                  status: 'running',
+                  detached: args.detach === true,
+                  ...(profile ? { profile } : {})
+                },
                 isError: false
               })
             },
@@ -87,6 +92,7 @@ export function buildDelegationToolProviders(runtime: DelegationRuntime | undefi
             output: {
               childId: record.id,
               status: record.status,
+              detached: record.detached === true,
               summary: record.summary,
               error: record.error,
               evidence: record.evidence,

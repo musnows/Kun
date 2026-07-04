@@ -77,6 +77,7 @@ const RuntimeEventBase = z.object({
     childLabel: z.string().optional(),
     childStatus: z.enum(['queued', 'running', 'completed', 'failed', 'aborted']),
     childSeq: z.number().int().nonnegative(),
+    detached: z.boolean().optional(),
     // Observability metrics carried alongside the child lifecycle event so
     // the GUI can show prefix reuse, tool fan-out, timing, and cost per
     // subagent without a separate diagnostics fetch.

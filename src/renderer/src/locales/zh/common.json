@@ -2081,6 +2081,7 @@
   "subagentStatusDone": "完成",
   "subagentStatusFailed": "失败",
   "subagentStatusAwaiting": "待批准",
+  "subagentDetachedBadge": "后台",
   "subagentSteps": "{{count}} 步",
   "subagentQueuedHint": "排队中",
   "subagentTokensChip": "{{count}} tokens",

@@ -375,6 +375,7 @@ export type CoreChildRuntimeMetadataJson = {
   childLabel?: string
   childStatus: 'queued' | 'running' | 'completed' | 'failed' | 'aborted'
   childSeq: number
+  detached?: boolean
   childModel?: string
   childProfile?: string
   childToolPolicy?: 'readOnly' | 'inherit'

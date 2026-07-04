@@ -2081,6 +2081,7 @@
   "subagentStatusDone": "Done",
   "subagentStatusFailed": "Failed",
   "subagentStatusAwaiting": "Awaiting approval",
+  "subagentDetachedBadge": "Background",
   "subagentSteps": "{{count}} steps",
   "subagentQueuedHint": "Queued",
   "subagentTokensChip": "{{count}} tokens",
