@@ -38,9 +38,10 @@ import {
 import { WriteFileTree } from './WriteFileTree'
 
 type Props = {
-  activeView: 'chat' | 'write' | 'claw' | 'schedule'
+  activeView: 'chat' | 'write' | 'claw' | 'schedule' | 'workflow'
   connectPhoneSidebarOpen: boolean
   onCodeOpen: () => void
+  onWorkflowOpen: () => void
   onWriteOpen: () => void
   onOpenSettings: (section?: SettingsRouteSection) => void
   onToggleConnectPhone: () => void
@@ -58,6 +59,7 @@ export function WriteSidebar({
   activeView,
   connectPhoneSidebarOpen,
   onCodeOpen,
+  onWorkflowOpen,
   onWriteOpen,
   onOpenSettings,
   onToggleConnectPhone
@@ -279,6 +281,7 @@ export function WriteSidebar({
         <WorkspaceModeTabs
           activeView={activeView}
           onCodeOpen={onCodeOpen}
+          onWorkflowOpen={onWorkflowOpen}
           onWriteOpen={onWriteOpen}
         />
         <SidebarCommandRow

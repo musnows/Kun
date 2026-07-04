@@ -2608,6 +2608,7 @@ export function Workbench(): ReactElement {
                   activeView="write"
                   connectPhoneSidebarOpen={connectPhoneSidebarOpen}
                   onCodeOpen={openCodeMode}
+                  onWorkflowOpen={openWorkflowView}
                   onWriteOpen={openWriteMode}
                   onOpenSettings={(section) => openSettings(section)}
                   onToggleConnectPhone={toggleConnectPhone}

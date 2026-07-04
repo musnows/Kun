@@ -1,16 +1,18 @@
 import type { ReactElement } from 'react'
-import { Code2, PencilLine } from 'lucide-react'
+import { Code2, PencilLine, Workflow } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 type Props = {
   activeView: 'chat' | 'write' | 'claw' | 'schedule' | 'workflow' | 'subagents'
   onCodeOpen: () => void
+  onWorkflowOpen: () => void
   onWriteOpen: () => void
 }
 
 export function WorkspaceModeTabs({
   activeView,
   onCodeOpen,
+  onWorkflowOpen,
   onWriteOpen
 }: Props): ReactElement {
   const { t } = useTranslation('common')
@@ -32,7 +34,7 @@ export function WorkspaceModeTabs({
   return (
     <div
       role="tablist"
-      aria-label={`${t('code')} / ${t('write')}`}
+      aria-label={`${t('code')} / ${t('workflow')} / ${t('write')}`}
       className="mb-1.5 flex flex-row gap-1 rounded-[8px] bg-[color-mix(in_srgb,var(--ds-sidebar-field-bg)_72%,transparent)] p-0.5 shadow-[inset_0_0_0_1px_var(--ds-sidebar-row-ring)] dark:bg-white/[0.045] dark:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.05)]"
     >
       <button
@@ -45,6 +47,17 @@ export function WorkspaceModeTabs({
       >
         <Code2 className={iconClass(activeView === 'chat')} strokeWidth={1.9} />
         <span className="truncate">{t('code')}</span>
+      </button>
+      <button
+        type="button"
+        data-cursor-spotlight-target
+        role="tab"
+        aria-selected={activeView === 'workflow'}
+        onClick={onWorkflowOpen}
+        className={tabClass(activeView === 'workflow')}
+      >
+        <Workflow className={iconClass(activeView === 'workflow')} strokeWidth={1.9} />
+        <span className="truncate">{t('workflow')}</span>
       </button>
       <button
         type="button"
