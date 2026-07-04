@@ -47,6 +47,11 @@ function client(fetchImpl: typeof fetch): CompatModelClient {
     model: 'glm-5.1',
     endpointFormat: 'chat_completions',
     nonStreaming: true,
+    retry: {
+      maxAttempts: 2,
+      initialDelayMs: 0,
+      httpStatusCodes: [502, 503, 504]
+    },
     fetchImpl
   })
 }
