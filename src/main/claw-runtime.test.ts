@@ -4130,6 +4130,116 @@ describe('ClawRuntime', () => {
     }
   })
 
+  it('pushes delayed send_im_attachment tool output to Feishu', async () => {
+    const workspaceRoot = await mkdtemp(join(tmpdir(), 'deepseek-gui-feishu-delayed-attachment-'))
+    const filePath = join(workspaceRoot, 'delayed.txt')
+    await writeFile(filePath, 'hello from delayed im tool')
+    const realFilePath = await realpath(filePath)
+    try {
+      const settings = buildSettings()
+      settings.claw.im.enabled = true
+      settings.claw.channels = [
+        buildChannel({
+          threadId: 'thr_1',
+          workspaceRoot,
+          conversations: [buildConversation({ localThreadId: 'thr_1', workspaceRoot })]
+        })
+      ]
+      const store = {
+        load: vi.fn(async () => settings),
+        patch: vi.fn(async () => settings)
+      }
+      const runtimeRequest = vi.fn(async (_settings, path, init) => {
+        if (path === '/v1/threads/thr_1' && init?.method === 'GET') {
+          return {
+            ok: true,
+            status: 200,
+            body: JSON.stringify({
+              id: 'thr_1',
+              status: 'idle',
+              turns: [
+                {
+                  id: 'turn_delayed_attachment',
+                  status: 'completed',
+                  items: [
+                    {
+                      kind: 'tool_result',
+                      toolName: 'send_im_attachment',
+                      toolKind: 'tool_call',
+                      output: {
+                        files: [{
+                          absolutePath: filePath,
+                          relativePath: 'delayed.txt',
+                          fileName: 'delayed.txt'
+                        }],
+                        status: 'queued_for_im_attachment_delivery'
+                      },
+                      isError: false
+                    },
+                    { kind: 'assistant_text', text: '已经准备好。' }
+                  ]
+                }
+              ]
+            })
+          }
+        }
+        throw new Error(`unexpected path ${path}`)
+      })
+      const send = vi.fn(async () => ({ messageId: 'om_sent' }))
+      const addReaction = vi.fn(async () => 'rc_attachment_1')
+      const runtime = createClawRuntime({
+        store: store as never,
+        runtimeRequest,
+        logError: () => undefined
+      })
+      ;(runtime as unknown as { feishuChannels: Map<string, { send: typeof send, addReaction: typeof addReaction }> })
+        .feishuChannels
+        .set('channel_1', { send, addReaction })
+
+      ;(runtime as unknown as {
+        scheduleImResultPush: (
+          settings: AppSettingsV1,
+          input: {
+            channel: AppSettingsV1['claw']['channels'][number]
+            remoteSession: {
+              chatId: string
+              messageId: string
+              threadId: string
+              senderId: string
+              senderName: string
+            }
+            threadId: string
+            turnId: string
+            workspaceRoot: string
+          }
+        ) => void
+      }).scheduleImResultPush(settings, {
+        channel: settings.claw.channels[0],
+        remoteSession: {
+          chatId: 'oc_chat_a',
+          messageId: 'om_inbound_delayed_attachment',
+          threadId: '',
+          senderId: 'ou_1',
+          senderName: 'Alice'
+        },
+        threadId: 'thr_1',
+        turnId: 'turn_delayed_attachment',
+        workspaceRoot
+      })
+
+      await vi.waitFor(
+        () => expect(send).toHaveBeenCalledWith(
+          'oc_chat_a',
+          { file: { source: realFilePath, fileName: 'delayed.txt' } },
+          {}
+        ),
+        { timeout: 8_000, interval: 100 }
+      )
+    } finally {
+      await rm(workspaceRoot, { recursive: true, force: true })
+    }
+  })
+
   it('returns generated files in the WeChat webhook reply for image requests', async () => {
     const workspaceRoot = await mkdtemp(join(tmpdir(), 'deepseek-gui-weixin-image-'))
     const imageDir = join(workspaceRoot, '.deepseekgui-images')

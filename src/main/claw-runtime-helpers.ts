@@ -31,7 +31,8 @@ export type ClawRuntimeDeps = {
   sendWeixinBridgeMessage?: (options: {
     accountId: string
     to: string
-    text: string
+    text?: string
+    files?: readonly { path: string; fileName: string }[]
   }) => Promise<{ ok: true; messageId: string } | { ok: false; message: string }>
   /** WeChat owner (`ilink_user_id`) for a bridge account; '' when unknown. */
   resolveWeixinAccountUserId?: (accountId: string) => Promise<string>

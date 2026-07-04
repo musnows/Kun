@@ -51,7 +51,6 @@ import {
   feishuSenderLabel,
   finalAssistantReplyText,
   formatFeishuMirrorText,
-  imCompletionReplyForPush,
   isRunningStatus,
   IM_COMPLETED_NO_TEXT_REPLY,
   IM_PROCESSING_ACK,
@@ -1375,11 +1374,29 @@ export class ClawRuntime {
           )
           return
         }
+        const files =
+          outcome.status === 'completed'
+            ? await this.resolveImGeneratedFiles(outcome.files, input.workspaceRoot, {
+                purpose: 'agent-file-delayed-resolve',
+                channelId: channel.id,
+                threadId: input.threadId,
+                turnId,
+                chatId: input.remoteSession?.chatId
+              })
+            : []
         const body =
           outcome.status === 'completed'
-            ? outcome.text.trim() || imCompletionReplyForPush(outcome.files)
+            ? replyTextForGeneratedFiles(outcome.text.trim() || IM_COMPLETED_NO_TEXT_REPLY, files)
             : `❌ 任务未完成：${outcome.error || outcome.status}`
         await this.pushImMessage(channel, input.remoteSession, body)
+        if (outcome.status === 'completed') {
+          await this.pushImGeneratedFiles(channel, input.remoteSession, files, {
+            channelId: channel.id,
+            threadId: input.threadId,
+            turnId,
+            chatId: input.remoteSession?.chatId
+          })
+        }
       } catch (error) {
         this.deps.logError('claw-im', 'Failed to push a delayed agent result.', {
           message: errorMessage(error),
@@ -1390,6 +1407,62 @@ export class ClawRuntime {
         this.pendingResultPushes.delete(key)
       }
     })()
+  }
+
+  /** Pushes generated files for a delayed IM turn that finished after the response window. */
+  private async pushImGeneratedFiles(
+    channel: ClawImChannelV1,
+    remoteSession: Pick<ClawImRemoteSessionV1, 'chatId' | 'messageId' | 'threadId' | 'senderId' | 'senderName'> | undefined,
+    files: readonly ClawGeneratedFileV1[],
+    context: Record<string, unknown>
+  ): Promise<void> {
+    if (files.length === 0) return
+    const to = remoteSession?.chatId.trim() || channel.remoteSession?.chatId.trim() || ''
+    if (!to) return
+    if (channel.provider === 'weixin') {
+      const credential = channel.platformCredential
+      if (credential?.kind !== 'weixin' || !credential.accountId.trim() || !this.deps.sendWeixinBridgeMessage) return
+      const result = await this.deps.sendWeixinBridgeMessage({
+        accountId: credential.accountId,
+        to,
+        files: files.map((file) => ({ path: file.path, fileName: file.fileName }))
+      })
+      if (!result.ok) {
+        this.deps.logError('claw-weixin', 'Failed to push delayed generated files over the WeChat bridge.', {
+          ...context,
+          channelId: channel.id,
+          message: result.message
+        })
+      }
+      return
+    }
+    if (channel.provider === 'feishu') {
+      const bridge = this.feishuChannels.get(channel.id)
+      if (!bridge) return
+      await this.sendFeishuGeneratedFiles(bridge, to, files, {}, {
+        ...context,
+        channelId: channel.id,
+        chatId: to,
+        purpose: 'agent-file-delayed'
+      })
+      return
+    }
+    if (channel.provider === 'telegram') {
+      if (!this.deps.telegramRuntime) return
+      for (const file of files) {
+        const result = await this.deps.telegramRuntime.sendFile(channel.id, to, file.path, file.fileName)
+        if (!result.ok) {
+          this.deps.logError('claw-telegram', 'Failed to push delayed generated file over Telegram.', {
+            ...context,
+            channelId: channel.id,
+            chatId: to,
+            filePath: file.path,
+            fileName: file.fileName,
+            message: result.message
+          })
+        }
+      }
+    }
   }
 
   /** Pushes a standalone bridge message to the sender of an inbound IM. */
