@@ -125,6 +125,7 @@ export function parseServeOptions(
       ...(configServe.tokenEconomy ?? {}),
       enabled: tokenEconomyMode
     },
+    toolOutputLimits: configServe.toolOutputLimits ?? DEFAULT_SERVE_OPTIONS.toolOutputLimits,
     insecure:
       typeof raw.insecure === 'string'
         ? raw.insecure !== 'false' && raw.insecure !== '0'
@@ -140,6 +141,7 @@ export function parseServeOptions(
         ? { sqlitePath: storageSqlitePathFromRawOrEnv(raw, env) ?? configServe.storage?.sqlitePath }
         : {})
     },
+    headers: configServe.headers,
     providers: configServe.providers,
     models: loadedConfig?.config.models,
     contextCompaction: loadedConfig?.config.contextCompaction,

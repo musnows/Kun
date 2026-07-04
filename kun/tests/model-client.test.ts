@@ -232,6 +232,51 @@ describe('CompatModelClient', () => {
     ])
   })
 
+  it('sends Codex subscription reasoning max as xhigh with summaries enabled', async () => {
+    const sentUrls: string[] = []
+    const sentBodies: Array<Record<string, unknown>> = []
+    const fetchImpl: typeof fetch = async (url, init) => {
+      sentUrls.push(String(url))
+      sentBodies.push(JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>)
+      return new Response(JSON.stringify({
+        id: 'resp_codex',
+        status: 'completed',
+        output_text: 'done'
+      }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' }
+      })
+    }
+    const client = new CompatModelClient({
+      baseUrl: 'https://chatgpt.com/backend-api/codex/responses',
+      apiKey: 'codex-access',
+      model: 'gpt-5.5',
+      endpointFormat: 'custom_endpoint',
+      fetchImpl,
+      nonStreaming: true
+    })
+    const request = buildRequest(new AbortController().signal)
+    request.model = 'gpt-5.5'
+    request.reasoningEffort = 'max'
+    for await (const _chunk of client.stream(request)) {
+      // drain
+    }
+
+    expect(sentUrls[0]).toBe('https://chatgpt.com/backend-api/codex/responses')
+    expect(sentBodies[0]).toMatchObject({
+      model: 'gpt-5.5',
+      stream: false,
+      instructions: 'You are a helpful assistant.',
+      store: false,
+      reasoning: { effort: 'xhigh', summary: 'auto' },
+      include: ['reasoning.encrypted_content']
+    })
+    expect(sentBodies[0]).not.toHaveProperty('messages')
+    expect(sentBodies[0]?.tools).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: 'image_generation' })
+    ]))
+  })
+
   it('injects read-tool images as chat completions image parts for vision models', async () => {
     const sentBodies: Array<Record<string, unknown>> = []
     const fetchImpl: typeof fetch = async (_url, init) => {
@@ -2118,10 +2163,11 @@ describe('CompatModelClient', () => {
     expect(chunks[0].kind).toBe('error')
     expect(chunks[0]).toMatchObject({
       kind: 'error',
-      message: `model request failed with status 400: ${body}`,
+      message: expect.stringContaining('model request failed with status 400: {"error":{"code":"400","message":"Not supported model mimo-v2.5-pro-ultraspeed'),
       code: 'http_400'
     })
-    expect(JSON.stringify(chunks[0])).toContain(providerMessage)
+    expect(JSON.stringify(chunks[0])).toContain('...')
+    expect(JSON.stringify(chunks[0])).not.toContain(providerMessage)
   })
 
   it('adds a proxy hint when a proxied model request fails before receiving a response', async () => {
