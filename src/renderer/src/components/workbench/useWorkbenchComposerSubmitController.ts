@@ -1,6 +1,10 @@
 import { useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { ModelProviderModelGroup } from '@shared/kun-gui-api'
+import {
+  isComposerChatModelId,
+  modelProfileSupportsTextChat
+} from '@shared/app-settings'
 import type { AttachmentReference, NormalizedThread } from '../../agent/types'
 import type { ChatState, SendMessageOverrides } from '../../store/chat-store-types'
 import { useChatStore } from '../../store/chat-store'
@@ -47,6 +51,7 @@ type PlanTurnOverrides = Pick<
 type UseWorkbenchComposerSubmitControllerParams = {
   activeClawChannelId: string
   activeClawChannelModel?: string
+  activeClawChannelProviderId?: string
   activeSddDraft: boolean
   activeThreadId: string | null
   attachmentUploadEnabled: boolean
@@ -70,13 +75,48 @@ type UseWorkbenchComposerSubmitControllerParams = {
   sendPlanTurn: (text: string, overrides?: PlanTurnOverrides) => Promise<boolean>
   sendSddAssistantPrompt: (value: string) => Promise<void>
   setAttachmentUploadError: (message: string | null) => void
-  setClawChannelModel: (channelId: string, model: string) => Promise<void>
+  setClawChannelModel: (channelId: string, model: string, providerId?: string) => Promise<void>
   setError: (message: string | null) => void
   setInput: (value: string) => void
   threads: NormalizedThread[]
   workspaceRoot: string
   appendLocalClawTurn: (userText: string, replyText: string) => void
   clearWriteQuotedSelections?: () => void
+}
+
+type ClawComposerModelOption = {
+  providerId: string
+  model: string
+}
+
+function listClawComposerModelOptions(groups: readonly ModelProviderModelGroup[]): ClawComposerModelOption[] {
+  const seen = new Set<string>()
+  const options: ClawComposerModelOption[] = []
+  for (const group of groups) {
+    const providerId = group.providerId.trim()
+    if (!providerId) continue
+    for (const modelId of group.modelIds) {
+      const model = modelId.trim()
+      if (!model || !isComposerChatModelId(model)) continue
+      if (!modelProfileSupportsTextChat(group.modelProfiles?.[model])) continue
+      const key = `${providerId}\u0000${model}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      options.push({ providerId, model })
+    }
+  }
+  return options
+}
+
+function resolveClawComposerModelByIndex(
+  groups: readonly ModelProviderModelGroup[],
+  value: string
+): ClawComposerModelOption | undefined {
+  const raw = value.trim()
+  if (!/^\d+$/.test(raw)) return undefined
+  const index = Number.parseInt(raw, 10)
+  if (!Number.isSafeInteger(index) || index < 1) return undefined
+  return listClawComposerModelOptions(groups)[index - 1]
 }
 
 export type WorkbenchComposerSubmitController = {
@@ -87,6 +127,7 @@ export type WorkbenchComposerSubmitController = {
 export function useWorkbenchComposerSubmitController({
   activeClawChannelId,
   activeClawChannelModel,
+  activeClawChannelProviderId,
   activeSddDraft,
   activeThreadId,
   attachmentUploadEnabled,
@@ -140,11 +181,32 @@ export function useWorkbenchComposerSubmitController({
       '',
       `- \`/help\`: ${t('clawHelpCommandHelp')}`,
       `- \`/new\`: ${t('clawHelpCommandNew')}`,
-      `- \`/model auto\`: ${t('clawHelpCommandModelAuto')}`,
-      `- \`/model pro\`: ${t('clawHelpCommandModelPro')}`,
-      `- \`/model flash\`: ${t('clawHelpCommandModelFlash')}`,
-      `- \`/model\`: ${t('clawHelpCommandModelShow')}`
+      `- \`/list-model\`: ${t('clawHelpCommandModelList')}`,
+      `- \`/model <number>\`: ${t('clawHelpCommandModelSwitch')}`
     ].join('\n'), [t])
+
+  const clawModelListText = useCallback((): string => {
+    const options = listClawComposerModelOptions(composerModelGroups)
+    const currentProvider = activeClawChannelProviderId?.trim() ?? ''
+    const currentModel = activeClawChannelModel?.trim() || 'auto'
+    const rows = options.map((option, index) => {
+      const marker = option.providerId === currentProvider && option.model === currentModel ? '*' : '-'
+      return `${marker} ${index + 1}. \`${option.model}\` · provider \`${option.providerId}\``
+    })
+    return [
+      t('clawModelCurrentWithProvider', {
+        provider: currentProvider || 'auto',
+        model: currentModel
+      }),
+      ...(rows.length > 0
+        ? [
+            t('clawModelAvailableList'),
+            ...rows,
+            t('clawModelSwitchHint')
+          ]
+        : [t('clawModelListEmpty')])
+    ].join('\n')
+  }, [activeClawChannelModel, activeClawChannelProviderId, composerModelGroups, t])
 
   const readComposerFileContextEntries = useCallback(async (
     references: ComposerFileReference[],
@@ -418,15 +480,19 @@ export function useWorkbenchComposerSubmitController({
             return
           }
           setInput('')
-          if (/^\d+$/.test(command.model.trim())) {
-            const replyText = t('clawModelNumberOnlyInIm')
+          const resolved = resolveClawComposerModelByIndex(composerModelGroups, command.model)
+          if (!resolved) {
+            const replyText = t('clawModelInvalidNumber', { value: command.model })
             appendLocalClawTurn(v, replyText)
             void mirrorClawCommand(v, replyText)
             return
           }
           void (async () => {
-            await setClawChannelModel(activeClawChannelId, command.model)
-            const replyText = t('clawModelChanged', { model: command.model })
+            await setClawChannelModel(activeClawChannelId, resolved.model, resolved.providerId)
+            const replyText = t('clawModelChangedWithProvider', {
+              model: resolved.model,
+              provider: resolved.providerId
+            })
             appendLocalClawTurn(v, replyText)
             await mirrorClawCommand(v, replyText)
           })()
@@ -438,9 +504,7 @@ export function useWorkbenchComposerSubmitController({
             return
           }
           setInput('')
-          const replyText = t('clawModelCurrent', {
-            model: activeClawChannelModel ?? 'auto'
-          })
+          const replyText = clawModelListText()
           appendLocalClawTurn(v, replyText)
           void mirrorClawCommand(v, replyText)
           return
@@ -519,6 +583,7 @@ export function useWorkbenchComposerSubmitController({
   }, [
     activeClawChannelId,
     activeClawChannelModel,
+    activeClawChannelProviderId,
     activeSddDraft,
     activeThreadId,
     appendLocalClawTurn,
@@ -527,6 +592,7 @@ export function useWorkbenchComposerSubmitController({
     clawHelpText,
     clearComposerAttachments,
     clearComposerFileReferences,
+    clawModelListText,
     composerAttachments,
     composerFileReferences,
     composerMode,
