@@ -178,6 +178,7 @@ const labels: Record<string, string> = {
   kunMemoryRecordsDesc: 'Memory records description',
   kunMemoryEmpty: 'No memories',
   kunMemoryDisable: 'Disable memory',
+  memoryRestore: 'Restore',
   kunMemoryDelete: 'Delete memory',
   kunMemoryDisabled: 'Disabled',
   skill: 'Skill',
@@ -648,7 +649,8 @@ describe('AgentsSettingsSection Kun diagnostics smoke', () => {
           id: 'mem_1',
           content: 'Prefer pnpm for this workspace',
           scope: 'workspace',
-          tags: ['tooling']
+          tags: ['tooling'],
+          disabledAt: '2026-06-21T01:00:00.000Z'
         }
       ]
     }
@@ -667,7 +669,8 @@ describe('AgentsSettingsSection Kun diagnostics smoke', () => {
     expect(html).toContain('Discovered Skills')
     expect(html).toContain('Prefer pnpm for this workspace')
     expect(html).toContain('mem_1')
-    expect(html).toContain('Disable memory')
+    expect(html).toContain('aria-label="Restore"')
+    expect(html).not.toContain('aria-label="Disable memory"')
     expect(html).toContain('Delete memory')
   })
 
