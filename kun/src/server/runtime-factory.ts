@@ -368,6 +368,8 @@ export async function createKunServeRuntime(
 	        config: mergeBuiltinSubagentProfiles(activeOptions.capabilities.subagents),
 	        store: new FileDelegationStore(join(activeOptions.dataDir, 'child-runs')),
 	        events,
+	        threadStore,
+	        turns: turnService,
 	        nowIso,
 	        executor: createChildAgentExecutor({
 	          model: modelClient,
@@ -581,6 +583,9 @@ export async function createKunServeRuntime(
 	  }
 	  const loop = new AgentLoop(loopOptions)
 	  backgroundShellRuntime.bindAgentLoop({
+	    runTurn: (threadId, turnId) => loop.runTurn(threadId, turnId)
+	  })
+	  delegationRuntime?.bindAgentLoop({
 	    runTurn: (threadId, turnId) => loop.runTurn(threadId, turnId)
 	  })
 	  const startedAt = activeOptions.startedAt ?? nowIso()

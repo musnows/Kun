@@ -2274,12 +2274,12 @@ export function FloatingComposer({
             </div>
           ) : null}
           <div
-            className={`ds-composer-toolbar flex min-h-9 items-center gap-2 ${
+            className={`ds-composer-toolbar flex min-h-9 min-w-0 items-center gap-2 ${
               showToolbarStartControls ? 'justify-between' : 'justify-end'
             }`}
           >
             {showToolbarStartControls ? (
-              <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto overflow-y-hidden">
+              <div className="ds-composer-toolbar-start flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto overflow-y-hidden">
                 {showComposerMenuButton ? (
                   <>
                     <button
@@ -2326,8 +2326,8 @@ export function FloatingComposer({
               </div>
             ) : null}
             <div
-              className={`flex min-w-0 items-center justify-end gap-1.5 ${
-                stretchModelPicker || dictation.status === 'recording' ? 'flex-1' : 'shrink-0'
+              className={`ds-composer-toolbar-actions flex min-w-0 items-center justify-end gap-1.5 ${
+                showToolbarStartControls || stretchModelPicker || dictation.status === 'recording' ? 'flex-1' : 'shrink-0'
               }`}
             >
               {dictation.status === 'recording' ? (
@@ -2419,7 +2419,7 @@ export function FloatingComposer({
                   composerReasoningEffort={composerReasoningEffort}
                   lockVisionToTextModelSwitch={lockVisionToTextModelSwitch}
                   canChangeModel={canChangeModel}
-                  stretch={stretchModelPicker}
+                  stretch={stretchModelPicker || showToolbarStartControls}
                   onComposerModelChange={onComposerModelChange}
                   onComposerReasoningEffortChange={onComposerReasoningEffortChange}
                   onConfigureProviders={onConfigureProviders}

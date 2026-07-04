@@ -233,7 +233,17 @@ function normalizeChildMetadata(
     ...(child.childModel ? { childModel: child.childModel } : {}),
     ...(child.childToolPolicy ? { childToolPolicy: child.childToolPolicy } : {}),
     childStatus: child.childStatus,
-    childSeq: child.childSeq
+    childSeq: child.childSeq,
+    ...(child.detached !== undefined ? { detached: child.detached } : {}),
+    ...(child.prefixReused !== undefined ? { prefixReused: child.prefixReused } : {}),
+    ...(child.inheritedHistoryItems !== undefined ? { inheritedHistoryItems: child.inheritedHistoryItems } : {}),
+    ...(child.toolInvocations !== undefined ? { toolInvocations: child.toolInvocations } : {}),
+    ...(child.durationMs !== undefined ? { durationMs: child.durationMs } : {}),
+    ...(child.queuedMs !== undefined ? { queuedMs: child.queuedMs } : {}),
+    ...(child.totalTokens !== undefined ? { totalTokens: child.totalTokens } : {}),
+    ...(child.cacheHitRate !== undefined ? { cacheHitRate: child.cacheHitRate } : {}),
+    ...(child.costUsd !== undefined ? { costUsd: child.costUsd } : {}),
+    ...(child.costCny !== undefined ? { costCny: child.costCny } : {})
   }
 }
 
@@ -314,6 +324,9 @@ function applyRuntimeDisclosureMeta(
   const displayText = typeof item.displayText === 'string' ? item.displayText.trim() : ''
   if (displayText && displayText !== item.text?.trim()) {
     meta.displayText = displayText
+  }
+  if (item.messageSource === 'background_shell' || item.messageSource === 'background_subagent') {
+    meta.messageSource = item.messageSource
   }
   applyClientUserMessageSourceMeta(meta, item.text ?? '')
   if (attachmentIds) meta.attachmentIds = attachmentIds
@@ -604,12 +617,24 @@ function toolBlockFromItem(item: CoreTurnItemJson, child?: CoreChildRuntimeMetad
     id: toolBlockId(item),
     createdAt: itemCreatedAt(item),
     summary,
-    status: toolStatus(item),
+    status: delegateTaskStatusOverride(item, payload) ?? toolStatus(item),
     toolKind: presentation.toolKind,
     ...(presentation.filePath ? { filePath: presentation.filePath } : {}),
     ...(detail ? { detail } : {}),
     meta
   }
+}
+
+function delegateTaskStatusOverride(
+  item: CoreTurnItemJson,
+  payload: Record<string, unknown>
+): ToolBlock['status'] | undefined {
+  if (item.toolName !== 'delegate_task' || payload.detached !== true) return undefined
+  const childStatus = typeof payload.status === 'string' ? payload.status : undefined
+  if (childStatus === 'queued' || childStatus === 'running') return 'running'
+  if (childStatus === 'failed' || childStatus === 'aborted') return 'error'
+  if (childStatus === 'completed') return 'success'
+  return undefined
 }
 
 export function mergeChatBlocks(blocks: ChatBlock[]): ChatBlock[] {
@@ -1012,6 +1037,31 @@ function toolEventFromItem(item: CoreTurnItemJson, child?: CoreChildRuntimeMetad
   }
 }
 
+function toolStatusFromChildStatus(status: CoreChildRuntimeMetadataJson['childStatus']): ToolEventPayload['status'] {
+  if (status === 'queued' || status === 'running') return 'running'
+  if (status === 'completed') return 'success'
+  return 'error'
+}
+
+function childLifecycleToolEventFromRuntimeEvent(event: CoreRuntimeEventJson): ToolEventPayload | null {
+  const child = normalizeChildMetadata(event.child)
+  if (!child) return null
+  return {
+    itemId: `child_lifecycle_${child.childId}`,
+    summary: child.childLabel || 'delegate_task',
+    status: toolStatusFromChildStatus(child.childStatus),
+    updateOnly: true,
+    createdAt: event.timestamp,
+    toolKind: 'tool_call',
+    detail: JSON.stringify({
+      childId: child.childId,
+      status: child.childStatus,
+      detached: child.detached === true
+    }),
+    meta: { child }
+  }
+}
+
 function compactionFromItem(item: CoreTurnItemJson): CompactionEventPayload {
   return {
     itemId: item.id,
@@ -1236,6 +1286,12 @@ export async function dispatchKunRuntimeEvent(
     case 'tool_call_finished':
       if (event.item) emitItem(event.item, sink, event.child)
       return
+    case 'turn_started':
+      if (event.child) {
+        const tool = childLifecycleToolEventFromRuntimeEvent(event)
+        if (tool) sink.onTool(tool)
+      }
+      return
     case 'tool_call_ready': {
       const tool = toolReadyFromEvent(event)
       if (tool) sink.onTool(tool)
@@ -1322,9 +1378,19 @@ export async function dispatchKunRuntimeEvent(
       return
     case 'turn_completed':
     case 'turn_aborted':
+      if (event.child) {
+        const tool = childLifecycleToolEventFromRuntimeEvent(event)
+        if (tool) sink.onTool(tool)
+        return
+      }
       sink.onTurnComplete()
       return
     case 'turn_failed': {
+      if (event.child) {
+        const tool = childLifecycleToolEventFromRuntimeEvent(event)
+        if (tool) sink.onTool(tool)
+        return
+      }
       const payload = runtimeErrorFromEvent(event, 'Kun turn failed')
       sink.onRuntimeError?.(payload)
       sink.onError(errorForRuntimeEvent(payload), { terminal: true })
