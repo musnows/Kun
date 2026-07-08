@@ -350,6 +350,7 @@ async function startKunChildOnce(
   }
   const dataDir = resolveKunDataDir(runtime)
   await syncGuiManagedKunConfig(dataDir, runtime, {
+    workspaceRoot: settings.workspaceRoot,
     scheduleMcp: {
       settings,
       launch: {
@@ -505,13 +506,19 @@ export async function syncGuiManagedKunConfig(
       launch: ClawScheduleMcpLaunchConfig
     }
     mcpConfigPath?: string
+    workspaceRoot?: string
   }
 ): Promise<KunConfig> {
   const configPath = join(dataDir, 'config.json')
   const existing = sanitizeKunConfigSections(await readJsonObjectIfExists(configPath))
-  const importedMcpServers = await readGuiManagedMcpServers(
-    options?.mcpConfigPath ?? resolveKunMcpJsonPath()
-  )
+  const [guiMcpServers, workspaceMcpServers] = await Promise.all([
+    readGuiManagedMcpServers(options?.mcpConfigPath ?? resolveKunMcpJsonPath()),
+    readWorkspaceMcpServers(options?.workspaceRoot)
+  ])
+  const importedMcpServers = {
+    ...guiMcpServers,
+    ...workspaceMcpServers
+  }
   const hasImportedEnabledMcpServer = Object.values(importedMcpServers).some(
     (server) => objectValue(server).enabled !== false
   )
@@ -741,6 +748,24 @@ async function readGuiManagedMcpServers(path: string): Promise<Record<string, Re
   return Object.fromEntries(normalizedEntries)
 }
 
+async function readWorkspaceMcpServers(workspaceRoot: string | undefined): Promise<Record<string, Record<string, unknown>>> {
+  const root = workspaceRoot?.trim()
+  if (!root) return {}
+
+  const parsed = await readJsonObjectIfExists(join(root, '.mcp.json'))
+  if (!parsed) return {}
+
+  const rawServers = mcpServersFromGuiConfig(parsed)
+  const normalizedEntries = Object.entries(rawServers)
+    .map(([serverId, server]) => {
+      const normalized = normalizeGuiManagedMcpServer(server, { workspaceRoot: root })
+      return normalized ? [serverId, normalized] as const : null
+    })
+    .filter((entry): entry is readonly [string, Record<string, unknown>] => entry !== null)
+
+  return Object.fromEntries(normalizedEntries)
+}
+
 function mcpServersFromGuiConfig(config: Record<string, unknown>): Record<string, unknown> {
   const directServers = objectValue(config.servers)
   if (Object.keys(directServers).length > 0) return directServers
@@ -750,7 +775,10 @@ function mcpServersFromGuiConfig(config: Record<string, unknown>): Record<string
   return objectValue(mcp.servers)
 }
 
-function normalizeGuiManagedMcpServer(server: unknown): Record<string, unknown> | null {
+function normalizeGuiManagedMcpServer(
+  server: unknown,
+  options: { workspaceRoot?: string } = {}
+): Record<string, unknown> | null {
   const raw = objectValue(server)
   const command = scalarStringValue(raw.command)
   const cwd = scalarStringValue(raw.cwd)?.trim()
@@ -762,9 +790,16 @@ function normalizeGuiManagedMcpServer(server: unknown): Record<string, unknown> 
   const transport = normalizeMcpTransport(raw.transport, command, url)
   if (!transport) return null
 
-  const workspaceRoots = stringArrayValue(raw.workspaceRoots)
-  const trustedWorkspaceRoots = stringArrayValue(raw.trustedWorkspaceRoots)
-  const trustScope = normalizeMcpTrustScope(raw.trustScope, trustedWorkspaceRoots)
+  const projectWorkspaceRoot = options.workspaceRoot?.trim()
+  const workspaceRoots = projectWorkspaceRoot
+    ? uniqueStrings([projectWorkspaceRoot, ...stringArrayValue(raw.workspaceRoots)])
+    : stringArrayValue(raw.workspaceRoots)
+  const trustedWorkspaceRoots = projectWorkspaceRoot
+    ? uniqueStrings([projectWorkspaceRoot, ...stringArrayValue(raw.trustedWorkspaceRoots)])
+    : stringArrayValue(raw.trustedWorkspaceRoots)
+  const trustScope = projectWorkspaceRoot
+    ? 'workspace'
+    : normalizeMcpTrustScope(raw.trustScope, trustedWorkspaceRoots)
   if (trustScope === 'workspace' && trustedWorkspaceRoots.length === 0) return null
 
   const timeoutMs = positiveIntegerValue(raw.timeoutMs)

@@ -1309,6 +1309,49 @@ describe('syncGuiManagedKunConfig', () => {
     })
   })
 
+  it('imports workspace .mcp.json servers as workspace-scoped MCP config', async () => {
+    if (!tempRoot) throw new Error('temp root not initialized')
+    const configPath = join(tempRoot, 'config.json')
+    const mcpConfigPath = join(tempRoot, 'mcp.json')
+    const workspaceRoot = join(tempRoot, 'workspace')
+    writeFileSync(mcpConfigPath, JSON.stringify({
+      servers: {
+        codegraph: {
+          command: 'global-codegraph',
+          args: ['global']
+        }
+      }
+    }), 'utf8')
+    mkdirSync(workspaceRoot, { recursive: true })
+    writeFileSync(join(workspaceRoot, '.mcp.json'), JSON.stringify({
+      servers: {
+        codegraph: {
+          command: 'uvx',
+          args: ['codegraph-mcp'],
+          trustScope: 'user'
+        }
+      }
+    }), 'utf8')
+    const module = await import('./kun-process')
+
+    await module.syncGuiManagedKunConfig(tempRoot, defaultKunRuntimeSettings(), {
+      mcpConfigPath,
+      workspaceRoot
+    })
+
+    const parsed = JSON.parse(readFileSync(configPath, 'utf8')) as any
+    expect(parsed.capabilities.mcp.enabled).toBe(true)
+    expect(parsed.capabilities.mcp.servers.codegraph).toMatchObject({
+      enabled: true,
+      transport: 'stdio',
+      command: 'uvx',
+      args: ['codegraph-mcp'],
+      workspaceRoots: [workspaceRoot],
+      trustScope: 'workspace',
+      trustedWorkspaceRoots: [workspaceRoot]
+    })
+  })
+
   it('does not auto-import repo-local .kun/mcp.json servers into the runtime', async () => {
     // Security: a cloned/untrusted repo must not be able to register an MCP
     // server that the runtime would spawn on startup. Workspace-scoped
