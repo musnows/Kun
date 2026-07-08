@@ -213,7 +213,23 @@ export function createChildAgentExecutor(options: ChildAgentExecutorOptions): Ch
         disableUserInput: true
       }
     })
+    const abortChildTurn = (): void => {
+      console.warn(`[kun] foreground subagent parent abort received child=${thread.id} turn=${started.turnId} parentThread=${input.parentThreadId} parentTurn=${input.parentTurnId}`)
+      void turns.interruptTurn({
+        threadId: thread.id,
+        turnId: started.turnId
+      }).catch(() => undefined)
+    }
+    if (input.signal.aborted) {
+      console.warn(`[kun] foreground subagent started with aborted parent signal child=${thread.id} turn=${started.turnId}`)
+      abortChildTurn()
+    } else {
+      console.warn(`[kun] foreground subagent abort bridge armed child=${thread.id} turn=${started.turnId} parentThread=${input.parentThreadId} parentTurn=${input.parentTurnId}`)
+      input.signal.addEventListener('abort', abortChildTurn, { once: true })
+    }
     const status = await loop.runTurn(thread.id, started.turnId)
+      .finally(() => input.signal.removeEventListener('abort', abortChildTurn))
+    console.warn(`[kun] foreground subagent turn settled child=${thread.id} turn=${started.turnId} status=${status}`)
     // Only a FATAL error fails the child. Recoverable tool errors — a tool
     // rejected by the child's read-only policy, or a tool that crashed — are
     // recorded as `severity: 'warning'` error events but the loop hands the
