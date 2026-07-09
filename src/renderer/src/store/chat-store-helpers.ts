@@ -405,6 +405,44 @@ export function forgetCodeWorkspaceRoot(
   return next
 }
 
+export function reorderWorkspacePathList(
+  paths: readonly string[],
+  fromWorkspacePath: string,
+  toWorkspacePath: string
+): string[] {
+  const fromKey = workspaceRootIdentityKey(normalizeWorkspaceRoot(fromWorkspacePath))
+  const toKey = workspaceRootIdentityKey(normalizeWorkspaceRoot(toWorkspacePath))
+  if (!fromKey || !toKey || fromKey === toKey) return [...paths]
+
+  const normalized = paths.map((path) => normalizeWorkspaceRoot(path))
+  const fromIndex = normalized.findIndex((path) => workspaceRootIdentityKey(path) === fromKey)
+  const toIndex = normalized.findIndex((path) => workspaceRootIdentityKey(path) === toKey)
+  if (fromIndex < 0 || toIndex < 0) return [...paths]
+
+  const next = [...normalized]
+  const [moved] = next.splice(fromIndex, 1)
+  next.splice(toIndex, 0, moved)
+  return next
+}
+
+export function reorderCodeWorkspaceRoots(
+  currentRoots: readonly string[],
+  fromWorkspacePath: string,
+  toWorkspacePath: string
+): string[] {
+  const next = compactCodeWorkspaceRoots(
+    reorderWorkspacePathList(currentRoots, fromWorkspacePath, toWorkspacePath)
+  )
+  saveCodeWorkspaceRoots(next)
+  return next
+}
+
+export function setCodeWorkspaceRootOrder(orderedPaths: readonly string[]): string[] {
+  const next = compactCodeWorkspaceRoots(orderedPaths)
+  saveCodeWorkspaceRoots(next)
+  return next
+}
+
 export function mergeComposerPickList(upstreamOk: boolean, upstreamIds: string[]): string[] {
   const ordered = new Set<string>()
   for (const id of DEFAULT_COMPOSER_MODEL_IDS) {

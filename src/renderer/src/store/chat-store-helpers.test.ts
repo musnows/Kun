@@ -21,6 +21,9 @@ import {
   normalizeTurnModelMap,
   readThreadComposerSelection,
   reconcileCodeWorkspaceRoots,
+  reorderCodeWorkspaceRoots,
+  reorderWorkspacePathList,
+  setCodeWorkspaceRootOrder,
   composerModeForThread,
   rememberThreadComposerMode,
   readThreadComposerMode,
@@ -170,6 +173,28 @@ describe('chat-store Claw helpers', () => {
       '/Users/zxy/shared-project',
       '/Users/zxy/code-project',
       '/Users/zxy/active-code'
+    ])
+  })
+
+  it('reorders remembered code workspace roots without dropping unseen entries', () => {
+    const roots = ['/Users/zxy/project-a', '/Users/zxy/project-b', '/Users/zxy/project-c']
+    expect(
+      reorderWorkspacePathList(roots, '/Users/zxy/project-c', '/Users/zxy/project-a')
+    ).toEqual([
+      '/Users/zxy/project-c',
+      '/Users/zxy/project-a',
+      '/Users/zxy/project-b'
+    ])
+    expect(
+      reorderCodeWorkspaceRoots(roots, '/Users/zxy/project-b', '/Users/zxy/project-c')
+    ).toEqual([
+      '/Users/zxy/project-a',
+      '/Users/zxy/project-c',
+      '/Users/zxy/project-b'
+    ])
+    expect(setCodeWorkspaceRootOrder(['/Users/zxy/project-c', '/Users/zxy/project-a'])).toEqual([
+      '/Users/zxy/project-c',
+      '/Users/zxy/project-a'
     ])
   })
 

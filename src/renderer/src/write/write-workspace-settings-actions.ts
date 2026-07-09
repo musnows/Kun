@@ -14,7 +14,7 @@ import {
 
 type WriteSettingsActions = Pick<
   WriteWorkspaceState,
-  'loadWriteSettings' | 'selectWriteWorkspace' | 'addWriteWorkspace' | 'removeWriteWorkspace'
+  'loadWriteSettings' | 'selectWriteWorkspace' | 'addWriteWorkspace' | 'removeWriteWorkspace' | 'reorderWriteWorkspaces'
 >
 
 type WriteSettingsActionContext = {
@@ -131,6 +131,22 @@ export function createWriteSettingsActions({ set, get }: WriteSettingsActionCont
         if (normalizePath(get().workspaceRoot) === normalized) {
           await get().initializeWorkspace(write.activeWorkspaceRoot)
         }
+      } catch (error) {
+        set({ settingsError: error instanceof Error ? error.message : String(error) })
+      }
+    },
+
+    reorderWriteWorkspaces: async (orderedPaths) => {
+      const roots = compactWorkspaceRoots([...orderedPaths])
+      if (roots.length === 0) return
+      set({ workspaceRoots: roots })
+      try {
+        const settings = await rendererRuntimeClient.setSettings({
+          write: {
+            workspaces: roots
+          }
+        })
+        applyWriteSettingsState(set, settings)
       } catch (error) {
         set({ settingsError: error instanceof Error ? error.message : String(error) })
       }

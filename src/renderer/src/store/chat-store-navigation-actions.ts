@@ -48,7 +48,8 @@ import {
   rememberCodeWorkspaceRoots,
   rememberTurnModel,
   reconcileCodeWorkspaceRoots,
-  saveCodeWorkspaceRoots
+  saveCodeWorkspaceRoots,
+  setCodeWorkspaceRootOrder
 } from './chat-store-helpers'
 import {
   clearedThreadSelection,
@@ -129,7 +130,7 @@ let trayActionUnsubscribe: (() => void) | null = null
 
 export function createNavigationActions(
   { set, get, sseAbortRef }: StoreActionContext
-): Pick<ChatState, 'openCode' | 'openWrite' | 'openDesign' | 'clearActiveThreadSelection' | 'ensureWriteThreadForWorkspace' | 'createWriteThread' | 'selectWriteThread' | 'ensureDesignThreadForWorkspace' | 'createDesignThread' | 'probeRuntime' | 'boot' | 'chooseWorkspace' | 'selectWorkspaceRoot' | 'clearWorkspace' | 'deleteWorkspace' | 'refreshThreads' | 'setThreadSearch' | 'setShowArchivedThreads'> {
+): Pick<ChatState, 'openCode' | 'openWrite' | 'openDesign' | 'clearActiveThreadSelection' | 'ensureWriteThreadForWorkspace' | 'createWriteThread' | 'selectWriteThread' | 'ensureDesignThreadForWorkspace' | 'createDesignThread' | 'probeRuntime' | 'boot' | 'chooseWorkspace' | 'selectWorkspaceRoot' | 'clearWorkspace' | 'deleteWorkspace' | 'reorderCodeWorkspaces' | 'refreshThreads' | 'setThreadSearch' | 'setShowArchivedThreads'> {
   return {
   openCode: async () => {
     const state = get()
@@ -815,6 +816,11 @@ export function createNavigationActions(
       })
       await get().refreshThreads()
     }
+  },
+
+  reorderCodeWorkspaces: (orderedPaths) => {
+    const codeWorkspaceRoots = setCodeWorkspaceRootOrder(orderedPaths)
+    set({ codeWorkspaceRoots })
   },
 
   refreshThreads: async () => {

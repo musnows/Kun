@@ -80,6 +80,31 @@ describe('SidebarProjectsSection groups', () => {
     expect(groups[2]?.[1]).toEqual([])
   })
 
+  it('sorts project groups by remembered workspace order instead of active-first alphabetical order', () => {
+    const groups = buildSidebarWorkspaceGroups({
+      threads: [
+        thread({ id: 'thread-a', workspace: '/Users/zxy/project-a' }),
+        thread({ id: 'thread-b', workspace: '/Users/zxy/project-b' }),
+        thread({ id: 'thread-c', workspace: '/Users/zxy/project-c' })
+      ],
+      searchQuery: '',
+      showArchived: false,
+      workspaceRoot: '/Users/zxy/project-a',
+      conversationRoot: '',
+      workspaceRoots: [
+        '/Users/zxy/project-c',
+        '/Users/zxy/project-b',
+        '/Users/zxy/project-a'
+      ]
+    })
+
+    expect(groups.map(([workspace]) => workspace)).toEqual([
+      '/Users/zxy/project-c',
+      '/Users/zxy/project-b',
+      '/Users/zxy/project-a'
+    ])
+  })
+
   it('does not show registry-only empty workspaces while searching or viewing archives', () => {
     const base = {
       threads: [thread({ id: 'reasonix-current', workspace: '/Users/zxy/project-a' })],
@@ -286,7 +311,8 @@ describe('SidebarProjectsSection groups', () => {
     const displayGroups = mergeSidebarWorkspaceGroupsWithDraftHistory({
       groups,
       draftHistoryByWorkspace: filteredDraftHistory,
-      workspaceRoot: '/Users/zxy/project-a'
+      workspaceRoot: '/Users/zxy/project-a',
+      workspaceRoots: ['/Users/zxy/project-a', '/Users/zxy/project-b']
     })
 
     expect(displayGroups.map(([workspace]) => workspace)).toEqual([

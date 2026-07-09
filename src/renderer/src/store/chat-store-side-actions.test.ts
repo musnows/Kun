@@ -175,6 +175,7 @@ function buildHarness(overrides: Partial<ChatState> = {}): Harness {
     chooseWorkspace: async () => null,
     clearWorkspace: async () => undefined,
     deleteWorkspace: async () => undefined,
+    reorderCodeWorkspaces: () => undefined,
     refreshThreads: async () => {
       provider.refreshThreadsMock()
     },

@@ -28,6 +28,7 @@ function makeBaseState(): WriteWorkspaceState {
     selectWriteWorkspace: async () => undefined,
     addWriteWorkspace: async () => undefined,
     removeWriteWorkspace: async () => undefined,
+    reorderWriteWorkspaces: async () => undefined,
     initializeWorkspace: async () => undefined,
     loadDirectory: async () => null,
     toggleDirectory: async () => undefined,

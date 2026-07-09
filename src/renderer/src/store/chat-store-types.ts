@@ -266,6 +266,7 @@ export type ChatState = {
   selectWorkspaceRoot: (workspaceRoot: string) => Promise<string | null>
   clearWorkspace: () => Promise<void>
   deleteWorkspace: (workspacePath: string) => Promise<void>
+  reorderCodeWorkspaces: (orderedPaths: readonly string[]) => void
   refreshThreads: () => Promise<void>
   setThreadSearch: (query: string) => void
   setShowArchivedThreads: (show: boolean) => void

@@ -1,4 +1,4 @@
-import type { FormEvent, ReactElement } from 'react'
+import type { FormEvent, DragEvent as ReactDragEvent, ReactElement } from 'react'
 import { useEffect, useState } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import {
@@ -8,6 +8,7 @@ import {
   Folder,
   FolderOpen,
   FolderPlus,
+  GripVertical,
   Plus,
   RefreshCw,
   Settings,
@@ -19,6 +20,7 @@ import type { WorkspaceEntry } from '@shared/workspace-file'
 import { confirmDialog } from '../../lib/confirm-dialog'
 import { formatWorkspacePickerError } from '../../lib/format-workspace-picker-error'
 import { useChatStore, type SettingsRouteSection } from '../../store/chat-store'
+import { reorderWorkspacePathList } from '../../store/chat-store-helpers'
 import {
   useWriteWorkspaceStore,
   writeBasenameFromPath,
@@ -72,6 +74,8 @@ export function WriteSidebar({
   const runtimeConnection = useChatStore((s) => s.runtimeConnection)
   const [entryDialog, setEntryDialog] = useState<EntryDialog | null>(null)
   const [collapsedWorkspaces, setCollapsedWorkspaces] = useState<Record<string, boolean>>({})
+  const [draggingWorkspacePath, setDraggingWorkspacePath] = useState('')
+  const [dropTargetWorkspacePath, setDropTargetWorkspacePath] = useState('')
   // Field-level subscription: the sidebar must not re-render on fileContent or
   // selection updates, which fire on every keystroke in the editor.
   const {
@@ -89,6 +93,7 @@ export function WriteSidebar({
     selectWriteWorkspace,
     addWriteWorkspace,
     removeWriteWorkspace,
+    reorderWriteWorkspaces,
     toggleDirectory,
     openFile,
     createFile,
@@ -113,6 +118,7 @@ export function WriteSidebar({
       selectWriteWorkspace: s.selectWriteWorkspace,
       addWriteWorkspace: s.addWriteWorkspace,
       removeWriteWorkspace: s.removeWriteWorkspace,
+      reorderWriteWorkspaces: s.reorderWriteWorkspaces,
       toggleDirectory: s.toggleDirectory,
       openFile: s.openFile,
       createFile: s.createFile,
@@ -255,6 +261,50 @@ export function WriteSidebar({
     await removeWriteWorkspace(workspacePath)
   }
 
+  const workspaceReorderEnabled = workspaceRoots.length > 1
+
+  const handleWorkspaceDragStart = (
+    event: ReactDragEvent<HTMLSpanElement>,
+    workspacePath: string
+  ): void => {
+    if (!workspaceReorderEnabled) return
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData('text/plain', workspacePath)
+    setDraggingWorkspacePath(workspacePath)
+  }
+
+  const handleWorkspaceDragEnd = (): void => {
+    setDraggingWorkspacePath('')
+    setDropTargetWorkspacePath('')
+  }
+
+  const handleWorkspaceDragOver = (
+    event: ReactDragEvent<HTMLDivElement>,
+    workspacePath: string
+  ): void => {
+    if (!workspaceReorderEnabled || !draggingWorkspacePath) return
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'move'
+    if (workspacePath !== draggingWorkspacePath) {
+      setDropTargetWorkspacePath(workspacePath)
+    }
+  }
+
+  const handleWorkspaceDrop = (
+    event: ReactDragEvent<HTMLDivElement>,
+    workspacePath: string
+  ): void => {
+    if (!workspaceReorderEnabled) return
+    event.preventDefault()
+    const fromPath = event.dataTransfer.getData('text/plain') || draggingWorkspacePath
+    setDraggingWorkspacePath('')
+    setDropTargetWorkspacePath('')
+    if (!fromPath || fromPath === workspacePath) return
+    void reorderWriteWorkspaces(
+      reorderWorkspacePathList(workspaceRoots, fromPath, workspacePath)
+    )
+  }
+
   return (
     <>
     <SidebarFrame
@@ -353,7 +403,29 @@ export function WriteSidebar({
             const collapsed = active ? collapsedWorkspaces[workspacePath] === true : true
             const removable = workspaceRoots.length > 1 && workspacePath !== defaultWorkspaceRoot
             return (
-              <div key={workspacePath} className="mb-1">
+              <div
+                key={workspacePath}
+                className={`mb-1 ${dropTargetWorkspacePath === workspacePath ? 'rounded-[8px] ring-2 ring-accent/35' : ''} ${draggingWorkspacePath === workspacePath ? 'opacity-55' : ''}`}
+                onDragOver={(event) => handleWorkspaceDragOver(event, workspacePath)}
+                onDragLeave={() => {
+                  if (dropTargetWorkspacePath === workspacePath) setDropTargetWorkspacePath('')
+                }}
+                onDrop={(event) => handleWorkspaceDrop(event, workspacePath)}
+              >
+                <div className="flex min-w-0 items-stretch gap-0.5">
+                  {workspaceReorderEnabled ? (
+                    <span
+                      draggable
+                      onDragStart={(event) => handleWorkspaceDragStart(event, workspacePath)}
+                      onDragEnd={handleWorkspaceDragEnd}
+                      className="inline-flex w-5 shrink-0 cursor-grab items-center justify-center self-center rounded text-ds-faint transition hover:bg-[var(--ds-sidebar-row-hover)] hover:text-ds-muted active:cursor-grabbing"
+                      title={t('writeWorkspaceDrag')}
+                      aria-label={t('writeWorkspaceDrag')}
+                    >
+                      <GripVertical className="h-3.5 w-3.5" strokeWidth={1.9} />
+                    </span>
+                  ) : null}
+                  <div className="min-w-0 flex-1">
                 <SidebarTreeRow
                   active={active}
                   title={workspacePath}
@@ -420,6 +492,8 @@ export function WriteSidebar({
                   )}
                   <span className="min-w-0 flex-1 truncate">{writeBasenameFromPath(workspacePath)}</span>
                 </SidebarTreeRow>
+                  </div>
+                </div>
 
                 {active && !collapsed ? (
                   <div className="mt-1 pl-3">

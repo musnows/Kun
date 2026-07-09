@@ -1,4 +1,4 @@
-import type { FormEvent, MouseEvent as ReactMouseEvent, ReactElement } from 'react'
+import type { FormEvent, DragEvent as ReactDragEvent, MouseEvent as ReactMouseEvent, ReactElement } from 'react'
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
@@ -11,6 +11,7 @@ import {
   FolderPlus,
   FolderOpen,
   GitBranch,
+  GripVertical,
   Loader2,
   PencilLine,
   Pin,
@@ -50,6 +51,7 @@ import {
   shouldOmitFromCodeWorkspaceRoots
 } from '../../lib/worktree-project-path'
 import { readThreadWorktreeRegistry, type ThreadWorktreeRecord } from '../../lib/thread-worktree-registry'
+import { reorderWorkspacePathList } from '../../store/chat-store-helpers'
 
 type SidebarProjectsSectionProps = {
   threads: NormalizedThread[]
@@ -68,6 +70,7 @@ type SidebarProjectsSectionProps = {
   locale: string
   onPickWorkspace: () => void
   onRemoveWorkspace: (workspacePath: string) => Promise<void>
+  onReorderWorkspaces?: (orderedPaths: readonly string[]) => void
   onCreateThreadInWorkspace: (workspacePath: string) => void
   onOpenRequirementDraft: (draft: SddDraft) => void
   onSelectThread: (threadId: string) => void
@@ -155,17 +158,29 @@ function isSidebarProjectWorkspacePath(workspacePath: string): boolean {
   return true
 }
 
-function compareWorkspacePathsByActive(a: string, b: string, selectedWorkspace: string): number {
-  const selectedWorkspaceKey = workspaceRootIdentityKey(selectedWorkspace)
-  const aKey = workspaceRootIdentityKey(a)
-  const bKey = workspaceRootIdentityKey(b)
-  if (aKey === selectedWorkspaceKey && bKey !== selectedWorkspaceKey) return -1
-  if (bKey === selectedWorkspaceKey && aKey !== selectedWorkspaceKey) return 1
+function compareWorkspacePathsByOrder(a: string, b: string, orderedRoots: readonly string[] = []): number {
+  const orderIndex = (workspacePath: string): number => {
+    const key = workspaceRootIdentityKey(workspacePath)
+    const index = orderedRoots.findIndex(
+      (root) => workspaceRootIdentityKey(normalizeWorkspaceRoot(root)) === key
+    )
+    return index >= 0 ? index : Number.MAX_SAFE_INTEGER
+  }
+  const aIndex = orderIndex(a)
+  const bIndex = orderIndex(b)
+  if (aIndex !== bIndex) return aIndex - bIndex
   return a.localeCompare(b)
 }
 
-function sortWorkspacePathsByActive(workspacePaths: string[], selectedWorkspace: string): string[] {
-  return [...workspacePaths].sort((a, b) => compareWorkspacePathsByActive(a, b, selectedWorkspace))
+function sortWorkspacePathsByOrder(workspacePaths: string[], orderedRoots: readonly string[]): string[] {
+  return [...workspacePaths].sort((a, b) => compareWorkspacePathsByOrder(a, b, orderedRoots))
+}
+
+function sortSidebarWorkspaceGroups(
+  groups: SidebarWorkspaceGroup[],
+  orderedRoots: readonly string[]
+): SidebarWorkspaceGroup[] {
+  return [...groups].sort(([a], [b]) => compareWorkspacePathsByOrder(a, b, orderedRoots))
 }
 
 function sidebarWorkspaceResolutionCandidates(options: {
@@ -322,13 +337,10 @@ export function buildSidebarWorkspaceGroups(options: {
     }
   }
 
-  return Array.from(map.values()).map(({ workspacePath, threads }): SidebarWorkspaceGroup => [workspacePath, threads]).sort(([a], [b]) => {
-    const aKey = workspaceRootIdentityKey(a)
-    const bKey = workspaceRootIdentityKey(b)
-    if (aKey === selectedWorkspaceKey && bKey !== selectedWorkspaceKey) return -1
-    if (bKey === selectedWorkspaceKey && aKey !== selectedWorkspaceKey) return 1
-    return a.localeCompare(b)
-  })
+  return sortSidebarWorkspaceGroups(
+    Array.from(map.values()).map(({ workspacePath, threads }): SidebarWorkspaceGroup => [workspacePath, threads]),
+    options.workspaceRoots
+  )
 }
 
 export function buildSidebarDraftWorkspacePaths(options: {
@@ -366,7 +378,7 @@ export function buildSidebarDraftWorkspacePaths(options: {
     upsertWorkspace(sidebarWorkspacePathForThread(thread, options.threadWorktrees, candidateProjectPaths))
   }
 
-  return sortWorkspacePathsByActive([...map.values()], selectedWorkspace)
+  return sortWorkspacePathsByOrder([...map.values()], options.workspaceRoots)
 }
 
 export function filterSddDraftHistoryItems(
@@ -397,6 +409,7 @@ export function mergeSidebarWorkspaceGroupsWithDraftHistory(options: {
   groups: SidebarWorkspaceGroup[]
   draftHistoryByWorkspace: Record<string, SddDraftHistoryItem[]>
   workspaceRoot: string
+  workspaceRoots: readonly string[]
 }): SidebarWorkspaceGroup[] {
   const selectedWorkspace = normalizeWorkspaceRoot(options.workspaceRoot)
   const map = new Map<string, SidebarWorkspaceGroup>()
@@ -422,7 +435,7 @@ export function mergeSidebarWorkspaceGroupsWithDraftHistory(options: {
     if (items.length > 0) upsertGroup(workspacePath)
   }
 
-  return Array.from(map.values()).sort(([a], [b]) => compareWorkspacePathsByActive(a, b, selectedWorkspace))
+  return sortSidebarWorkspaceGroups(Array.from(map.values()), options.workspaceRoots)
 }
 
 export function filterEmptySddAssistantThreadsFromSidebar(
@@ -479,6 +492,7 @@ export function SidebarProjectsSection({
   locale,
   onPickWorkspace,
   onRemoveWorkspace,
+  onReorderWorkspaces,
   onCreateThreadInWorkspace,
   onOpenRequirementDraft,
   onSelectThread,
@@ -501,6 +515,8 @@ export function SidebarProjectsSection({
   const [workspaceContextMenu, setWorkspaceContextMenu] = useState<WorkspaceContextMenuState | null>(null)
   const [actionDialog, setActionDialog] = useState<SidebarActionDialogState | null>(null)
   const [renameThreadDialog, setRenameThreadDialog] = useState<RenameThreadDialogState | null>(null)
+  const [draggingWorkspacePath, setDraggingWorkspacePath] = useState('')
+  const [dropTargetWorkspacePath, setDropTargetWorkspacePath] = useState('')
   const [draftHistoryByWorkspace, setDraftHistoryByWorkspace] = useState<Record<string, SddDraftHistoryItem[]>>({})
   const [threadWorktrees, setThreadWorktrees] = useState<SidebarThreadWorktrees>(() => readThreadWorktreeRegistry().worktrees)
   const activeSddDraftId = useSddDraftStore((s) => s.activeDraft?.id ?? '')
@@ -545,13 +561,60 @@ export function SidebarProjectsSection({
     return mergeSidebarWorkspaceGroupsWithDraftHistory({
       groups,
       draftHistoryByWorkspace: filteredDraftHistoryByWorkspace,
-      workspaceRoot
+      workspaceRoot,
+      workspaceRoots
     })
-  }, [filteredDraftHistoryByWorkspace, groups, workspaceRoot])
+  }, [filteredDraftHistoryByWorkspace, groups, workspaceRoot, workspaceRoots])
 
   const searchVisible = searchOpen || searchQuery.trim().length > 0
   const allGroupsCollapsed = displayGroups.length > 0 && displayGroups.every(([workspacePath]) => collapsed[workspacePath] === true)
   const workspaceHistoryKey = draftHistoryWorkspacePaths.join('\n')
+  const workspaceReorderEnabled =
+    !searchVisible &&
+    !showArchived &&
+    displayGroups.length > 1 &&
+    typeof onReorderWorkspaces === 'function'
+
+  const handleWorkspaceDragStart = (
+    event: ReactDragEvent<HTMLSpanElement>,
+    workspacePath: string
+  ): void => {
+    if (!workspaceReorderEnabled) return
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData('text/plain', workspacePath)
+    setDraggingWorkspacePath(workspacePath)
+  }
+
+  const handleWorkspaceDragEnd = (): void => {
+    setDraggingWorkspacePath('')
+    setDropTargetWorkspacePath('')
+  }
+
+  const handleWorkspaceDragOver = (
+    event: ReactDragEvent<HTMLDivElement>,
+    workspacePath: string
+  ): void => {
+    if (!workspaceReorderEnabled || !draggingWorkspacePath) return
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'move'
+    if (workspacePath !== draggingWorkspacePath) {
+      setDropTargetWorkspacePath(workspacePath)
+    }
+  }
+
+  const handleWorkspaceDrop = (
+    event: ReactDragEvent<HTMLDivElement>,
+    workspacePath: string
+  ): void => {
+    if (!workspaceReorderEnabled || !onReorderWorkspaces) return
+    event.preventDefault()
+    const fromPath = event.dataTransfer.getData('text/plain') || draggingWorkspacePath
+    setDraggingWorkspacePath('')
+    setDropTargetWorkspacePath('')
+    if (!fromPath || fromPath === workspacePath) return
+    const currentPaths = displayGroups.map(([path]) => path)
+    onReorderWorkspaces(reorderWorkspacePathList(currentPaths, fromPath, workspacePath))
+  }
 
   useEffect(() => {
     if (
@@ -1014,7 +1077,29 @@ export function SidebarProjectsSection({
             ? sortedThreads
             : sortedThreads.slice(0, 5)
           return (
-            <div key={workspacePath} className="mb-2">
+            <div
+              key={workspacePath}
+              className={`mb-2 ${dropTargetWorkspacePath === workspacePath ? 'rounded-[8px] ring-2 ring-accent/35' : ''} ${draggingWorkspacePath === workspacePath ? 'opacity-55' : ''}`}
+              onDragOver={(event) => handleWorkspaceDragOver(event, workspacePath)}
+              onDragLeave={() => {
+                if (dropTargetWorkspacePath === workspacePath) setDropTargetWorkspacePath('')
+              }}
+              onDrop={(event) => handleWorkspaceDrop(event, workspacePath)}
+            >
+              <div className="flex min-w-0 items-stretch gap-0.5">
+                {workspaceReorderEnabled ? (
+                  <span
+                    draggable
+                    onDragStart={(event) => handleWorkspaceDragStart(event, workspacePath)}
+                    onDragEnd={handleWorkspaceDragEnd}
+                    className="inline-flex w-5 shrink-0 cursor-grab items-center justify-center self-center rounded text-ds-faint transition hover:bg-[var(--ds-sidebar-row-hover)] hover:text-ds-muted active:cursor-grabbing"
+                    title={t('sidebarWorkspaceDrag')}
+                    aria-label={t('sidebarWorkspaceDrag')}
+                  >
+                    <GripVertical className="h-3.5 w-3.5" strokeWidth={1.9} />
+                  </span>
+                ) : null}
+                <div className="min-w-0 flex-1">
               <SidebarTreeRow
                 title={workspacePath}
                 onClick={() =>
@@ -1061,6 +1146,8 @@ export function SidebarProjectsSection({
                   </span>
                 ) : null}
               </SidebarTreeRow>
+                </div>
+              </div>
 
               {!isCollapsed ? (
                 <div className="mt-1 space-y-[3px] pl-4">

@@ -121,6 +121,7 @@ export function Sidebar({
   const codeWorkspaceRoots = useChatStore((s) => s.codeWorkspaceRoots)
   const chooseWorkspace = useChatStore((s) => s.chooseWorkspace)
   const deleteWorkspace = useChatStore((s) => s.deleteWorkspace)
+  const reorderCodeWorkspaces = useChatStore((s) => s.reorderCodeWorkspaces)
   const busy = useChatStore((s) => s.busy)
   const watchTurnCompletion = useChatStore((s) => s.watchTurnCompletion)
   const unreadThreadIds = useChatStore((s) => s.unreadThreadIds)
@@ -293,6 +294,7 @@ export function Sidebar({
           locale={i18n.language}
           onPickWorkspace={() => void chooseWorkspace()}
           onRemoveWorkspace={deleteWorkspace}
+          onReorderWorkspaces={reorderCodeWorkspaces}
           onCreateThreadInWorkspace={onNewChatInWorkspace}
           onOpenRequirementDraft={onOpenRequirementDraft}
           onSelectThread={onSelectThread}
@@ -322,6 +324,7 @@ export function Sidebar({
         locale={i18n.language}
         onPickWorkspace={() => void chooseWorkspace()}
         onRemoveWorkspace={deleteWorkspace}
+        onReorderWorkspaces={reorderCodeWorkspaces}
         onCreateThreadInWorkspace={onNewChatInWorkspace}
         onOpenRequirementDraft={onOpenRequirementDraft}
         onSelectThread={onSelectThread}
