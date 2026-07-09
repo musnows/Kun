@@ -213,7 +213,7 @@ export function createChildAgentExecutor(options: ChildAgentExecutorOptions): Ch
         disableUserInput: true
       }
     })
-    const abortChildTurn = (): void => {
+    const abortChild = (): void => {
       console.warn(`[kun] foreground subagent parent abort received child=${thread.id} turn=${started.turnId} parentThread=${input.parentThreadId} parentTurn=${input.parentTurnId}`)
       void turns.interruptTurn({
         threadId: thread.id,
@@ -222,13 +222,17 @@ export function createChildAgentExecutor(options: ChildAgentExecutorOptions): Ch
     }
     if (input.signal.aborted) {
       console.warn(`[kun] foreground subagent started with aborted parent signal child=${thread.id} turn=${started.turnId}`)
-      abortChildTurn()
+      abortChild()
     } else {
       console.warn(`[kun] foreground subagent abort bridge armed child=${thread.id} turn=${started.turnId} parentThread=${input.parentThreadId} parentTurn=${input.parentTurnId}`)
-      input.signal.addEventListener('abort', abortChildTurn, { once: true })
+      input.signal.addEventListener('abort', abortChild, { once: true })
     }
-    const status = await loop.runTurn(thread.id, started.turnId)
-      .finally(() => input.signal.removeEventListener('abort', abortChildTurn))
+    let status: 'completed' | 'failed' | 'aborted'
+    try {
+      status = await loop.runTurn(thread.id, started.turnId)
+    } finally {
+      input.signal.removeEventListener('abort', abortChild)
+    }
     console.warn(`[kun] foreground subagent turn settled child=${thread.id} turn=${started.turnId} status=${status}`)
     // Only a FATAL error fails the child. Recoverable tool errors — a tool
     // rejected by the child's read-only policy, or a tool that crashed — are

@@ -27,7 +27,14 @@ export {
   DEFAULT_TOOL_OUTPUT_MAX_LINES,
   type ToolOutputLimitsConfig
 } from '../../kun/src/contracts/tool-output-limits.js'
-export const KUN_TOOL_PERMISSION_MODES = ['always-ask', 'read-only', 'sensitive-ask', 'workspace-write', 'bypass'] as const
+export const KUN_TOOL_PERMISSION_MODES = [
+  'always-ask',
+  'read-only',
+  'sensitive-ask',
+  'workspace-write',
+  'trusted-workspace',
+  'bypass'
+] as const
 export type KunToolPermissionMode = (typeof KUN_TOOL_PERMISSION_MODES)[number]
 /**
  * Overall UI text scale factor (applied as `zoom` on the app shell).
@@ -98,6 +105,7 @@ export type VideoGenerationProtocol = (typeof VIDEO_GENERATION_PROTOCOLS)[number
 export const DEFAULT_VIDEO_GENERATION_PROTOCOL: VideoGenerationProtocol = 'minimax-video'
 export const DEFAULT_CLAW_MODEL = 'auto'
 export const CLAW_MODEL_IDS = ['auto', 'deepseek-v4-pro', 'deepseek-v4-flash'] as const
+export const DEFAULT_CLAW_RECENT_THREAD_LIST_LIMIT = 5
 export const DEFAULT_SCHEDULE_MODEL = 'deepseek-v4-flash'
 export const SCHEDULE_MODEL_IDS = ['deepseek-v4-pro', 'deepseek-v4-flash'] as const
 export const DEFAULT_SCHEDULE_REASONING_EFFORT = 'medium'
@@ -113,6 +121,13 @@ export const DEFAULT_WRITE_WORKSPACE_ROOT = '~/.kun/write_workspace'
 // (defaultConversationWorkspaceRoot)各自按平台推导。
 export const DEFAULT_KUN_DATA_DIR = '~/.kun/data'
 export const DEFAULT_KUN_MODEL = 'deepseek-v4-pro'
+export const DEFAULT_PROMPT_OPTIMIZATION_PROMPT = [
+  'You rewrite rough spoken or typed instructions into a clear prompt for a coding agent.',
+  'Keep the user intent, constraints, names, paths, and concrete details intact.',
+  'Make the prompt actionable, concise, and well structured.',
+  'Do not add requirements the user did not ask for.',
+  'Return only the rewritten prompt text. Do not add markdown fences or explanations.'
+].join('\n')
 export const DEFAULT_WRITE_INLINE_COMPLETION_BASE_URL = 'https://api.deepseek.com/beta'
 export const DEFAULT_WRITE_INLINE_COMPLETION_MODEL = 'deepseek-v4-flash'
 export const WRITE_INLINE_COMPLETION_MODEL_IDS = ['deepseek-v4-pro', 'deepseek-v4-flash'] as const
@@ -122,6 +137,9 @@ export const DEFAULT_WRITE_INLINE_COMPLETION_MAX_TOKENS = 96
 export const DEFAULT_WRITE_INLINE_LONG_COMPLETION_DEBOUNCE_MS = 2_800
 export const DEFAULT_WRITE_INLINE_LONG_COMPLETION_MIN_ACCEPT_SCORE = 0.36
 export const DEFAULT_WRITE_INLINE_LONG_COMPLETION_MAX_TOKENS = 256
+export const MIN_WRITE_AUTOSAVE_DELAY_MS = 5_000
+export const MAX_WRITE_AUTOSAVE_DELAY_MS = 1_800_000
+export const DEFAULT_WRITE_AUTOSAVE_DELAY_MS = 180_000
 export const DEFAULT_KUN_PORT = 18899
 export const DEFAULT_LOG_RETENTION_DAYS = 3
 export const CHECKPOINT_CLEANUP_INTERVAL_DAYS = [1, 2, 3, 5, 10] as const
@@ -337,6 +355,8 @@ export type KunRuntimeSettingsV1 = {
   speechToText: KunSpeechToTextSettingsV1
   /** Text-to-speech provider exposed to agents as generate_speech. */
   textToSpeech: KunTextToSpeechSettingsV1
+  /** Model + prompt used by the composer prompt optimization button. */
+  promptOptimization: KunPromptOptimizationSettingsV1
   /** Music generation provider exposed to agents as generate_music. */
   musicGeneration: KunMusicGenerationSettingsV1
   /** Video generation provider exposed to agents as generate_video. */
@@ -393,6 +413,8 @@ export function kunToolPermissionModeSettings(
       return { approvalPolicy: 'untrusted', sandboxMode: 'danger-full-access' }
     case 'workspace-write':
       return { approvalPolicy: 'on-request', sandboxMode: 'workspace-write' }
+    case 'trusted-workspace':
+      return { approvalPolicy: 'auto', sandboxMode: 'workspace-write' }
     case 'bypass':
       return { approvalPolicy: 'auto', sandboxMode: 'danger-full-access' }
   }
@@ -408,6 +430,12 @@ export function kunToolPermissionModeFromSettings(
     settings.sandboxMode === 'danger-full-access'
   ) {
     return 'bypass'
+  }
+  if (
+    settings.approvalPolicy === 'auto' &&
+    settings.sandboxMode === 'workspace-write'
+  ) {
+    return 'trusted-workspace'
   }
   if (settings.sandboxMode === 'workspace-write') return 'workspace-write'
   return 'read-only'
@@ -494,6 +522,17 @@ export type KunTextToSpeechSettingsV1 = {
   voice: string
   /** Default output audio format such as mp3 or wav. */
   format: string
+  timeoutMs: number
+}
+
+export type KunPromptOptimizationSettingsV1 = {
+  enabled: boolean
+  /** Existing provider profile to use. Empty means inherit the active Kun provider. */
+  providerId: string
+  /** Empty means smallModel || main conversation model. */
+  model: string
+  /** Empty means use DEFAULT_PROMPT_OPTIMIZATION_PROMPT. */
+  prompt: string
   timeoutMs: number
 }
 
@@ -626,7 +665,7 @@ export type KunTokenEconomySettingsPatchV1 = Partial<
 export type KunRuntimeSettingsPatchV1 = Partial<
   Omit<
     KunRuntimeSettingsV1,
-    'mcpSearch' | 'storage' | 'contextCompaction' | 'runtimeTuning' | 'tokenEconomy' | 'toolOutputLimits' | 'imageGeneration' | 'speechToText' | 'textToSpeech' | 'musicGeneration' | 'videoGeneration' | 'instructions' | 'computerUse' | 'quality' | 'modelProfiles'
+    'mcpSearch' | 'storage' | 'contextCompaction' | 'runtimeTuning' | 'tokenEconomy' | 'toolOutputLimits' | 'imageGeneration' | 'speechToText' | 'textToSpeech' | 'promptOptimization' | 'musicGeneration' | 'videoGeneration' | 'instructions' | 'computerUse' | 'quality' | 'modelProfiles'
   >
 > & {
   mcpSearch?: Partial<KunMcpSearchSettingsV1>
@@ -638,6 +677,7 @@ export type KunRuntimeSettingsPatchV1 = Partial<
   imageGeneration?: Partial<KunImageGenerationSettingsV1>
   speechToText?: Partial<KunSpeechToTextSettingsV1>
   textToSpeech?: Partial<KunTextToSpeechSettingsV1>
+  promptOptimization?: Partial<KunPromptOptimizationSettingsV1>
   musicGeneration?: Partial<KunMusicGenerationSettingsV1>
   videoGeneration?: Partial<KunVideoGenerationSettingsV1>
   instructions?: Partial<KunInstructionSettingsV1>
@@ -1461,6 +1501,7 @@ export type ClawImSettingsV1 = {
   model: string
   mode: ClawRunMode
   responseTimeoutMs: number
+  recentThreadListLimit: number
 }
 
 export type ClawTaskScheduleV1 = {
@@ -1533,6 +1574,10 @@ export type ClawImConversationV1 = {
   /** Kun thread id this conversation maps to. */
   localThreadId: string
   workspaceRoot: string
+  /** Model provider used by this IM conversation. Empty inherits channel/IM/global provider. */
+  providerId?: string
+  /** Model used by this IM conversation. Empty inherits channel/IM model. */
+  model?: string
   createdAt: string
   updatedAt: string
 }
@@ -1681,6 +1726,8 @@ export type WriteSettingsV1 = {
   defaultWorkspaceRoot: string
   activeWorkspaceRoot: string
   workspaces: string[]
+  autoSaveEnabled: boolean
+  autoSaveDelayMs: number
   inlineCompletion: WriteInlineCompletionSettingsV1
   selectionAssist: WriteSelectionAssistSettingsV1
   typography: WriteTypographySettingsV1
