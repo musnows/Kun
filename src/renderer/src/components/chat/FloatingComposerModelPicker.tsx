@@ -123,16 +123,7 @@ export function FloatingComposerModelPicker({
   const [modelFilter, setModelFilter] = useState('')
   const [menuPlacement, setMenuPlacement] = useState<FloatingMenuPlacement | null>(null)
   const [submenuPlacement, setSubmenuPlacement] = useState<FloatingSubmenuPlacement | null>(null)
-  const modelOptions = useMemo(() => {
-    const ordered = new Set<string>()
-    for (const id of composerPickList) {
-      const normalized = id.trim()
-      if (normalized) ordered.add(normalized)
-    }
-    const current = composerModel.trim()
-    if (current) ordered.add(current)
-    return [...ordered]
-  }, [composerModel, composerPickList])
+  const modelOptions = useMemo(() => buildComposerModelOptions(composerPickList), [composerPickList])
   const providerMenuGroups = useMemo<ComposerModelMenuGroup[]>(() => {
     return buildComposerModelMenuGroups({
       composerModelGroups,
@@ -645,6 +636,15 @@ export function buildComposerModelMenuGroups({
     })
   }
   return groups
+}
+
+export function buildComposerModelOptions(composerPickList: readonly string[]): string[] {
+  const ordered = new Set<string>()
+  for (const id of composerPickList) {
+    const normalized = id.trim()
+    if (normalized) ordered.add(normalized)
+  }
+  return [...ordered]
 }
 
 export function filterComposerModelIds(

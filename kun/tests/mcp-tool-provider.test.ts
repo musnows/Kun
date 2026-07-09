@@ -340,7 +340,7 @@ describe('MCP tool provider', () => {
       mode: 'search',
       active: true,
       indexedToolCount: 2,
-      advertisedToolCount: 4
+      advertisedToolCount: 9
     })
     expect((await host.listTools(context)).map((tool) => tool.name)).toEqual([
       'mcp_search',
@@ -490,7 +490,7 @@ describe('MCP tool provider', () => {
       }
     })
 
-    expect(built.providers).toHaveLength(1)
+    expect(built.providers.map((provider) => provider.id)).toEqual(['mcp:search', 'mcp:facade'])
     expect(built.connectedServers).toBe(0)
     expect(built.diagnostics[0]).toMatchObject({
       id: 'broken',
@@ -521,7 +521,7 @@ describe('MCP tool provider', () => {
       }
     })
 
-    expect(built.providers).toHaveLength(1)
+    expect(built.providers.map((provider) => provider.id)).toEqual(['mcp:search', 'mcp:facade'])
     expect(built.diagnostics[0]).toMatchObject({
       id: 'filesystem',
       status: 'error'
@@ -738,7 +738,7 @@ describe('MCP tool provider', () => {
     // Startup pass: the server failed. The stable MCP gateway is still present
     // so later catalog updates have a callable entry point.
     expect(built.diagnostics).toEqual([expect.objectContaining({ id: 'github', status: 'error' })])
-    expect(built.providers).toHaveLength(1)
+    expect(built.providers.map((provider) => provider.id)).toEqual(['mcp:search', 'mcp:facade'])
 
     const registry = new CapabilityRegistry(built.providers)
     await built.startBackgroundReconnect((provider) => registry.registerProvider(provider))

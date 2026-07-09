@@ -43,6 +43,8 @@ import {
   MODEL_PROVIDER_MESSAGE_PARTS,
   MODEL_REASONING_EFFORTS,
   MODEL_REASONING_REQUEST_PROTOCOLS,
+  MAX_WRITE_AUTOSAVE_DELAY_MS,
+  MIN_WRITE_AUTOSAVE_DELAY_MS,
   MIN_KUN_LOCAL_PORT,
   SCHEDULE_MODEL_IDS,
   SCHEDULE_REASONING_EFFORT_IDS,
@@ -128,6 +130,12 @@ export const providerProbePayloadSchema = z
     baseUrl: trimmedString(MAX_URL_LENGTH),
     apiKey: z.string().max(8_192),
     endpointFormat: z.enum(MODEL_ENDPOINT_FORMATS)
+  })
+  .strict()
+
+export const promptOptimizationPayloadSchema = z
+  .object({
+    text: trimmedString(100_000)
   })
   .strict()
 
@@ -494,6 +502,13 @@ const kunRuntimePatchSchema = z.object({
     format: z.string().trim().max(16).optional(),
     timeoutMs: z.number().int().positive().max(900_000).optional()
   }).strict().optional(),
+  promptOptimization: z.object({
+    enabled: z.boolean().optional(),
+    providerId: z.string().trim().max(64).optional(),
+    model: optionalModelIdSchema,
+    prompt: z.string().trim().max(MAX_BODY_BYTES).optional(),
+    timeoutMs: z.number().int().positive().max(600_000).optional()
+  }).strict().optional(),
   musicGeneration: z.object({
     enabled: z.boolean().optional(),
     providerId: z.string().trim().max(64).optional(),
@@ -642,6 +657,8 @@ const writeSettingsPatchSchema = z.object({
   defaultWorkspaceRoot: defaultPathSchema,
   activeWorkspaceRoot: defaultPathSchema,
   workspaces: z.array(trimmedString(MAX_PATH_LENGTH)).max(256).optional(),
+  autoSaveEnabled: z.boolean().optional(),
+  autoSaveDelayMs: z.number().int().min(MIN_WRITE_AUTOSAVE_DELAY_MS).max(MAX_WRITE_AUTOSAVE_DELAY_MS).optional(),
   inlineCompletion: writeInlineCompletionPatchSchema.optional(),
   selectionAssist: writeSelectionAssistPatchSchema.optional(),
   typography: writeTypographyPatchSchema.optional(),
@@ -695,7 +712,8 @@ const clawImPatchSchema = z.object({
   providerId: z.string().trim().max(64).optional(),
   model: modelIdSchema.optional(),
   mode: clawRunModeSchema.optional(),
-  responseTimeoutMs: z.number().int().min(5_000).max(600_000).optional()
+  responseTimeoutMs: z.number().int().min(5_000).max(600_000).optional(),
+  recentThreadListLimit: z.number().int().min(1).max(50).optional()
 }).strict()
 
 const clawImAgentProfilePatchSchema = z.object({
@@ -748,6 +766,8 @@ const clawImConversationPatchSchema = z.object({
   senderName: z.string().max(512).optional(),
   localThreadId: z.string().max(MAX_ID_LENGTH).optional(),
   workspaceRoot: defaultPathSchema,
+  providerId: z.string().trim().max(64).optional(),
+  model: z.string().trim().max(128).optional(),
   createdAt: z.string().max(128).optional(),
   updatedAt: z.string().max(128).optional()
 }).strict()

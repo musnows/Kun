@@ -193,7 +193,18 @@ export async function createKunServeRuntime(
       'system: keep the stable Kun prefix byte-stable for prompt-cache reuse'
     ]
   })
-  const threadService = new ThreadService({ threadStore, sessionStore, events, ids, nowIso })
+  const threadService = new ThreadService({
+    threadStore,
+    sessionStore,
+    events,
+    ids,
+    nowIso,
+    onDeleted: (threadId) => {
+      usageService.reset(threadId)
+      events.clearThread(threadId)
+      eventBus.clearThread(threadId)
+    }
+  })
   const artifactStore = new FileArtifactStore(join(activeOptions.dataDir, 'artifacts'), nowIso)
   let modelProfiles = modelContextProfilesFromConfig({
     contextCompaction: activeOptions.contextCompaction,
@@ -368,6 +379,8 @@ export async function createKunServeRuntime(
 	        config: mergeBuiltinSubagentProfiles(activeOptions.capabilities.subagents),
 	        store: new FileDelegationStore(join(activeOptions.dataDir, 'child-runs')),
 	        events,
+	        threadStore,
+	        turns: turnService,
 	        nowIso,
 	        executor: createChildAgentExecutor({
 	          model: modelClient,
@@ -525,6 +538,7 @@ export async function createKunServeRuntime(
 	      providerConfigs: activeOptions.providers ?? {},
 	      agentSdkProviderIds,
 	      defaultApprovalPolicy: activeOptions.approvalPolicy,
+	      defaultSandboxMode: activeOptions.sandboxMode,
 	      defaultModel: activeOptions.model,
 	      defaultIsAgentSdk,
 	      defaultToken: activeOptions.apiKey,
@@ -581,6 +595,9 @@ export async function createKunServeRuntime(
 	  }
 	  const loop = new AgentLoop(loopOptions)
 	  backgroundShellRuntime.bindAgentLoop({
+	    runTurn: (threadId, turnId) => loop.runTurn(threadId, turnId)
+	  })
+	  delegationRuntime?.bindAgentLoop({
 	    runTurn: (threadId, turnId) => loop.runTurn(threadId, turnId)
 	  })
 	  const startedAt = activeOptions.startedAt ?? nowIso()
@@ -807,6 +824,7 @@ export async function createKunServeRuntime(
 	      sdkRuntimeDeps.registry = registry
 	      sdkRuntimeDeps.providerConfigs = activeOptions.providers ?? {}
 	      sdkRuntimeDeps.defaultApprovalPolicy = activeOptions.approvalPolicy
+	      sdkRuntimeDeps.defaultSandboxMode = activeOptions.sandboxMode
 	      sdkRuntimeDeps.defaultModel = activeOptions.model
 	      sdkRuntimeDeps.defaultToken = activeOptions.apiKey
 	      sdkRuntimeDeps.skillRuntime = skillRuntime
