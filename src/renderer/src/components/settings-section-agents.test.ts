@@ -263,8 +263,10 @@ const labels: Record<string, string> = {
   toolPermissionReadOnlyDesc: 'Read tools run automatically',
   toolPermissionSensitiveAsk: 'Sensitive operations ask',
   toolPermissionSensitiveAskDesc: 'Sensitive operations ask first',
-  toolPermissionWorkspaceWrite: 'Workspace write',
-  toolPermissionWorkspaceWriteDesc: 'Can modify the workspace',
+  toolPermissionWorkspaceWrite: 'Ask for workspace writes',
+  toolPermissionWorkspaceWriteDesc: 'Asks before workspace file changes',
+  toolPermissionTrustedWorkspace: 'Trusted workspace',
+  toolPermissionTrustedWorkspaceDesc: 'Workspace file changes run without prompts',
   toolPermissionBypass: 'Bypass mode',
   toolPermissionBypassDesc: 'Never asks and has full access',
   permissionsBehaviorHint: 'Tool confirmation and local permissions are unified'
@@ -632,12 +634,14 @@ describe('AgentsSettingsSection Kun diagnostics smoke', () => {
     expect(html).toContain('Every tool call asks first')
     expect(html).toContain('Read tools run automatically')
     expect(html).toContain('Sensitive operations ask first')
-    expect(html).toContain('Can modify the workspace')
+    expect(html).toContain('Asks before workspace file changes')
+    expect(html).toContain('Workspace file changes run without prompts')
     expect(html).toContain('Never asks and has full access')
     expect(html).toContain('lucide-hand')
     expect(html).toContain('lucide-eye')
     expect(html).toContain('lucide-shield-question')
     expect(html).toContain('lucide-folder-pen')
+    expect(html).toContain('lucide-shield-check')
     expect(html).toContain('lucide-lock-keyhole-open')
     expect(html).not.toContain('Approval policy')
     expect(html).not.toContain('Sandbox mode')
