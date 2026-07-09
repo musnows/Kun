@@ -39,6 +39,10 @@ import {
   type KunThreadMode
 } from '@shared/kun-endpoints'
 import { parseRuntimeErrorBody, runtimeErrorToError, type RuntimeError } from '@shared/runtime-error'
+import {
+  workspaceDirectoryExists,
+  workspaceMissingError
+} from '../lib/workspace-availability'
 import type {
   CoreAttachmentDiagnosticsJson,
   CoreAttachmentContentResponseJson,
@@ -170,11 +174,15 @@ export class KunRuntimeProvider implements AgentProvider {
   }): Promise<NormalizedThread> {
     const settings = await rendererRuntimeClient.getSettings()
     const runtime = getKunRuntimeSettings(settings)
+    const workspace = (input.workspace || settings.workspaceRoot || '').trim()
+    if (!workspace || !(await workspaceDirectoryExists(workspace))) {
+      throw new Error(workspaceMissingError())
+    }
     const response = await rendererRuntimeClient.runtimeRequest(
       '/v1/threads',
       'POST',
       JSON.stringify({
-        workspace: input.workspace || settings.workspaceRoot || '~',
+        workspace,
         title: input.title,
         ...(input.titleAuto !== undefined ? { titleAuto: input.titleAuto } : {}),
         model: input.model?.trim() || runtime.model,
