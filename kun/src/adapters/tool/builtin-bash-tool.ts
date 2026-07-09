@@ -1,6 +1,6 @@
 import { mkdir } from 'node:fs/promises'
 import { randomBytes } from 'node:crypto'
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import { type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { LocalToolHost, type LocalTool } from './local-tool-host.js'
 import { OutputAccumulator } from './output-accumulator.js'
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize } from './truncate.js'
@@ -12,9 +12,9 @@ import {
 import {
   describeKind,
   normalizePositiveInteger,
-  shellCommandArgs,
-  shellRuntimeInfo,
-  shellSpawnEnv,
+  createShellCommandRunner,
+  ShellSpawnError,
+  type ShellCommandRunner,
   terminateSpawnTree,
   waitForSpawnExit,
   withToolBoundary,
@@ -90,7 +90,8 @@ async function bashExecute(
     command: string,
     cwd: string,
     options: { signal: AbortSignal; timeoutSeconds: number; onData?: (data: Buffer) => void }
-  ) => Promise<{ exitCode: number | null; shell?: string }>
+  ) => Promise<{ exitCode: number | null; shell?: string }>,
+  shellRunner: ShellCommandRunner = createShellCommandRunner()
 ): Promise<{
   output: string
   exitCode: number | null
@@ -99,17 +100,17 @@ async function bashExecute(
   fullOutputPath?: string
 }> {
   await mkdir(cwd, { recursive: true })
-  const shellRuntime = shellRuntimeInfo()
-  let resultShell = shellRuntime.name
-  const child = execOperation
+  let resultShell = shellRunner.runtime.name
+  const started = execOperation
     ? null
-    : spawn(shellRuntime.shell, shellCommandArgs(shellRuntime, command), {
+    : await shellRunner.spawn(command, {
         cwd,
-        env: shellSpawnEnv(),
         detached: process.platform !== 'win32',
         stdio: ['ignore', 'pipe', 'pipe'],
         windowsHide: true
       })
+  const child = started?.child ?? null
+  if (started) resultShell = started.runtime.name
   let timedOut = false
   let settled = false
   const output = new OutputAccumulator({
@@ -561,20 +562,21 @@ async function startBackgroundBashSession(
     outputLimits: { maxLines: number; maxBytes: number }
   },
   hooks: BashLocalToolOptions['backgroundShell'],
-  onUpdate?: (update: { output: unknown; isError?: boolean }) => Promise<void> | void
+  onUpdate?: (update: { output: unknown; isError?: boolean }) => Promise<void> | void,
+  shellRunner: ShellCommandRunner = createShellCommandRunner()
 ): Promise<{ payload: BashPayload; isError?: boolean }> {
   if (!input.dataDir?.trim()) {
     throw new Error('background shell sessions require runtime dataDir')
   }
   await mkdir(input.cwd, { recursive: true })
-  const shellRuntime = shellRuntimeInfo()
-  const child = spawn(shellRuntime.shell, shellCommandArgs(shellRuntime, input.command), {
+  const started = await shellRunner.spawn(input.command, {
     cwd: input.cwd,
-    env: shellSpawnEnv(),
     detached: process.platform !== 'win32',
     stdio: ['pipe', 'pipe', 'pipe'],
     windowsHide: true
   })
+  const shellRuntime = started.runtime
+  const child = started.child as ChildProcessWithoutNullStreams
   const sessionId = nextSessionId()
   const outputWriter = new BackgroundShellOutputWriter(input.dataDir, input.threadId, sessionId)
   await outputWriter.open()
@@ -692,7 +694,8 @@ export function createBashLocalTool(options: BashLocalToolOptions = {}): LocalTo
     maxLines: options.maxLines ?? DEFAULT_MAX_LINES,
     maxBytes: options.maxBytes ?? DEFAULT_MAX_BYTES
   }
-  const shellRuntime = shellRuntimeInfo()
+  const shellRunner = createShellCommandRunner()
+  const shellRuntime = shellRunner.runtime
   return LocalToolHost.defineTool({
     name: 'bash',
     description: `Execute a shell command in the workspace using the host platform shell. Current shell: ${shellRuntime.name}. Use ${shellRuntime.syntax} syntax. Return combined stdout and stderr. Runs synchronously by default (background defaults to false). Set background=true to start a detached session that keeps running after the turn ends; the tool assigns an 8-character session_id in the response. Use the background_shell tool to list, read, poll, write, or stop background sessions.`,
@@ -738,7 +741,8 @@ export function createBashLocalTool(options: BashLocalToolOptions = {}): LocalTo
               outputLimits
             },
             shellHooks,
-            onUpdate
+            onUpdate,
+            shellRunner
           )
           return {
             output: result.payload,
@@ -752,7 +756,8 @@ export function createBashLocalTool(options: BashLocalToolOptions = {}): LocalTo
           timeout,
           outputLimits,
           onUpdate,
-          bashOps?.exec
+          bashOps?.exec,
+          shellRunner
         )
         const payload = resultPayload({
           command,
@@ -774,11 +779,13 @@ export function createBashLocalTool(options: BashLocalToolOptions = {}): LocalTo
           output: payload
         }
       } catch (error) {
+        const spawnError = error instanceof ShellSpawnError ? error.toJSON() : undefined
         return {
           output: {
             command,
             cwd,
-            error: error instanceof Error ? error.message : String(error)
+            error: error instanceof Error ? error.message : String(error),
+            ...(spawnError ? { spawn_error: spawnError } : {})
           },
           isError: true
         }
