@@ -1361,7 +1361,56 @@ describe('syncGuiManagedKunConfig', () => {
     })
   })
 
-  it('imports workspace .mcp.json servers as workspace-scoped MCP config', async () => {
+  it('imports user-managed workspace-scoped MCP servers into runtime capabilities', async () => {
+    if (!tempRoot) throw new Error('temp root not initialized')
+    const configPath = join(tempRoot, 'config.json')
+    const mcpConfigPath = join(tempRoot, 'mcp.json')
+    const workspaceRoot = join(tempRoot, 'workspace')
+    writeFileSync(mcpConfigPath, JSON.stringify({
+      servers: {
+        codegraph: {
+          command: 'uvx',
+          args: ['codegraph-mcp'],
+          workspaceRoots: [workspaceRoot],
+          trustScope: 'workspace',
+          trustedWorkspaceRoots: [workspaceRoot]
+        }
+      }
+    }), 'utf8')
+    mkdirSync(workspaceRoot, { recursive: true })
+    writeFileSync(join(workspaceRoot, '.mcp.json'), JSON.stringify({
+      servers: {
+        codegraph: {
+          command: 'repo-controlled-codegraph',
+          args: ['untrusted-project-config'],
+          trustScope: 'user'
+        }
+      }
+    }), 'utf8')
+    const module = await import('./kun-process')
+
+    await module.syncGuiManagedKunConfig(tempRoot, defaultKunRuntimeSettings(), {
+      mcpConfigPath
+    })
+
+    const parsed = JSON.parse(readFileSync(configPath, 'utf8')) as any
+    expect(parsed.capabilities.mcp.enabled).toBe(true)
+    expect(parsed.capabilities.mcp.servers.codegraph).toMatchObject({
+      enabled: true,
+      transport: 'stdio',
+      command: 'uvx',
+      args: ['codegraph-mcp'],
+      workspaceRoots: [workspaceRoot],
+      trustScope: 'workspace',
+      trustedWorkspaceRoots: [workspaceRoot]
+    })
+    expect(JSON.stringify(parsed.capabilities.mcp.servers.codegraph)).not.toContain('repo-controlled-codegraph')
+  })
+
+  it('does not auto-import workspace .mcp.json servers into the runtime', async () => {
+    // Security: a project file can suggest MCP setup, but it must not grant
+    // itself permission to run commands in the local runtime. Users can still
+    // opt in by copying the server into the GUI-managed MCP config above.
     if (!tempRoot) throw new Error('temp root not initialized')
     const configPath = join(tempRoot, 'config.json')
     const mcpConfigPath = join(tempRoot, 'mcp.json')
@@ -1381,14 +1430,18 @@ describe('syncGuiManagedKunConfig', () => {
           command: 'uvx',
           args: ['codegraph-mcp'],
           trustScope: 'user'
+        },
+        evil: {
+          command: 'node',
+          args: ['evil.js'],
+          trustScope: 'user'
         }
       }
     }), 'utf8')
     const module = await import('./kun-process')
 
     await module.syncGuiManagedKunConfig(tempRoot, defaultKunRuntimeSettings(), {
-      mcpConfigPath,
-      workspaceRoot
+      mcpConfigPath
     })
 
     const parsed = JSON.parse(readFileSync(configPath, 'utf8')) as any
@@ -1396,12 +1449,12 @@ describe('syncGuiManagedKunConfig', () => {
     expect(parsed.capabilities.mcp.servers.codegraph).toMatchObject({
       enabled: true,
       transport: 'stdio',
-      command: 'uvx',
-      args: ['codegraph-mcp'],
-      workspaceRoots: [workspaceRoot],
-      trustScope: 'workspace',
-      trustedWorkspaceRoots: [workspaceRoot]
+      command: 'global-codegraph',
+      args: ['global'],
+      trustScope: 'user'
     })
+    expect(JSON.stringify(parsed.capabilities.mcp.servers)).not.toContain('codegraph-mcp')
+    expect(JSON.stringify(parsed.capabilities.mcp.servers)).not.toContain('evil.js')
   })
 
   it('does not auto-import repo-local .kun/mcp.json servers into the runtime', async () => {
