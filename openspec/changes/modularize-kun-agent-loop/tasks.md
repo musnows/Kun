@@ -44,7 +44,7 @@
   context separate so it cannot accidentally gain real approval side effects.
 - [ ] 4.1 Extract turn-context resolution while preserving model, policy,
   workspace, attachment, memory, skill, and tool-schema inputs.
-- [ ] 4.2 Extract tool execution service with existing approval, user-input,
+- [x] 4.2 Extract tool execution service with existing approval, user-input,
   cancellation, sandbox, and tool-result semantics.
 - [ ] 4.3 Extract ordered tool-call dispatch and verify suppression, limits, and
   error behavior against characterization transcripts.

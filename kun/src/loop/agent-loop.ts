@@ -7,7 +7,6 @@ import type {
   ToolHost,
   ToolCallLike,
   ToolHostContext,
-  ToolHostResult,
   GuiPlanContext,
   GuiDesignArtifactContext
 } from '../ports/tool-host.js'
@@ -64,7 +63,6 @@ import {
   makeAssistantTextItem,
   makeAssistantReasoningItem,
   makeToolCallItem,
-  makeToolResultItem,
   makeErrorItem
 } from '../domain/item.js'
 import { touchThread } from '../domain/thread.js'
@@ -111,6 +109,7 @@ import { LoopTelemetry } from './loop-telemetry.js'
 import { collectParallelToolDispatchCandidates } from './tool-dispatch-policy.js'
 import { InteractiveToolBridge } from './interactive-tool-bridge.js'
 import { createToolExecutionContext } from './tool-context-factory.js'
+import { ToolExecutionService } from './tool-execution-service.js'
 import { CREATE_PLAN_TOOL_NAME } from '../adapters/tool/create-plan-tool.js'
 import {
   DESIGN_SVG_ANIMATE_TOOL_NAME,
@@ -452,6 +451,7 @@ export class AgentLoop {
   private readonly toolStormBreakers = new Map<string, ToolStormBreaker>()
   private readonly telemetry: LoopTelemetry
   private readonly interactiveToolBridge: InteractiveToolBridge
+  private readonly toolExecution: ToolExecutionService
   private readonly lastNoToolTextByTurn = new Map<string, string>()
   private readonly goalNoToolRecoveryStepsByTurn = new Map<string, number>()
   private readonly emptyPostToolRecoveryStepsByTurn = new Map<string, number>()
@@ -478,6 +478,14 @@ export class AgentLoop {
       turns: opts.turns,
       sessionStore: opts.sessionStore,
       nowIso: opts.nowIso
+    })
+    this.toolExecution = new ToolExecutionService({
+      toolHost: opts.toolHost,
+      inflight: opts.inflight,
+      turns: opts.turns,
+      events: opts.events,
+      nowIso: opts.nowIso,
+      ...(opts.onPlanWritten ? { onPlanWritten: opts.onPlanWritten } : {})
     })
     this.goalResume = new GoalResumeCoordinator({
       launch: (threadId) => this.launchGoalResumeTurn(threadId),
@@ -2073,7 +2081,7 @@ export class AgentLoop {
 
       const storm = this.toolStormBreakers.get(input.turnId)?.inspect(call)
       if (storm?.suppress) {
-        await this.persistSuppressedToolCall({
+        await this.toolExecution.persistSuppressed({
           threadId: input.threadId,
           turnId: input.turnId,
           call,
@@ -2092,7 +2100,7 @@ export class AgentLoop {
         }
       })
       if (!parallelCandidates) {
-        const result = await this.executeToolCallSafely({
+        const result = await this.toolExecution.executeSafely({
           threadId: input.threadId,
           turnId: input.turnId,
           call,
@@ -2100,7 +2108,7 @@ export class AgentLoop {
         })
         executedAny = true
         markProgress(call.toolName)
-        await this.persistToolCallResult(input.threadId, input.turnId, call, result)
+        await this.toolExecution.persistResult(input.threadId, input.turnId, call, result)
         index += 1
         continue
       }
@@ -2126,7 +2134,7 @@ export class AgentLoop {
 
       const settled = await Promise.allSettled(
         batch.map((entry) =>
-          this.executeToolCallSafely({
+          this.toolExecution.executeSafely({
             threadId: input.threadId,
             turnId: input.turnId,
             call: entry,
@@ -2141,11 +2149,11 @@ export class AgentLoop {
         if (!result || !batchCall) continue
         if (result.status === 'rejected') throw result.reason
         markProgress(batchCall.toolName)
-        await this.persistToolCallResult(input.threadId, input.turnId, batchCall, result.value)
+        await this.toolExecution.persistResult(input.threadId, input.turnId, batchCall, result.value)
       }
 
       if (suppressedAfterBatch) {
-        await this.persistSuppressedToolCall({
+        await this.toolExecution.persistSuppressed({
           threadId: input.threadId,
           turnId: input.turnId,
           call: suppressedAfterBatch.call,
@@ -2155,209 +2163,6 @@ export class AgentLoop {
     }
 
     return executedAny ? 'continue' : 'all_suppressed'
-  }
-
-  private async executeToolCall(input: {
-    threadId: string
-    turnId: string
-    call: ToolCallLike
-    context: ToolHostContext
-  }): Promise<ToolHostResult> {
-    return this.opts.inflight.run(
-      {
-        id: `inflight_${input.threadId}_${input.turnId}_${input.call.callId}`,
-        kind: 'tool',
-        threadId: input.threadId,
-        turnId: input.turnId,
-        callId: input.call.callId
-      },
-      async () => {
-        try {
-          return await this.opts.toolHost.execute(input.call, input.context, async (item) => {
-            const existing = await this.opts.turns.updateItem(input.threadId, item.id, {
-              output: item.kind === 'tool_result' ? item.output : undefined,
-              isError: item.kind === 'tool_result' ? item.isError : undefined,
-              status: 'running'
-            } as Partial<TurnItem>)
-            if (existing) return
-            await this.opts.turns.applyItem(input.threadId, item)
-          })
-        } catch (error) {
-          if (input.context.abortSignal.aborted || !this.isRecoverableToolDispatchError(error)) {
-            throw error
-          }
-          const message = error instanceof Error ? error.message : String(error)
-          const planActive =
-            input.context.threadMode === 'plan' || Boolean(input.context.guiPlan)
-          const guidance = planActive
-            ? `\`${input.call.toolName}\` is not available in Plan mode. Do NOT try to write deliverable files now. Call \`create_plan\` and put a COMPLETE implementation plan in its \`markdown\` argument — concrete steps, the files to create with their intended contents, and how to verify. Do NOT copy this message into the plan; write the actual plan. If the request is still ambiguous, ask the user a clarifying question and wait instead.`
-            : 'Use only tools advertised in the current turn context.'
-          await this.opts.events.record({
-            kind: 'error',
-            threadId: input.threadId,
-            turnId: input.turnId,
-            message: `Tool call ${input.call.toolName} was rejected: ${message}`,
-            code: 'tool_dispatch_rejected',
-            severity: 'warning'
-          })
-          return {
-            item: makeToolResultItem({
-              id: `item_${input.call.callId}`,
-              turnId: input.turnId,
-              threadId: input.threadId,
-              callId: input.call.callId,
-              toolName: input.call.toolName,
-              toolKind: input.call.toolKind ?? 'tool_call',
-              output: {
-                code: 'tool_dispatch_rejected',
-                error: message,
-                guidance
-              },
-              isError: true
-            }),
-            approved: false
-          }
-        }
-      }
-    )
-  }
-
-  /**
-   * A crashing tool handler must surface as an error tool_result the
-   * model can react to, not kill the whole turn. Only turn aborts are
-   * allowed to propagate.
-   */
-  private async executeToolCallSafely(input: {
-    threadId: string
-    turnId: string
-    call: ToolCallLike
-    context: ToolHostContext
-  }): Promise<ToolHostResult> {
-    try {
-      return await this.executeToolCall(input)
-    } catch (error) {
-      if (input.context.abortSignal.aborted) throw error
-      const message = error instanceof Error ? error.message : String(error)
-      await this.opts.events.record({
-        kind: 'error',
-        threadId: input.threadId,
-        turnId: input.turnId,
-        message: `Tool call ${input.call.toolName} failed: ${message}`,
-        code: 'tool_execution_failed',
-        severity: 'warning'
-      })
-      return {
-        item: makeToolResultItem({
-          id: `item_${input.call.callId}`,
-          turnId: input.turnId,
-          threadId: input.threadId,
-          callId: input.call.callId,
-          toolName: input.call.toolName,
-          toolKind: input.call.toolKind ?? 'tool_call',
-          output: {
-            code: 'tool_execution_failed',
-            error: message,
-            guidance:
-              'The tool crashed while executing. Adjust the arguments or take a different approach instead of retrying the identical call.'
-          },
-          isError: true
-        }),
-        approved: false
-      }
-    }
-  }
-
-  private isRecoverableToolDispatchError(error: unknown): boolean {
-    const message = error instanceof Error ? error.message : String(error)
-    return (
-      message.startsWith('unknown tool:') ||
-      message.includes(' is not provided by ') ||
-      message.includes(' is not advertised') ||
-      message.includes(' is disabled by policy')
-    )
-  }
-
-  private async persistToolCallResult(
-    threadId: string,
-    turnId: string,
-    call: ToolCallLike,
-    result: ToolHostResult
-  ): Promise<void> {
-    await this.opts.turns.updateItem(threadId, `item_tool_${turnId}_${call.callId}`, {
-      status: result.item.kind === 'tool_result' && result.item.isError ? 'failed' : 'completed',
-      finishedAt: this.opts.nowIso()
-    } as Partial<TurnItem>)
-    await this.opts.turns.applyItem(threadId, result.item)
-    await this.afterToolResultPersisted(threadId, turnId, call, result)
-  }
-
-  private async afterToolResultPersisted(
-    threadId: string,
-    turnId: string,
-    call: ToolCallLike,
-    result: ToolHostResult
-  ): Promise<void> {
-    if (call.toolName !== CREATE_PLAN_TOOL_NAME) return
-    if (result.item.kind !== 'tool_result' || result.item.isError === true) return
-    const output = result.item.output
-    if (!output || typeof output !== 'object') return
-    const record = output as Record<string, unknown>
-    const planId = typeof record.plan_id === 'string' ? record.plan_id : ''
-    const relativePath = typeof record.relative_path === 'string' ? record.relative_path : ''
-    const markdown = typeof call.arguments.markdown === 'string' ? call.arguments.markdown : ''
-    if (!planId || !relativePath || !markdown) return
-    try {
-      await this.opts.onPlanWritten?.({
-        threadId,
-        turnId,
-        planId,
-        relativePath,
-        markdown
-      })
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      await this.opts.events.record({
-        kind: 'error',
-        threadId,
-        turnId,
-        message: `Failed to sync plan checklist to thread todos: ${message}`,
-        code: 'todo_plan_sync_failed',
-        severity: 'warning'
-      })
-    }
-  }
-
-  private async persistSuppressedToolCall(input: {
-    threadId: string
-    turnId: string
-    call: ToolCallLike
-    reason?: string
-  }): Promise<void> {
-    const item = makeToolResultItem({
-      id: `item_${input.call.callId}_storm`,
-      turnId: input.turnId,
-      threadId: input.threadId,
-      callId: input.call.callId,
-      toolName: input.call.toolName,
-      toolKind: input.call.toolKind ?? 'tool_call',
-      output: { error: input.reason ?? 'duplicate tool call suppressed by repeat-loop guard' },
-      isError: true
-    })
-    const message = input.reason ?? 'duplicate tool call suppressed by repeat-loop guard'
-    await this.opts.turns.updateItem(input.threadId, `item_tool_${input.turnId}_${input.call.callId}`, {
-      status: 'failed',
-      finishedAt: this.opts.nowIso()
-    } as Partial<TurnItem>)
-    await this.opts.turns.applyItem(input.threadId, item)
-    await this.opts.events.record({
-      kind: 'tool_storm_suppressed',
-      threadId: input.threadId,
-      turnId: input.turnId,
-      itemId: item.id,
-      toolName: input.call.toolName,
-      callId: input.call.callId,
-      message
-    })
   }
 
   private async compactIfNeeded(
