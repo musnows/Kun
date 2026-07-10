@@ -1,4 +1,4 @@
-import { readFile, writeFile } from 'node:fs/promises'
+import { readFile, realpath, writeFile } from 'node:fs/promises'
 import { isAbsolute, relative, resolve } from 'node:path'
 import type { ThreadStore, ThreadStoreListOptions } from '../ports/thread-store.js'
 import type { SessionStore } from '../ports/session-store.js'
@@ -435,7 +435,7 @@ export class ThreadService {
     }
 
     for (const [relativePath, items] of byRelativePath) {
-      const absolutePath = resolveWorkspaceRelativePath(current.workspace, relativePath)
+      const absolutePath = await resolveWorkspaceRelativePath(current.workspace, relativePath)
       await withFileMutationQueue(absolutePath, async () => {
         let markdown = await readFile(absolutePath, 'utf-8')
         let changed = false
@@ -760,9 +760,18 @@ function cloneTodoListForThread(todos: ThreadTodoList, threadId: string, now: st
   }
 }
 
-function resolveWorkspaceRelativePath(workspace: string, relativePath: string): string {
-  const root = resolve(workspace)
-  const target = resolve(root, relativePath)
+async function resolveWorkspaceRelativePath(workspace: string, relativePath: string): Promise<string> {
+  const lexicalRoot = resolve(workspace)
+  const lexicalTarget = resolve(lexicalRoot, relativePath)
+  const lexicalRelative = relative(lexicalRoot, lexicalTarget)
+  if (!lexicalRelative || lexicalRelative.startsWith('..') || isAbsolute(lexicalRelative)) {
+    throw new Error(`plan path escapes workspace: ${relativePath}`)
+  }
+
+  // The plan path is always an existing Markdown file by the time TODO state
+  // is written back. Resolve both ends before opening it so a symlinked
+  // `.kunsdd/plan` cannot redirect a status update outside the workspace.
+  const [root, target] = await Promise.all([realpath(lexicalRoot), realpath(lexicalTarget)])
   const fromRoot = relative(root, target)
   if (!fromRoot || fromRoot.startsWith('..') || isAbsolute(fromRoot)) {
     throw new Error(`plan path escapes workspace: ${relativePath}`)

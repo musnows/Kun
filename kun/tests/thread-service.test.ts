@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { InMemorySessionStore } from '../src/adapters/in-memory-session-store.js'
@@ -472,6 +472,48 @@ describe('ThreadService todos', () => {
       expect(events.some((event) => event.kind === 'todos_updated')).toBe(true)
     } finally {
       await rm(workspace, { recursive: true, force: true })
+    }
+  })
+
+  it('refuses to patch a plan path that escapes through a symlink', async () => {
+    const workspace = await mkdtemp(join(tmpdir(), 'kun-todos-workspace-'))
+    const outside = await mkdtemp(join(tmpdir(), 'kun-todos-outside-'))
+    try {
+      const relativePath = '.kunsdd/plan/demo.md'
+      const planDir = join(workspace, '.kunsdd', 'plan')
+      const planPath = join(planDir, 'demo.md')
+      const markdown = '# Plan\n\n- [ ] Keep this private\n'
+      await mkdir(planDir, { recursive: true })
+      await writeFile(planPath, markdown, 'utf-8')
+
+      const { service } = buildService()
+      await service.create(
+        { workspace, model: 'deepseek-chat', mode: 'agent' },
+        { id: 'thr_todos_symlink', title: 'Todos' }
+      )
+      const synced = await service.syncTodosFromPlan('thr_todos_symlink', {
+        planId: 'plan_1',
+        relativePath,
+        markdown
+      })
+
+      const outsidePlan = join(outside, 'demo.md')
+      await writeFile(outsidePlan, markdown, 'utf-8')
+      await rm(planDir, { recursive: true, force: true })
+      await symlink(outside, planDir, 'dir')
+
+      await expect(service.setTodos('thr_todos_symlink', {
+        todos: synced.items.map((item) => ({
+          id: item.id,
+          content: item.content,
+          status: 'completed' as const,
+          source: item.source
+        }))
+      })).rejects.toThrow(/plan path escapes workspace/)
+      await expect(readFile(outsidePlan, 'utf-8')).resolves.toBe(markdown)
+    } finally {
+      await rm(workspace, { recursive: true, force: true })
+      await rm(outside, { recursive: true, force: true })
     }
   })
 })
