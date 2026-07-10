@@ -66,6 +66,14 @@ export function buildEventStreamResponse(input: {
       try {
         let lastDeliveredSeq = sinceSeq
         const deliver = (event: RuntimeEvent): void => {
+          // During persisted replay the reader has not necessarily attached yet,
+          // so backpressure is not meaningful. Once live, retaining arbitrary
+          // events for a stalled client is worse than closing it: the client can
+          // replay the durable gap from its last cursor.
+          if (!replaying && controller.desiredSize !== null && controller.desiredSize <= 0) {
+            close()
+            return
+          }
           if (typeof event.seq === 'number') {
             if (event.seq <= lastDeliveredSeq) return
             lastDeliveredSeq = event.seq

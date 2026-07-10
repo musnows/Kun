@@ -96,4 +96,33 @@ describe('event stream replay', () => {
     expect(new TextDecoder().decode(first.value)).toContain('SSE replay overflow')
     await expect(reader.read()).resolves.toMatchObject({ done: true })
   })
+
+  it('closes a stalled live SSE client instead of accumulating events', async () => {
+    let subscriber: ((event: RuntimeEvent) => void) | undefined
+    const eventBus: EventBus = {
+      publish: () => undefined,
+      subscribe: (_threadId, handler) => {
+        subscriber = handler
+        return () => { subscriber = undefined }
+      },
+      snapshotSince: () => [], highestSeq: () => 0, reset: () => undefined
+    }
+    const sessionStore = {
+      highestSeq: async () => 0,
+      loadEventsSince: async () => []
+    } as unknown as SessionStore
+    const response = buildEventStreamResponse({
+      request: new Request('http://localhost/v1/threads/thr_events/events?since_seq=0'),
+      threadId: 'thr_events', eventBus, sessionStore
+    })
+
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    subscriber?.({ kind: 'heartbeat', seq: 1, timestamp: '2026-07-10T00:00:00.000Z', threadId: 'thr_events' })
+    subscriber?.({ kind: 'heartbeat', seq: 2, timestamp: '2026-07-10T00:00:01.000Z', threadId: 'thr_events' })
+
+    const reader = response.body!.getReader()
+    const first = await reader.read()
+    expect(new TextDecoder().decode(first.value)).toContain('id: 1')
+    await expect(reader.read()).resolves.toMatchObject({ done: true })
+  })
 })
