@@ -9,6 +9,7 @@
  * file-backed store (persistent, survives restart for replay/audit).
  */
 
+import { randomUUID } from 'node:crypto'
 import { chmod, mkdir, readFile, readdir, rename, rm, writeFile, stat as fsStat, open as fsOpen } from 'node:fs/promises'
 import { join } from 'node:path'
 import { StringDecoder } from 'node:string_decoder'
@@ -191,6 +192,7 @@ export class InMemoryArtifactStore implements ArtifactStore {
 
 export class FileArtifactStore implements ArtifactStore {
   private ready?: Promise<void>
+  private writeQueue: Promise<unknown> = Promise.resolve()
 
   constructor(
     private readonly dir: string,
@@ -221,34 +223,36 @@ export class FileArtifactStore implements ArtifactStore {
       content: input.content,
       maxInlineChars: input.maxInlineChars ?? DEFAULT_MAX_INLINE
     })
-    let deduped = true
-    try {
-      await Promise.all([fsStat(this.contentPath(id)), fsStat(this.metaPath(id))])
-    } catch {
-      deduped = false
-    }
-    let meta: StoredArtifactMeta
-    if (!deduped) {
-      meta = buildMeta(input, id, this.nowIso)
-      await this.enforceQuota(meta.byteSize)
-      const suffix = `${process.pid}.${Date.now()}.tmp`
-      const contentTemporaryPath = `${this.contentPath(id)}.${suffix}`
-      const metaTemporaryPath = `${this.metaPath(id)}.${suffix}`
+    return this.enqueueWrite(async () => {
+      let deduped = true
       try {
-        await writeFile(contentTemporaryPath, input.content, { encoding: 'utf8', mode: 0o600 })
-        await writeFile(metaTemporaryPath, JSON.stringify(meta), { encoding: 'utf8', mode: 0o600 })
-        await rename(contentTemporaryPath, this.contentPath(id))
-        await rename(metaTemporaryPath, this.metaPath(id))
-      } finally {
-        await Promise.all([
-          rm(contentTemporaryPath, { force: true }),
-          rm(metaTemporaryPath, { force: true })
-        ]).catch(() => undefined)
+        await Promise.all([fsStat(this.contentPath(id)), fsStat(this.metaPath(id))])
+      } catch {
+        deduped = false
       }
-    } else {
-      meta = (await this.stat(id)) ?? buildMeta(input, id, this.nowIso)
-    }
-    return { meta, summary, deduped }
+      let meta: StoredArtifactMeta
+      if (!deduped) {
+        meta = buildMeta(input, id, this.nowIso)
+        await this.enforceQuota(meta.byteSize)
+        const suffix = `${process.pid}.${randomUUID()}.tmp`
+        const contentTemporaryPath = `${this.contentPath(id)}.${suffix}`
+        const metaTemporaryPath = `${this.metaPath(id)}.${suffix}`
+        try {
+          await writeFile(contentTemporaryPath, input.content, { encoding: 'utf8', mode: 0o600 })
+          await writeFile(metaTemporaryPath, JSON.stringify(meta), { encoding: 'utf8', mode: 0o600 })
+          await rename(contentTemporaryPath, this.contentPath(id))
+          await rename(metaTemporaryPath, this.metaPath(id))
+        } finally {
+          await Promise.all([
+            rm(contentTemporaryPath, { force: true }),
+            rm(metaTemporaryPath, { force: true })
+          ]).catch(() => undefined)
+        }
+      } else {
+        meta = (await this.stat(id)) ?? buildMeta(input, id, this.nowIso)
+      }
+      return { meta, summary, deduped }
+    })
   }
 
   async get(id: string): Promise<string | null> {
@@ -369,6 +373,13 @@ export class FileArtifactStore implements ArtifactStore {
     if (totalBytes + incomingBytes > maxTotalBytes || metas.length + 1 > maxArtifacts) {
       throw new Error('artifact store quota exceeded; remove unneeded artifacts before retrying')
     }
+  }
+
+  private async enqueueWrite<T>(operation: () => Promise<T>): Promise<T> {
+    const previous = this.writeQueue
+    const run = previous.catch(() => undefined).then(operation)
+    this.writeQueue = run.then(() => undefined, () => undefined)
+    return run
   }
 }
 

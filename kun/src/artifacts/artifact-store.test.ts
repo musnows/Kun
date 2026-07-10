@@ -91,6 +91,22 @@ runStoreContract('FileArtifactStore', async () => {
 })
 
 describe('FileArtifactStore streaming reads', () => {
+  it('serializes concurrent writes so the artifact quota cannot race', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'kun-artifact-quota-'))
+    try {
+      const store = new FileArtifactStore(dir, () => 't0', { maxArtifacts: 1 })
+      const [first, second] = await Promise.allSettled([
+        store.put({ content: 'first artifact' }),
+        store.put({ content: 'second artifact' })
+      ])
+
+      expect([first, second].filter((result) => result.status === 'fulfilled')).toHaveLength(1)
+      expect([first, second].filter((result) => result.status === 'rejected')).toHaveLength(1)
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
   it('writes artifact data and metadata with private filesystem permissions', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'kun-artifact-private-'))
     try {
