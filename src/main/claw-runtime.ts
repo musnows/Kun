@@ -3,9 +3,6 @@ import { randomUUID } from 'node:crypto'
 import { resolve } from 'node:path'
 import { URL } from 'node:url'
 import {
-  createLarkChannel,
-  Domain,
-  LoggerLevel,
   type LarkChannel,
   type NormalizedMessage,
   type SendInput,
@@ -15,7 +12,6 @@ import {
 import type {
   AppSettingsV1,
   ClawGeneratedFileV1,
-  ClawImFeishuPlatformCredentialV1,
   ClawImChannelV1,
   ClawImConversationV1,
   ClawImProvider,
@@ -85,26 +81,15 @@ import {
   setClawConversationModelSelection
 } from './claw-conversation-registry'
 import { authorizeImGeneratedFiles, deliverImGeneratedFiles } from './im-attachment-pipeline'
+import { FeishuTransportAdapter } from './feishu-transport-adapter'
 
 const CLAW_TELEGRAM_INBOUND_IMAGE_HEADING = '[Telegram inbound message]'
-
-type FeishuClawChannel = ClawImChannelV1 & {
-  platformCredential: ClawImFeishuPlatformCredentialV1
-}
 
 type IncomingRemoteSession = Pick<
   ClawImRemoteSessionV1,
   'chatId' | 'messageId' | 'threadId' | 'senderId' | 'senderName'
 >
 
-function hasFeishuPlatformCredential(channel: ClawImChannelV1): channel is FeishuClawChannel {
-  const credential = channel.platformCredential
-  return credential?.kind === 'feishu' &&
-    typeof credential.appId === 'string' &&
-    credential.appId.trim() !== '' &&
-    typeof credential.appSecret === 'string' &&
-    credential.appSecret.trim() !== ''
-}
 
 function isMissingThreadResult(result: { ok: boolean; status: number; body: string }): boolean {
   if (result.ok) return false
@@ -911,9 +896,7 @@ export class ClawRuntime {
   private readonly deps: ClawRuntimeDeps
   private server: Server | null = null
   private serverKey = ''
-  private feishuChannels = new Map<string, LarkChannel>()
-  private feishuChannelKeys = new Map<string, string>()
-  private feishuSyncVersion = 0
+  private readonly feishuTransport: FeishuTransportAdapter
   /** Channels with an in-flight first-message welcome delivery. */
   private readonly welcomeInFlight = new Set<string>()
   /** WeChat channels already greeted (or attempted) at connect time this run. */
@@ -923,11 +906,25 @@ export class ClawRuntime {
 
   constructor(deps: ClawRuntimeDeps) {
     this.deps = deps
+    this.feishuTransport = new FeishuTransportAdapter({
+      logError: deps.logError,
+      onMessage: (channelId, message) => this.handleFeishuMessage(channelId, message),
+      allowedFileDirs: (settings, channel) => [
+        this.resolveChannelWorkspaceRoot(settings, channel),
+        settings.claw.im.workspaceRoot,
+        settings.workspaceRoot
+      ]
+    })
+  }
+
+  /** @internal Legacy characterization seam; lifecycle ownership stays in the adapter. */
+  private get feishuChannels(): Map<string, LarkChannel> {
+    return this.feishuTransport.channelRegistry
   }
 
   sync(settings: AppSettingsV1): void {
     this.syncWebhook(settings)
-    void this.syncFeishuChannels(settings)
+    void this.feishuTransport.sync(settings)
     void this.syncWeixinConnectWelcomes(settings)
     this.syncTelegramChannels(settings)
   }
@@ -1035,7 +1032,7 @@ export class ClawRuntime {
 
   stop(): void {
     this.closeWebhook()
-    void this.closeAllFeishuChannels()
+    void this.feishuTransport.stop()
   }
 
   async status(): Promise<ClawRuntimeStatus> {
@@ -1355,7 +1352,7 @@ export class ClawRuntime {
     if (!channel || !turnId) return
     const canPush =
       (channel.provider === 'weixin' && Boolean(this.deps.sendWeixinBridgeMessage)) ||
-      (channel.provider === 'feishu' && this.feishuChannels.has(channel.id)) ||
+      (channel.provider === 'feishu' && this.feishuTransport.has(channel.id)) ||
       (channel.provider === 'telegram' && Boolean(this.deps.telegramRuntime?.has(channel.id)))
     if (!canPush) return
     const key = `${input.threadId}:${turnId}`
@@ -1441,7 +1438,7 @@ export class ClawRuntime {
       return
     }
     if (channel.provider === 'feishu') {
-      const bridge = this.feishuChannels.get(channel.id)
+      const bridge = this.feishuTransport.get(channel.id)
       if (!bridge) return
       await this.sendFeishuGeneratedFiles(bridge, to, files, {}, {
         ...context,
@@ -1490,7 +1487,7 @@ export class ClawRuntime {
       return
     }
     if (channel.provider === 'feishu') {
-      const bridge = this.feishuChannels.get(channel.id)
+      const bridge = this.feishuTransport.get(channel.id)
       const to = remoteSession?.chatId.trim() || channel.remoteSession?.chatId.trim() || ''
       if (!bridge || !to) return
       await this.sendFeishuMessage(
@@ -2083,15 +2080,6 @@ export class ClawRuntime {
     return result
   }
 
-  private resolveFeishuChannels(settings: AppSettingsV1): FeishuClawChannel[] {
-    if (!settings.claw.enabled) return []
-    return settings.claw.channels.filter(
-      (channel): channel is FeishuClawChannel =>
-        channel.enabled &&
-        channel.provider === 'feishu' &&
-        hasFeishuPlatformCredential(channel)
-    )
-  }
 
   private buildFeishuRemoteSession(message: NormalizedMessage): ClawImRemoteSessionV1 {
     return {
@@ -2142,7 +2130,6 @@ export class ClawRuntime {
       }
     })
   }
-
   private async sendFeishuMessage(
     bridge: LarkChannel,
     to: string,
@@ -2150,42 +2137,7 @@ export class ClawRuntime {
     options: SendOptions,
     context: Record<string, unknown>
   ): Promise<SendResult> {
-    try {
-      return await bridge.send(to, input, options)
-    } catch (error) {
-      const initialMessage = errorMessage(error)
-      if (!options.replyTo) {
-        this.deps.logError('claw-feishu', 'Failed to send Feishu / Lark message', {
-          ...context,
-          message: initialMessage,
-          to
-        })
-        throw error
-      }
-
-      this.deps.logError('claw-feishu', 'Failed to send Feishu / Lark reply; falling back to plain chat message.', {
-        ...context,
-        message: initialMessage,
-        replyTo: options.replyTo,
-        replyInThread: options.replyInThread,
-        to
-      })
-      try {
-        return await bridge.send(to, input, {
-          ...options,
-          replyTo: undefined,
-          replyInThread: undefined
-        })
-      } catch (fallbackError) {
-        this.deps.logError('claw-feishu', 'Failed to send Feishu / Lark fallback message', {
-          ...context,
-          initialMessage,
-          message: errorMessage(fallbackError),
-          to
-        })
-        throw fallbackError
-      }
-    }
+    return this.feishuTransport.send(bridge, to, input, options, context)
   }
 
   private async resolveImGeneratedFiles(
@@ -2352,7 +2304,7 @@ export class ClawRuntime {
     if (!conversation?.chatId.trim()) {
       return { ok: false, message: 'No target Feishu / Lark conversation is available yet.' }
     }
-    const bridge = this.feishuChannels.get(channel.id)
+    const bridge = this.feishuTransport.get(channel.id)
     if (!bridge) {
       return { ok: false, message: 'Feishu / Lark bridge is not connected.' }
     }
@@ -2571,7 +2523,7 @@ export class ClawRuntime {
   }
 
   private async handleFeishuMessage(channelId: string, message: NormalizedMessage): Promise<void> {
-    const bridge = this.feishuChannels.get(channelId)
+    const bridge = this.feishuTransport.get(channelId)
     const settings = await this.deps.store.load()
     const channel = settings.claw.channels.find((item) => item.id === channelId && item.enabled)
     if (!bridge || !channel) return
@@ -3023,134 +2975,6 @@ export class ClawRuntime {
     }
   }
 
-  private async syncFeishuChannels(settings: AppSettingsV1): Promise<void> {
-    const version = ++this.feishuSyncVersion
-    const targets = this.resolveFeishuChannels(settings)
-    const targetMap = new Map(targets.map((channel) => [channel.id, channel]))
-
-    await Promise.all(
-      [...this.feishuChannels.keys()]
-        .filter((channelId) => !targetMap.has(channelId))
-        .map((channelId) => this.closeFeishuChannel(channelId))
-    )
-    if (version !== this.feishuSyncVersion) return
-
-    for (const target of targets) {
-      const appId = target.platformCredential!.appId.trim()
-      const appSecret = target.platformCredential!.appSecret.trim()
-      const domain = target.platformCredential!.domain.trim().toLowerCase() === 'lark' ? 'lark' : 'feishu'
-      const allowedFileDirs = [
-        this.resolveChannelWorkspaceRoot(settings, target),
-        settings.claw.im.workspaceRoot,
-        settings.workspaceRoot
-      ]
-        .map((entry) => entry.trim())
-        .filter((entry, index, entries) => entry && entries.indexOf(entry) === index)
-      const nextKey = `${target.id}|${appId}|${appSecret}|${domain}|${allowedFileDirs.join('|')}`
-      const currentKey = this.feishuChannelKeys.get(target.id)
-      if (this.feishuChannels.has(target.id) && currentKey === nextKey) continue
-      if (this.feishuChannels.has(target.id)) {
-        await this.closeFeishuChannel(target.id)
-        if (version !== this.feishuSyncVersion) return
-      }
-
-      try {
-        const bridge = createLarkChannel({
-          appId,
-          appSecret,
-          domain: domain === 'lark' ? Domain.Lark : Domain.Feishu,
-          loggerLevel: LoggerLevel.warn,
-          source: 'kun',
-          transport: 'websocket',
-          policy: {
-            dmMode: 'open',
-            requireMention: true,
-            respondToMentionAll: true
-          },
-          ...(allowedFileDirs.length > 0
-            ? { outbound: { allowedFileDirs } }
-            : {})
-        })
-        bridge.on('message', async (message) => {
-          await this.handleFeishuMessage(target.id, message)
-        })
-        bridge.on('error', (error) => {
-          this.deps.logError('claw-feishu', 'Feishu channel error', {
-            message: error.message,
-            code: error.code,
-            channelId: target.id
-          })
-        })
-        bridge.on('reject', (event) => {
-          this.deps.logError('claw-feishu', 'Feishu message rejected by channel policy', {
-            ...event,
-            channelId: target.id
-          })
-        })
-        bridge.on('reconnecting', () => {
-          this.deps.logError('claw-feishu', 'Feishu channel reconnecting', {
-            channelId: target.id
-          })
-        })
-        bridge.on('reconnected', () => {
-          this.deps.logError('claw-feishu', 'Feishu channel reconnected', {
-            channelId: target.id
-          })
-        })
-        // The Feishu / Lark App admin subscribes to `im.message.message_read_v1`
-        // in the developer console. The high-level `bridge.on(...)` API has no
-        // entry for read receipts in its `EventMap`, and the SDK's internal
-        // `EventDispatcher` does not pre-register a handler either — so the
-        // dispatcher emits a `no im.message.message_read_v1 handle` warn on
-        // every receipt. Register a no-op here to silence the warn until we
-        // have product behavior for read receipts.
-        //
-        // TODO: replace this no-op with a real handler once we decide what to
-        //       do with read receipts (e.g. track in chat store, update agent
-        //       state, drive read-driven follow-ups).
-        const dispatcher = (bridge as unknown as {
-          dispatcher?: {
-            register(handles: Record<string, (raw: unknown) => Promise<void> | void>): void
-          }
-        }).dispatcher
-        dispatcher?.register({
-          'im.message.message_read_v1': () => {
-            // intentionally empty — see TODO above
-          }
-        })
-        await bridge.connect()
-        if (version !== this.feishuSyncVersion) {
-          await bridge.disconnect().catch(() => undefined)
-          return
-        }
-        this.feishuChannels.set(target.id, bridge)
-        this.feishuChannelKeys.set(target.id, nextKey)
-      } catch (error) {
-        this.deps.logError('claw-feishu', 'Failed to start Feishu channel bridge', {
-          message: error instanceof Error ? error.message : String(error),
-          channelId: target.id
-        })
-      }
-    }
-  }
-
-  private async closeFeishuChannel(channelId: string): Promise<void> {
-    const bridge = this.feishuChannels.get(channelId)
-    if (!bridge) return
-    this.feishuChannels.delete(channelId)
-    this.feishuChannelKeys.delete(channelId)
-    await bridge.disconnect().catch((error) => {
-      this.deps.logError('claw-feishu', 'Failed to stop Feishu channel bridge', {
-        message: error instanceof Error ? error.message : String(error),
-        channelId
-      })
-    })
-  }
-
-  private async closeAllFeishuChannels(): Promise<void> {
-    const ids = [...this.feishuChannels.keys()]
-    await Promise.all(ids.map((channelId) => this.closeFeishuChannel(channelId)))
-  }
 
   private syncWebhook(settings: AppSettingsV1): void {
     const im = settings.claw.im
