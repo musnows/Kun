@@ -12,7 +12,18 @@ const UserInputResolveRequest = z.object({
   cancelled: z.boolean().optional()
 })
 
+const resolutionLocks = new Map<string, Promise<unknown>>()
+
 export async function resolveUserInput(input: {
+  inputId: string
+  request: Request
+  gate: UserInputGate
+  events: RuntimeEventRecorder
+}): Promise<JsonResponse | Response> {
+  return serializeResolution(input.inputId, async () => resolveUserInputLocked(input))
+}
+
+async function resolveUserInputLocked(input: {
   inputId: string
   request: Request
   gate: UserInputGate
@@ -35,10 +46,6 @@ export async function resolveUserInput(input: {
     const validation = validateAnswers(pending.questions, resolution.answers)
     if (validation) return ERRORS.validation(validation)
   }
-  const ok = input.gate.resolve(input.inputId, resolution)
-  if (!ok) {
-    return ERRORS.conflict(`user input already resolved: ${input.inputId}`)
-  }
   await input.events.record({
     kind: 'user_input_resolved',
     threadId: pending.threadId,
@@ -50,11 +57,27 @@ export async function resolveUserInput(input: {
     questions: pending.questions,
     ...(resolution.status === 'submitted' ? { answers: resolution.answers } : {})
   })
+  const ok = input.gate.resolve(input.inputId, resolution)
+  if (!ok) {
+    return ERRORS.conflict(`user input already resolved: ${input.inputId}`)
+  }
   return jsonResponse({
     inputId: input.inputId,
     status: resolution.status,
     ...(resolution.status === 'submitted' ? { answers: resolution.answers } : {})
   })
+}
+
+async function serializeResolution<T>(inputId: string, operation: () => Promise<T>): Promise<T> {
+  const previous = resolutionLocks.get(inputId) ?? Promise.resolve()
+  const run = previous.catch(() => undefined).then(operation)
+  const guard = run.then(() => undefined, () => undefined)
+  resolutionLocks.set(inputId, guard)
+  try {
+    return await run
+  } finally {
+    if (resolutionLocks.get(inputId) === guard) resolutionLocks.delete(inputId)
+  }
 }
 
 function validateAnswers(questions: readonly UserInputQuestion[], answers: readonly UserInputAnswer[]): string | null {

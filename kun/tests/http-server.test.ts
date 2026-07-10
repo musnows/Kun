@@ -1089,6 +1089,26 @@ describe('HTTP server', () => {
     expect(events.filter((event) => event.kind === 'user_input_resolved')).toHaveLength(2)
   })
 
+  it('serializes concurrent resolutions for the same GUI user input', async () => {
+    const h = buildHarness()
+    const pending = h.userInputGate.request({
+      id: 'in_race', threadId: 'thr_1', turnId: 'turn_1', itemId: 'item_in_race', prompt: 'Pick one', questions: []
+    })
+    const request = () => dispatchRequest(h.router, new Request('http://localhost/v1/user-inputs/in_race', {
+      method: 'POST',
+      headers: { authorization: 'Bearer tok-1', 'content-type': 'application/json' },
+      body: JSON.stringify({ answers: [{ id: 'choice', label: 'Yes', value: 'yes' }] })
+    }))
+
+    const [first, second] = await Promise.all([request(), request()])
+    expect([first.status, second.status].sort()).toEqual([200, 404])
+    await expect(pending).resolves.toEqual({
+      status: 'submitted', answers: [{ id: 'choice', label: 'Yes', value: 'yes' }]
+    })
+    const events = await h.sessionStore.loadEventsSince('thr_1', 0)
+    expect(events.filter((event) => event.kind === 'user_input_resolved')).toHaveLength(1)
+  })
+
   it('rejects answers that do not match pending user input questions', async () => {
     const h = buildHarness()
     const pending = h.userInputGate.request({

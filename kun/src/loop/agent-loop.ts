@@ -2239,17 +2239,22 @@ export class AgentLoop {
       finishedAt: this.opts.nowIso(),
       ...(resolution.status === 'submitted' ? { answers: resolution.answers } : {})
     } as Partial<TurnItem>)
-    await this.opts.events.record({
-      kind: 'user_input_resolved',
-      threadId,
-      turnId,
-      itemId: item.id,
-      inputId: input.id,
-      status: resolution.status,
-      prompt: input.prompt,
-      questions: input.questions,
-      ...(resolution.status === 'submitted' ? { answers: resolution.answers } : {})
-    })
+    const alreadyRecorded = (await this.opts.sessionStore.loadEventsSince(threadId, 0)).some(
+      (event) => event.kind === 'user_input_resolved' && event.inputId === input.id
+    )
+    if (!alreadyRecorded) {
+      await this.opts.events.record({
+        kind: 'user_input_resolved',
+        threadId,
+        turnId,
+        itemId: item.id,
+        inputId: input.id,
+        status: resolution.status,
+        prompt: input.prompt,
+        questions: input.questions,
+        ...(resolution.status === 'submitted' ? { answers: resolution.answers } : {})
+      })
+    }
     return resolution
   }
 

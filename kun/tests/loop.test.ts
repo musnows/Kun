@@ -1334,7 +1334,7 @@ describe('AgentLoop', () => {
     })
     const events = await h.sessionStore.loadEventsSince(h.threadId, 0)
     expect(events.some((event) => event.kind === 'user_input_requested')).toBe(true)
-    expect(events.some((event) => event.kind === 'user_input_resolved')).toBe(true)
+    expect(events.filter((event) => event.kind === 'user_input_resolved')).toHaveLength(1)
   })
 
   it('uses the thread approval policy when executing auto tools', async () => {
