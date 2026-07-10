@@ -7,10 +7,7 @@ import { isToolResultBridgeItem, repairModelHistoryItems } from '../../domain/mo
 import { extractToolResultImages, toolResultTextWithoutImages } from '../../loop/tool-result-image.js'
 import { repairToolArguments } from './tool-argument-repair.js'
 import { isDeepSeekHost, probeDeepSeekReachable } from './model-error-probe.js'
-import {
-  DEFAULT_MODEL_REQUEST_RETRY_CONFIG,
-  type ModelRequestRetryConfig
-} from '../../config/kun-config.js'
+import type { ModelRequestRetryConfig } from '../../config/kun-config.js'
 import {
   DEFAULT_MODEL_ENDPOINT_FORMAT,
   isCustomModelEndpointFormat,
@@ -31,6 +28,11 @@ import {
   type PendingToolCall
 } from './model-stream-resource-budget.js'
 import { normalizeCompatUsage } from './compat-usage-normalizer.js'
+import {
+  normalizeModelRequestRetryConfig,
+  retryDelayMs,
+  sleepWithAbort
+} from './compat-retry-policy.js'
 
 export {
   DEFAULT_MODEL_STREAM_LIMITS,
@@ -2503,72 +2505,6 @@ function normalizeReasoningEffortValue(effort: string | undefined): NormalizedRe
   }
 }
 
-function normalizeModelRequestRetryConfig(input: ModelRequestRetryConfig | undefined): {
-  maxAttempts: number
-  initialDelayMs: number
-  httpStatusCodes: number[]
-} {
-  const defaults = DEFAULT_MODEL_REQUEST_RETRY_CONFIG
-  return {
-    maxAttempts: boundedNonNegativeInteger(input?.maxAttempts, defaults.maxAttempts, 10),
-    initialDelayMs: boundedNonNegativeInteger(input?.initialDelayMs, defaults.initialDelayMs, 600_000),
-    httpStatusCodes: normalizeRetryHttpStatusCodes(input?.httpStatusCodes, defaults.httpStatusCodes)
-  }
-}
-
-function normalizeRetryHttpStatusCodes(input: unknown, fallback: readonly number[]): number[] {
-  const values = Array.isArray(input) ? input : fallback
-  const codes = new Set<number>()
-  for (const raw of values) {
-    const code = typeof raw === 'number' ? raw : Number(raw)
-    if (!Number.isInteger(code) || code < 400 || code > 599) continue
-    codes.add(code)
-  }
-  return codes.size > 0 ? [...codes].sort((a, b) => a - b) : [...fallback]
-}
-
-function boundedNonNegativeInteger(value: unknown, fallback: number, max: number): number {
-  const num = typeof value === 'number' ? value : Number(value)
-  if (!Number.isFinite(num)) return fallback
-  return Math.min(max, Math.max(0, Math.round(num)))
-}
-
-function retryDelayMs(response: Response, initialDelayMs: number, attempt: number): number {
-  const retryAfterMs = parseRetryAfterMs(response.headers.get('retry-after'))
-  if (retryAfterMs !== undefined) return retryAfterMs
-  const exponential = Math.min(600_000, initialDelayMs * 2 ** attempt)
-  if (exponential <= 0) return 0
-  return Math.round(exponential * (0.8 + Math.random() * 0.4))
-}
-
-function parseRetryAfterMs(value: string | null): number | undefined {
-  const trimmed = value?.trim()
-  if (!trimmed) return undefined
-  const seconds = Number(trimmed)
-  if (Number.isFinite(seconds) && seconds >= 0) {
-    return Math.min(600_000, Math.round(seconds * 1000))
-  }
-  const dateMs = Date.parse(trimmed)
-  if (!Number.isFinite(dateMs)) return undefined
-  return Math.min(600_000, Math.max(0, dateMs - Date.now()))
-}
-
-/** Sleep `ms`, resolving early to `true` if the signal aborts first. */
-function sleepWithAbort(ms: number, signal: AbortSignal): Promise<boolean> {
-  if (signal.aborted) return Promise.resolve(true)
-  return new Promise<boolean>((resolve) => {
-    let timer: ReturnType<typeof setTimeout>
-    const onAbort = (): void => {
-      clearTimeout(timer)
-      resolve(true)
-    }
-    timer = setTimeout(() => {
-      signal.removeEventListener('abort', onAbort)
-      resolve(false)
-    }, ms)
-    signal.addEventListener('abort', onAbort, { once: true })
-  })
-}
 
 function shouldRetryWithoutStreamUsage(
   status: number,
