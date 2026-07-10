@@ -2532,8 +2532,8 @@ describe('ClawRuntime', () => {
     expect(turnCall).toBeDefined()
     expect(JSON.parse(String(turnCall?.[2]?.body ?? '{}'))).toMatchObject({
       disableUserInput: true,
-      approvalPolicy: 'auto',
-      sandboxMode: 'danger-full-access'
+      approvalPolicy: settings.agents.kun.approvalPolicy,
+      sandboxMode: settings.agents.kun.sandboxMode
     })
   })
 
