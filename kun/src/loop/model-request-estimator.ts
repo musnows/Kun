@@ -1,5 +1,11 @@
 import type { TurnItem } from '../contracts/items.js'
-import type { ModelRequest, ModelTextAttachmentFallback, ModelToolSpec } from '../ports/model-client.js'
+import type {
+  ModelDocumentAttachment,
+  ModelInputAttachment,
+  ModelRequest,
+  ModelTextAttachmentFallback,
+  ModelToolSpec
+} from '../ports/model-client.js'
 import { ContextEstimator } from './context-estimator.js'
 
 const CHARS_PER_TOKEN = 4
@@ -15,6 +21,8 @@ export function estimateModelRequestInputTokens(request: ModelRequest): number {
   tokens += estimateItems(request.history)
   tokens += estimateTools(request.tools)
   tokens += estimateTextFallbacks(request.attachmentTextFallbacks)
+  tokens += estimateDocuments(request.attachmentDocuments)
+  tokens += estimateImageAttachments(request.attachments)
   tokens += estimateText(request.requiredToolName)
   tokens += estimateText(request.reasoningEffort)
   return Math.max(0, tokens)
@@ -70,6 +78,30 @@ function estimateTextFallbacks(fallbacks?: ModelTextAttachmentFallback[]): numbe
       attachment.dataBase64
     ].join('\n'))
   }, 0)
+}
+
+function estimateDocuments(documents?: ModelDocumentAttachment[]): number {
+  if (!documents?.length) return 0
+  return documents.reduce((sum, document) => sum + estimateText([
+    document.name,
+    document.mimeType,
+    document.text
+  ].join('\n')), 0)
+}
+
+/**
+ * Providers meter vision input differently, but the actual base64 payload is
+ * still request context. A text-equivalent estimate is intentionally
+ * conservative: the loop must reject an unsafe request rather than discover a
+ * context overflow after sending private attachments upstream.
+ */
+function estimateImageAttachments(attachments?: ModelInputAttachment[]): number {
+  if (!attachments?.length) return 0
+  return attachments.reduce((sum, attachment) => sum + estimateText([
+    attachment.name,
+    attachment.mimeType,
+    attachment.dataBase64
+  ].join('\n')), 0)
 }
 
 function estimateText(text?: string): number {

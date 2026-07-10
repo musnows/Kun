@@ -1266,6 +1266,20 @@ export class AgentLoop {
         currentTurnId: turnId
       })
     }
+    const inputTokens = estimateModelRequestInputTokens(request)
+    const outputTokens = this.opts.modelCapabilities?.(model).maxOutputTokens ?? 4_096
+    const hardCap = this.opts.compactor.hardCap(model)
+    if (inputTokens + outputTokens > hardCap) {
+      await this.opts.events.record({
+        kind: 'error',
+        threadId,
+        turnId,
+        message: `request exceeds the ${hardCap}-token context cap (${inputTokens} input + ${outputTokens} output budget)`,
+        code: 'context_window_exceeded',
+        severity: 'warning'
+      })
+      return 'failed'
+    }
     if (tokenEconomy.enabled) {
       await this.recordTokenEconomySavings({
         threadId,
