@@ -83,6 +83,15 @@ import {
   tokenEconomyConfigForRuntime,
   toolOutputLimitsConfigForRuntime
 } from './runtime/kun-runtime-model-config'
+import {
+  computerUseConfigForRuntime,
+  imageGenConfigForRuntime,
+  musicGenConfigForRuntime,
+  qualityConfigForRuntime,
+  runtimeTuningConfigForRuntime,
+  speechGenConfigForRuntime,
+  videoGenConfigForRuntime
+} from './runtime/kun-runtime-capability-config'
 
 export type { KunUnexpectedExitInfo } from './runtime/kun-process-controller'
 export { resolveKunStartupTimeoutMs } from './runtime/kun-runtime-health-monitor'
@@ -757,165 +766,6 @@ function stringRecordValue(value: unknown): Record<string, string> {
 
 function positiveIntegerValue(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : undefined
-}
-
-function computerUseConfigForRuntime(
-  computerUse: Pick<KunRuntimeSettingsV1, 'computerUse'>['computerUse'],
-  existing: Record<string, unknown>
-): Record<string, unknown> {
-  // GUI owns enabled/mode/limits. `existing` was already passed through the
-  // strict ComputerUseCapabilityConfig sanitizer, so unknown hand-edited keys
-  // were dropped before reaching here; the spread only carries known fields.
-  return {
-    ...existing,
-    enabled: computerUse.enabled,
-    mode: computerUse.mode,
-    maxImageDimension: computerUse.maxImageDimension,
-    maxActionsPerTurn: computerUse.maxActionsPerTurn
-  }
-}
-
-function imageGenConfigForRuntime(
-  imageGeneration: Pick<KunRuntimeSettingsV1, 'imageGeneration'>['imageGeneration'],
-  existing: Record<string, unknown>
-): Record<string, unknown> {
-  // GUI settings own these fields: cleared values must be removed from the
-  // config (the zod schema rejects empty strings), while unknown hand-edited
-  // keys like maxReferenceImages are preserved via the spread.
-  const next: Record<string, unknown> = {
-    ...existing,
-    enabled: imageGeneration.enabled,
-    timeoutMs: imageGeneration.timeoutMs
-  }
-  const resolvedApiKey = resolveCodexOAuthApiKey(imageGeneration.apiKey)
-  const fields = {
-    protocol: imageGeneration.protocol,
-    baseUrl: imageGeneration.baseUrl,
-    apiKey: resolvedApiKey.apiKey,
-    model: imageGeneration.model,
-    defaultResolution: imageGeneration.defaultResolution,
-    defaultSize: imageGeneration.defaultSize,
-    quality: imageGeneration.quality
-  }
-  for (const [key, value] of Object.entries(fields)) {
-    const trimmed = value.trim()
-    if (trimmed) next[key] = trimmed
-    else delete next[key]
-  }
-  if (resolvedApiKey.headers) next.headers = resolvedApiKey.headers
-  else delete next.headers
-  return next
-}
-
-function speechGenConfigForRuntime(
-  textToSpeech: Pick<KunRuntimeSettingsV1, 'textToSpeech'>['textToSpeech'],
-  existing: Record<string, unknown>
-): Record<string, unknown> {
-  const next: Record<string, unknown> = {
-    ...existing,
-    enabled: textToSpeech.enabled,
-    timeoutMs: textToSpeech.timeoutMs,
-    format: textToSpeech.format
-  }
-  const fields = {
-    protocol: textToSpeech.protocol,
-    baseUrl: textToSpeech.baseUrl,
-    apiKey: textToSpeech.apiKey,
-    model: textToSpeech.model,
-    voice: textToSpeech.voice
-  }
-  for (const [key, value] of Object.entries(fields)) {
-    const trimmed = value.trim()
-    if (trimmed) next[key] = trimmed
-    else delete next[key]
-  }
-  return next
-}
-
-function musicGenConfigForRuntime(
-  musicGeneration: Pick<KunRuntimeSettingsV1, 'musicGeneration'>['musicGeneration'],
-  existing: Record<string, unknown>
-): Record<string, unknown> {
-  const next: Record<string, unknown> = {
-    ...existing,
-    enabled: musicGeneration.enabled,
-    timeoutMs: musicGeneration.timeoutMs,
-    format: musicGeneration.format
-  }
-  const fields = {
-    protocol: musicGeneration.protocol,
-    baseUrl: musicGeneration.baseUrl,
-    apiKey: musicGeneration.apiKey,
-    model: musicGeneration.model
-  }
-  for (const [key, value] of Object.entries(fields)) {
-    const trimmed = value.trim()
-    if (trimmed) next[key] = trimmed
-    else delete next[key]
-  }
-  return next
-}
-
-function videoGenConfigForRuntime(
-  videoGeneration: Pick<KunRuntimeSettingsV1, 'videoGeneration'>['videoGeneration'],
-  existing: Record<string, unknown>
-): Record<string, unknown> {
-  const next: Record<string, unknown> = {
-    ...existing,
-    enabled: videoGeneration.enabled,
-    defaultDuration: videoGeneration.defaultDuration,
-    timeoutMs: videoGeneration.timeoutMs,
-    pollIntervalMs: videoGeneration.pollIntervalMs
-  }
-  const fields = {
-    protocol: videoGeneration.protocol,
-    baseUrl: videoGeneration.baseUrl,
-    apiKey: videoGeneration.apiKey,
-    model: videoGeneration.model,
-    defaultResolution: videoGeneration.defaultResolution
-  }
-  for (const [key, value] of Object.entries(fields)) {
-    const trimmed = value.trim()
-    if (trimmed) next[key] = trimmed
-    else delete next[key]
-  }
-  return next
-}
-
-function runtimeTuningConfigForRuntime(
-  runtimeTuning: Pick<KunRuntimeSettingsV1, 'runtimeTuning'>['runtimeTuning'],
-  existing: Record<string, unknown>
-): Record<string, unknown> {
-  const existingToolStorm = objectValue(existing.toolStorm)
-  const existingToolArgumentRepair = objectValue(existing.toolArgumentRepair)
-  return {
-    ...existing,
-    streamIdleTimeoutMs: runtimeTuning.streamIdleTimeoutMs,
-    toolStorm: {
-      ...existingToolStorm,
-      enabled: runtimeTuning.toolStorm.enabled,
-      windowSize: runtimeTuning.toolStorm.windowSize,
-      threshold: runtimeTuning.toolStorm.threshold
-    },
-    toolArgumentRepair: {
-      ...existingToolArgumentRepair,
-      maxStringBytes: runtimeTuning.toolArgumentRepair.maxStringBytes
-    }
-  }
-}
-
-function qualityConfigForRuntime(
-  quality: Pick<KunRuntimeSettingsV1, 'quality'>['quality'],
-  existing: Record<string, unknown>
-): Record<string, unknown> {
-  return {
-    ...existing,
-    enabled: quality.enabled,
-    strictness: quality.strictness,
-    ignoreRules: [...quality.ignoreRules],
-    ignoreFiles: [...quality.ignoreFiles],
-    maxFindings: quality.maxFindings
-  }
 }
 
 const VALID_PROFILE_REASONING = new Set(['auto', 'low', 'medium', 'high', 'max'])
