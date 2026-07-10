@@ -83,6 +83,36 @@ describe('DelegationRuntime abort handling', () => {
     }
   })
 
+  it('aborts detached children when their parent thread is deleted', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'kun-delegation-'))
+    try {
+      let childSignal: AbortSignal | undefined
+      const runtime = new DelegationRuntime({
+        config: subagentConfig(),
+        store: new FileDelegationStore(dir),
+        executor: async (input) => {
+          childSignal = input.signal
+          await new Promise<void>((resolve) => input.signal.addEventListener('abort', () => resolve(), { once: true }))
+          throw new Error('aborted')
+        }
+      })
+      await runtime.runChild({
+        parentThreadId: 'thr_delete',
+        parentTurnId: 'turn_delete',
+        prompt: 'background work',
+        detach: true,
+        signal: new AbortController().signal
+      })
+
+      await waitFor(() => childSignal !== undefined)
+      expect(runtime.abortDetachedChildrenForThread('thr_other')).toBe(0)
+      expect(runtime.abortDetachedChildrenForThread('thr_delete')).toBe(1)
+      await waitFor(() => childSignal?.aborted === true)
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
   it('wakes the parent thread when a detached child settles after the parent turn was interrupted', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'kun-delegation-'))
     try {

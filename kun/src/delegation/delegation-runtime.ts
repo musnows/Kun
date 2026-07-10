@@ -194,6 +194,8 @@ export class DelegationRuntime {
    * GUI even after the parent turn finished.
    */
   private readonly detachedAborts = new Map<string, AbortController>()
+  /** Parent thread for each live detached child, used by thread deletion. */
+  private readonly detachedParentThreads = new Map<string, string>()
   private runTurn: RunTurnFn | null = null
 
   constructor(private options: {
@@ -333,6 +335,7 @@ export class DelegationRuntime {
       // via abortChild(id).
       const detachedController = new AbortController()
       this.detachedAborts.set(record.id, detachedController)
+      this.detachedParentThreads.set(record.id, input.parentThreadId)
       const logIgnoredParentAbort = (): void => {
         console.warn(`[kun] detached subagent ignored parent abort child=${record.id} parentThread=${input.parentThreadId} parentTurn=${input.parentTurnId}`)
       }
@@ -373,6 +376,7 @@ export class DelegationRuntime {
         .finally(() => {
           input.signal.removeEventListener('abort', logIgnoredParentAbort)
           this.detachedAborts.delete(record.id)
+          this.detachedParentThreads.delete(record.id)
           console.warn(`[kun] detached subagent finished background tracking child=${record.id}`)
         })
       return record
@@ -617,6 +621,21 @@ export class DelegationRuntime {
     controller.abort()
     console.warn(`[kun] detached subagent abort signal fired child=${childId}`)
     return true
+  }
+
+  /**
+   * Abort all live detached children launched from a parent thread. Foreground
+   * children already inherit the parent turn signal; detached children do not,
+   * so deletion must cancel their independent controllers explicitly.
+   */
+  abortDetachedChildrenForThread(parentThreadId: string): number {
+    let aborted = 0
+    for (const [childId, controller] of this.detachedAborts) {
+      if (this.detachedParentThreads.get(childId) !== parentThreadId) continue
+      controller.abort()
+      aborted += 1
+    }
+    return aborted
   }
 
   /**

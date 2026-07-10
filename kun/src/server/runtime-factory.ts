@@ -223,6 +223,7 @@ export async function createKunServeRuntime(
     ]
   })
   let abortThreadExecution: ((threadId: string) => number) | undefined
+  let stopThreadAuxiliaryWork: ((threadId: string) => Promise<void>) | undefined
   const threadService = new ThreadService({
     threadStore,
     deleteThreadStore: rawThreadStore,
@@ -233,8 +234,9 @@ export async function createKunServeRuntime(
     defaultApprovalPolicy: activeOptions.approvalPolicy,
     defaultSandboxMode: activeOptions.sandboxMode,
     lifecycleFence,
-    onDeleting: (threadId) => {
+    onDeleting: async (threadId) => {
       abortThreadExecution?.(threadId)
+      await stopThreadAuxiliaryWork?.(threadId)
     },
     onDeleted: (threadId) => {
       eventStreamRegistry.closeThread(threadId)
@@ -597,6 +599,17 @@ export async function createKunServeRuntime(
 	        : {})
 	    }
 	  }
+
+  // The main turn abort signal already reaches foreground children. Detached
+  // children and background shells intentionally have independent lifetimes,
+  // so a destructive thread delete must cancel them explicitly before the
+  // lifecycle fence drains and removes the thread directory.
+  stopThreadAuxiliaryWork = async (threadId) => {
+    await Promise.allSettled([
+      backgroundShellRuntime.stopThread(threadId),
+      Promise.resolve(delegationRuntime?.abortDetachedChildrenForThread(threadId) ?? 0)
+    ])
+  }
 	  const sdkRuntime = sdkRuntimeDeps ? createAgentSdkRuntime(sdkRuntimeDeps) : undefined
 	  const loopOptions: AgentLoopOptions = {
 	    threadStore,

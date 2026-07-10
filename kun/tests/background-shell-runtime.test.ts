@@ -175,4 +175,27 @@ describe('BackgroundShellRuntime', () => {
     expect(startTurn).not.toHaveBeenCalled()
     expect(runTurn).not.toHaveBeenCalled()
   })
+
+  it('stops only the active shells belonging to a deleted thread', async () => {
+    const stopSession = vi.fn(async () => true)
+    const runtime = new BackgroundShellRuntime({
+      events: { record: vi.fn(async () => undefined) } as unknown as RuntimeEventRecorder,
+      threadStore: {} as ThreadStore,
+      turns: {} as TurnService,
+      nowIso: () => '2026-01-01T00:00:00.000Z'
+    })
+    runtime.bindStopHandler(stopSession)
+    runtime.upsertSession({
+      id: 'delete_me', threadId: 'thr_delete', turnId: 'turn_1', command: 'sleep 10', cwd: '/tmp', shell: 'bash',
+      status: 'running', startedAt: '2026-01-01T00:00:00.000Z', exitCode: null, output: '', detached: true
+    })
+    runtime.upsertSession({
+      id: 'keep_me', threadId: 'thr_keep', turnId: 'turn_2', command: 'sleep 10', cwd: '/tmp', shell: 'bash',
+      status: 'running', startedAt: '2026-01-01T00:00:00.000Z', exitCode: null, output: '', detached: true
+    })
+
+    await expect(runtime.stopThread('thr_delete')).resolves.toBe(1)
+    expect(stopSession).toHaveBeenCalledTimes(1)
+    expect(stopSession).toHaveBeenCalledWith('delete_me')
+  })
 })

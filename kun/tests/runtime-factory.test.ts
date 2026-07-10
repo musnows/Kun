@@ -175,11 +175,15 @@ describe('runtime factory usage carryover', () => {
       )
       const eventStreamRegistry = runtime.eventStreamRegistry
       if (!eventStreamRegistry) throw new Error('expected event stream registry')
+      const backgroundShellRuntime = runtime.backgroundShellRuntime
+      if (!backgroundShellRuntime) throw new Error('expected background shell runtime')
       const closeStream = vi.fn()
       eventStreamRegistry.register(threadId, closeStream)
+      const stopThread = vi.spyOn(backgroundShellRuntime, 'stopThread').mockResolvedValue(0)
       runtime.usageService.record(threadId, usage({ promptTokens: 10, completionTokens: 5 }))
 
       expect(await runtime.threadService.delete(threadId)).toBe(true)
+      expect(stopThread).toHaveBeenCalledWith(threadId)
       expect(closeStream).toHaveBeenCalledTimes(1)
       expect(runtime.eventBus.snapshotSince(threadId, 0)).toEqual([])
       expect(runtime.usageService.forThread(threadId).totalTokens).toBe(0)

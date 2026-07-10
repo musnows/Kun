@@ -61,6 +61,19 @@ export class BackgroundShellRuntime {
     return this.stopHandler(sessionId)
   }
 
+  /**
+   * Stop every live shell owned by one thread. Thread deletion uses this
+   * before its lifecycle fence drains, so a detached command cannot outlive
+   * the conversation that authorized it.
+   */
+  async stopThread(threadId: string): Promise<number> {
+    const runningIds = [...this.sessions.values()]
+      .filter((session) => session.threadId === threadId && session.status === 'running')
+      .map((session) => session.id)
+    await Promise.allSettled(runningIds.map((sessionId) => this.stopSession(sessionId)))
+    return runningIds.length
+  }
+
   /** Stop this runtime's active shells and prevent completion auto-turns. */
   async shutdown(): Promise<void> {
     this.shuttingDown = true
