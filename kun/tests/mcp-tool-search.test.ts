@@ -110,6 +110,45 @@ describe('MCP search provider honors blockedProviderIds', () => {
     expect(callDefault.item).toMatchObject({ kind: 'tool_result', isError: false })
     expect(calls).toEqual(['files/read_file', 'github/create_issue'])
   })
+
+  it('requires approval before refreshing and never refreshes from a blocked child turn', async () => {
+    const calls: string[] = []
+    const records = [record('github', 'read_file', calls)]
+    let refreshes = 0
+    const provider = createMcpSearchProvider({
+      config: SEARCH_CONFIG,
+      state: { records },
+      refreshCatalog: async () => {
+        refreshes += 1
+        return records
+      },
+      isServerAvailable: () => true
+    })
+    const host = new LocalToolHost({
+      registry: new CapabilityRegistry([provider])
+    })
+    const refresh = provider.tools.find((tool) => tool.name === 'mcp_refresh_catalog')
+    expect(refresh).toMatchObject({ policy: 'on-request', toolKind: 'command_execution' })
+
+    const denied = await host.execute(
+      { callId: 'refresh_denied', toolName: 'mcp_refresh_catalog', arguments: {} },
+      ctx({ approvalPolicy: 'on-request', awaitApproval: async () => 'deny' })
+    )
+    expect(denied.item).toMatchObject({
+      kind: 'tool_result',
+      isError: true,
+      output: { code: 'approval_denied' }
+    })
+    expect(refreshes).toBe(0)
+
+    const blocked = ctx({ blockedProviderIds: ['mcp:github'] })
+    expect((await host.listTools(blocked)).map((tool) => tool.name)).not.toContain('mcp_refresh_catalog')
+    await expect(host.execute(
+      { callId: 'refresh_blocked', toolName: 'mcp_refresh_catalog', arguments: {} },
+      blocked
+    )).rejects.toThrow(/not advertised/)
+    expect(refreshes).toBe(0)
+  })
 })
 
 describe('MCP search provider honors workspace visibility roots', () => {

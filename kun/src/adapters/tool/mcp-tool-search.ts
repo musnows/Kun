@@ -324,7 +324,14 @@ function createMcpSearchTools(
         type: 'object',
         properties: {}
       },
-      policy: 'auto',
+      // Refreshing invokes every connected MCP server, so it is an external
+      // command boundary just like mcp_call rather than a local index read.
+      policy: 'on-request',
+      toolKind: 'command_execution',
+      // A child turn can explicitly block individual MCP servers. A catalog
+      // refresh is global state and cannot safely refresh only a subset, so do
+      // not let such a turn contact any MCP server through this back door.
+      shouldAdvertise: (context) => !context.blockedProviderIds?.some((id) => id.startsWith('mcp:')),
       execute: async (_args, context) => {
         const visible = frozenMcpCatalogView(options, catalog, context)
         const records = await options.refreshCatalog()
