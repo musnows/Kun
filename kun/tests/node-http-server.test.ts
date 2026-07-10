@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { startNodeHttpServer } from '../src/server/node-http-server.js'
+import { readJsonBody } from '../src/server/read-json-body.js'
 import { Router } from '../src/server/router.js'
 
 describe('Node HTTP server', () => {
@@ -24,6 +25,28 @@ describe('Node HTTP server', () => {
         message: 'Internal server error.'
       })
       expect(JSON.stringify(body)).not.toContain('private-token')
+    } finally {
+      await server.close()
+    }
+  })
+
+  it('returns a 413 response after rejecting an oversized declared request body', async () => {
+    const router = new Router()
+    router.add('POST', '/body', async (request) => {
+      const body = await readJsonBody(request, 32)
+      return body.ok ? new Response('{}') : body.response
+    })
+    const server = await startNodeHttpServer({ router, host: '127.0.0.1', port: 0 })
+
+    try {
+      const response = await fetch(`http://${server.host}:${server.port}/body`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ text: 'x'.repeat(128) })
+      })
+
+      expect(response.status).toBe(413)
+      await expect(response.json()).resolves.toMatchObject({ code: 'validation_error' })
     } finally {
       await server.close()
     }
