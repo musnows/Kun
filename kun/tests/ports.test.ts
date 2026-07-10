@@ -77,6 +77,21 @@ describe('InMemoryApprovalGate', () => {
     expect(gate.get('a')).toMatchObject({ status: 'expired', reason: 'turn aborted' })
   })
 
+  it('bounds resolved approval retention without evicting pending requests', async () => {
+    const gate = new InMemoryApprovalGate({ resolvedCapacity: 1 })
+    for (const id of ['a', 'b']) {
+      const approval = createApprovalRequest({ id, threadId: 't', turnId: 'u', toolName: 'x', summary: 's' })
+      void gate.request(approval)
+      gate.decide(id, 'deny')
+    }
+    const pending = createApprovalRequest({ id: 'pending', threadId: 't', turnId: 'u', toolName: 'x', summary: 's' })
+    void gate.request(pending)
+
+    expect(gate.get('a')).toBeUndefined()
+    expect(gate.get('b')?.status).toBe('denied')
+    expect(gate.pending()).toEqual([pending])
+  })
+
   it('filters pending by thread', () => {
     const gate = new InMemoryApprovalGate()
     gate.request(
