@@ -30,7 +30,7 @@
 - [ ] 3.3 Extract Chat Completions request codec and stream decoder.
 - [ ] 3.4 Extract Responses request codec and stream decoder.
 - [ ] 3.5 Extract Anthropic Messages request codec and stream decoder.
-- [ ] 3.6 Extract shared usage normalization, retry classification, and diagnostics.
+- [x] 3.6 Extract shared usage normalization, retry classification, and diagnostics.
 - [ ] 3.7 Reduce `CompatModelClient` to endpoint selection, transport, and common
   orchestration and verify byte-equivalent requests.
 

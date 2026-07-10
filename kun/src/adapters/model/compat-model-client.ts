@@ -6,7 +6,7 @@ import type { LlmDebugRound, LlmDebugSink } from '../../services/llm-debug-recor
 import { isToolResultBridgeItem, repairModelHistoryItems } from '../../domain/model-history-repair.js'
 import { extractToolResultImages, toolResultTextWithoutImages } from '../../loop/tool-result-image.js'
 import { repairToolArguments } from './tool-argument-repair.js'
-import { isDeepSeekHost, probeDeepSeekReachable } from './model-error-probe.js'
+import { isDeepSeekHost } from './model-error-probe.js'
 import type { ModelRequestRetryConfig } from '../../config/kun-config.js'
 import {
   DEFAULT_MODEL_ENDPOINT_FORMAT,
@@ -33,6 +33,14 @@ import {
   retryDelayMs,
   sleepWithAbort
 } from './compat-retry-policy.js'
+import {
+  buildCompatRequestHeaders,
+  classifyCompatHttpError,
+  compatHttpFailureLog,
+  redactUrlForLog
+} from './compat-http-diagnostics.js'
+
+export { redactUrlForLog } from './compat-http-diagnostics.js'
 
 export {
   DEFAULT_MODEL_STREAM_LIMITS,
@@ -516,58 +524,22 @@ export class CompatModelClient implements ModelClient {
     endpointFormat: ModelEndpointFormat,
     responsesLite = false
   ): Record<string, string> {
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json'
-    }
-    // `stream: true` is enough for OpenAI-compatible providers to return SSE.
-    // Some Windows Node/Electron paths time out when routing requests with
-    // `Accept: text/event-stream`, while the same stream works without it.
-    if (!stream) headers.Accept = 'application/json'
-    if (this.config.apiKey) {
-      if (endpointFormat === 'messages') {
-        headers.Authorization = `Bearer ${this.config.apiKey}`
-        headers['x-api-key'] = this.config.apiKey
-        headers['anthropic-version'] = '2023-06-01'
-      } else {
-        headers.Authorization = `Bearer ${this.config.apiKey}`
-      }
-    }
-    return {
-      ...headers,
-      ...(this.config.headers ?? {}),
-      ...(responsesLite ? { 'x-openai-internal-codex-responses-lite': 'true' } : {})
-    }
+    return buildCompatRequestHeaders({
+      apiKey: this.config.apiKey,
+      configuredHeaders: this.config.headers,
+      stream,
+      endpointFormat,
+      responsesLite
+    })
   }
 
   private async classifyHttpError(status: number, text: string): Promise<{ message: string; code: string }> {
-    const body = summarizeHttpErrorBody(text)
-    if (status === 404) {
-      const prefix = body ? `${body} ` : ''
-      return {
-        message: `model request failed with status 404: ${prefix}Check your model provider configuration, especially Base URL and Endpoint format.`,
-        code: 'http_404'
-      }
-    }
-    if (status === 429) {
-      return {
-        message: `model request was rate limited (HTTP 429): ${body}`,
-        code: 'rate_limited'
-      }
-    }
-    if (status >= 500 && isDeepSeekHost(this.config.baseUrl)) {
-      const probe = await probeDeepSeekReachable({
-        baseUrl: this.config.baseUrl,
-        fetchImpl: this.fetchImpl
-      })
-      return {
-        message: `model request failed with DeepSeek HTTP ${status}: ${body} ${probe.message}`,
-        code: probe.reachable ? `deepseek_http_${status}` : 'deepseek_unreachable'
-      }
-    }
-    return {
-      message: `model request failed with status ${status}: ${body}`,
-      code: `http_${status}`
-    }
+    return classifyCompatHttpError({
+      status,
+      text,
+      baseUrl: this.config.baseUrl,
+      fetchImpl: this.fetchImpl
+    })
   }
 
   private logHttpFailure(input: {
@@ -578,17 +550,17 @@ export class CompatModelClient implements ModelClient {
     configuredEndpointFormat: ModelEndpointFormat
     model: string
   }): void {
-    console.warn('[kun:model] model HTTP request failed', {
+    console.warn('[kun:model] model HTTP request failed', compatHttpFailureLog({
       provider: this.provider,
       status: input.status,
       model: input.model,
       configuredModel: this.config.model,
-      baseUrl: redactUrlForLog(this.config.baseUrl),
-      requestUrl: redactUrlForLog(input.url),
+      baseUrl: this.config.baseUrl,
+      requestUrl: input.url,
       endpointFormat: input.endpointFormat,
       configuredEndpointFormat: input.configuredEndpointFormat,
-      responseBody: summarizeForLog(input.body)
-    })
+      body: input.body
+    }))
   }
 
   private buildRequestBody(
@@ -2104,45 +2076,6 @@ function exactModelEndpointUrl(baseUrl: string): string {
   return `${trimmed.slice(0, query).replace(/\/+$/, '')}${trimmed.slice(query)}`
 }
 
-export function redactUrlForLog(url: string): string {
-  const trimmed = url.trim()
-  if (!trimmed) return ''
-  try {
-    const parsed = new URL(trimmed)
-    for (const key of [...parsed.searchParams.keys()]) {
-      if (/(key|token|secret|signature|auth|password)/i.test(key)) {
-        parsed.searchParams.set(key, '[redacted]')
-      }
-    }
-    parsed.username = ''
-    parsed.password = ''
-    return parsed.toString()
-  } catch {
-    return trimmed
-      .replace(/^[^:/]+:\/\/[^/@]*@/, (match) => match.replace(/\/\/.*@$/, '//'))
-      .replace(/([?&][^=&]*(?:key|token|secret|signature|auth|password)[^=]*=)[^&#]*/gi, '$1[redacted]')
-  }
-}
-
-function summarizeForLog(text: string): string {
-  const normalized = text.replace(/\s+/g, ' ').trim()
-  return normalized.length > 1_000 ? `${normalized.slice(0, 1_000)}...` : normalized
-}
-
-function summarizeHttpErrorBody(text: string): string {
-  const normalized = text.replace(/\s+/g, ' ').trim()
-  if (!normalized) return ''
-  if (/<html[\s>]/i.test(normalized)) {
-    if (/Enable JavaScript and cookies to continue/i.test(normalized)) {
-      return 'provider returned an HTML challenge page (Enable JavaScript and cookies to continue). Check provider authentication/session and Endpoint format.'
-    }
-    const title = /<title[^>]*>(.*?)<\/title>/i.exec(normalized)?.[1]?.trim()
-    return title
-      ? `provider returned an HTML response (${title})`
-      : 'provider returned an HTML response'
-  }
-  return normalized.length > 1_000 ? `${normalized.slice(0, 1_000)}...` : normalized
-}
 
 function buildChatCompletionsUrl(baseUrl: string): string {
   return buildModelEndpointUrl(baseUrl, 'chat_completions')
