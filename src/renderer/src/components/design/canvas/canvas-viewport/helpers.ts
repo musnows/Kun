@@ -357,5 +357,16 @@ const toolFactories: Record<CanvasTool, () => CanvasToolHandler> = {
 
 export function createCanvasTool(tool: CanvasTool, surface: 'design' | 'code'): CanvasToolHandler {
   if (tool === 'image') return createAiImageTool({ openAssistant: surface === 'design' })
+  if (surface === 'code') {
+    switch (tool) {
+      case 'rect': return createRectTool('diagram')
+      case 'ellipse': return createEllipseTool('diagram')
+      case 'text': return createTextTool('diagram')
+      case 'frame': return createFrameTool('diagram')
+      case 'arrow': return createArrowTool('diagram')
+      case 'line': return createLineTool('diagram')
+      case 'draw': return createDrawTool('diagram')
+    }
+  }
   return toolFactories[tool]()
 }

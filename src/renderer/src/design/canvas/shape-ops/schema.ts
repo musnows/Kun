@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import type { DevicePreset } from '../canvas-types'
+import type { CanvasShapePreset, DevicePreset } from '../canvas-types'
 
 const ShapeTypeSchema = z.enum([
   'rect',
@@ -499,4 +499,6 @@ export type ExecuteOpsOptions = {
    * emits screen ops there, land them as normal editable frames instead.
    */
   screenFallback?: 'plain-frame'
+  /** Apply theme-aware, Excalidraw-like defaults when Code whiteboard ops omit style fields. */
+  shapePreset?: CanvasShapePreset
 }

@@ -34,6 +34,7 @@ import {
   resolveWorkspaceFile,
   pickAndSaveWorkspaceImage,
   saveWorkspaceClipboardImage,
+  saveWorkspaceImageBytes,
   writeWorkspaceFile
 } from './workspace-service'
 
@@ -253,6 +254,58 @@ describe('workspace-service boundary checks', () => {
     expect(result.path).toBe(await realpath(imagePath))
     expect(result.mimeType).toBe('image/png')
     expect(result.dataUrl).toBe('data:image/png;base64,iVBORw==')
+  })
+
+  it('saves renderer image bytes under an exact safe workspace filename', async () => {
+    const bytes = Buffer.from('whiteboard-png')
+    const result = await saveWorkspaceImageBytes({
+      workspaceRoot,
+      imageDirectory: '.deepseekgui-images',
+      fileName: 'architecture-a1b2c3.png',
+      mimeType: 'image/png',
+      dataBase64: bytes.toString('base64')
+    })
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.workspaceRelativePath).toBe('.deepseekgui-images/architecture-a1b2c3.png')
+    await expect(readFile(result.path)).resolves.toEqual(bytes)
+  })
+
+  it('rejects unsafe exact filenames for renderer image bytes', async () => {
+    const result = await saveWorkspaceImageBytes({
+      workspaceRoot,
+      fileName: '../escaped.png',
+      dataBase64: Buffer.from('not-written').toString('base64')
+    })
+
+    expect(result).toEqual({
+      ok: false,
+      message: 'Image fileName must be a safe PNG or SVG basename.'
+    })
+    await expect(readFile(join(rootDir, 'escaped.png'))).rejects.toThrow()
+  })
+
+  it('saves exact SVG image bytes and rejects mismatched MIME metadata', async () => {
+    const svg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><rect width="10" height="10"/></svg>')
+    const result = await saveWorkspaceImageBytes({
+      workspaceRoot,
+      fileName: 'architecture.svg',
+      mimeType: 'image/svg+xml',
+      dataBase64: svg.toString('base64')
+    })
+
+    expect(result.ok).toBe(true)
+    if (result.ok) await expect(readFile(result.path)).resolves.toEqual(svg)
+    await expect(saveWorkspaceImageBytes({
+      workspaceRoot,
+      fileName: 'architecture.svg',
+      mimeType: 'image/png',
+      dataBase64: svg.toString('base64')
+    })).resolves.toEqual({
+      ok: false,
+      message: 'Image mimeType must match the .svg file extension.'
+    })
   })
 
   it('picks workspace images with both html-relative and workspace-relative paths', async () => {

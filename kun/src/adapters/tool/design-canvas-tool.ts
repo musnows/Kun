@@ -5,6 +5,7 @@ export const DESIGN_CANVAS_TOOL_NAME = 'design_canvas'
 export const DESIGN_CREATE_SCREEN_TOOL_NAME = 'design_create_screen'
 export const DESIGN_UPDATE_SHAPES_TOOL_NAME = 'design_update_shapes'
 export const DESIGN_ARRANGE_TOOL_NAME = 'design_arrange'
+export const DESIGN_EXPORT_CANVAS_TOOL_NAME = 'design_export_canvas'
 export const DESIGN_SYSTEM_TOOL_NAME = 'design_system'
 /** @deprecated Source-compatible alias; the advertised tool is now `design_system`. */
 export const DESIGN_SYSTEM_TEMPLATE_TOOL_NAME = DESIGN_SYSTEM_TOOL_NAME
@@ -16,6 +17,7 @@ export const DESIGN_CANVAS_MUTATION_TOOL_NAMES = [
   DESIGN_CREATE_SCREEN_TOOL_NAME,
   DESIGN_UPDATE_SHAPES_TOOL_NAME,
   DESIGN_ARRANGE_TOOL_NAME,
+  DESIGN_EXPORT_CANVAS_TOOL_NAME,
   DESIGN_SYSTEM_TEMPLATE_TOOL_NAME,
   DESIGN_VALIDATE_TOOL_NAME,
   DESIGN_SVG_CREATE_TOOL_NAME
@@ -56,6 +58,7 @@ export function buildDesignCanvasLocalTools(): LocalTool[] {
     createDesignCreateScreenTool(),
     createDesignUpdateShapesTool(),
     createDesignArrangeTool(),
+    createDesignExportCanvasTool(),
     createDesignSystemTemplateTool(),
     createDesignValidateTool(),
     createDesignSvgCreateTool()
@@ -294,6 +297,62 @@ export function createDesignUpdateShapesTool(): LocalTool {
       const ops = normalizeDesignUpdateShapeOps(args)
       if (!ops) return designToolError('design_update_shapes requires ops as an object or array')
       return designToolOutput(DESIGN_UPDATE_SHAPES_TOOL_NAME, 'update_shapes', ops)
+    }
+  })
+}
+
+export function createDesignExportCanvasTool(): LocalTool {
+  return LocalToolHost.defineTool({
+    name: DESIGN_EXPORT_CANVAS_TOOL_NAME,
+    description: [
+      'Export the current Code sidebar whiteboard as a real PNG or SVG workspace file that the GUI can show in the conversation.',
+      'Use this only when the user explicitly asks for an image, PNG, SVG, export, or file copy of the whiteboard.',
+      'Create or update the editable diagram with design_update_shapes first, then call this tool. Do not replace an editable architecture diagram with generate_image.'
+    ].join(' '),
+    // The tool result is a durable renderer request. The renderer performs the
+    // actual file write after the latest shape operations have painted.
+    toolKind: 'file_change',
+    policy: 'auto',
+    shouldAdvertise: (context) => context.guiDesignCanvas === true && context.guiDesignMode !== true,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        format: {
+          type: 'string',
+          enum: ['png', 'svg'],
+          description: 'Export format. Omit it when the user asks for an image; PNG is the default.'
+        },
+        name: {
+          type: 'string',
+          maxLength: 80,
+          description: 'Optional short filename stem. The renderer adds a stable suffix and the selected extension.'
+        }
+      },
+      additionalProperties: false
+    },
+    execute: async (args, context) => {
+      const format = oneOf(args.format, ['png', 'svg']) ?? 'png'
+      const requestedName = stringArg(args.name)?.replace(/\.(?:png|svg)$/i, '')
+      const stem = safeCanvasExportStem(requestedName || 'kun-whiteboard')
+      const suffix = createHash('sha256')
+        .update(`${context.threadId}\0${context.turnId}\0${stem}\0${format}`)
+        .digest('hex')
+        .slice(0, 12)
+      const fileName = `${stem}-${suffix}.${format}`
+      const relativePath = `.deepseekgui-images/${fileName}`
+      const mimeType = format === 'png' ? 'image/png' : 'image/svg+xml'
+
+      return {
+        output: {
+          ok: true,
+          tool: DESIGN_EXPORT_CANVAS_TOOL_NAME,
+          action: 'export_canvas',
+          exportRequest: { format, fileName, relativePath },
+          generatedFiles: [{ name: fileName, relativePath, mimeType }],
+          ops: [],
+          message: `Queued the current whiteboard for ${format.toUpperCase()} export at ${relativePath}.`
+        }
+      }
     }
   })
 }
@@ -737,6 +796,15 @@ function designToolError(error: string): { output: Record<string, unknown>; isEr
 
 function stringArg(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined
+}
+
+function safeCanvasExportStem(value: string): string {
+  const normalized = value
+    .normalize('NFKD')
+    .replace(/[^a-z0-9._-]+/gi, '-')
+    .replace(/^[._-]+|[._-]+$/g, '')
+    .slice(0, 64)
+  return normalized || 'kun-whiteboard'
 }
 
 function numberArg(value: unknown): number | undefined {

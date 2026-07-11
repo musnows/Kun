@@ -81,6 +81,9 @@ describe("design turn prompt code canvas and context guidance", () => {
       expect(prompt).toContain('Code architecture, dependency, data-flow, and debugging diagrams are freeform whiteboard shapes')
       expect(prompt).toContain('In Code mode this creates plain editable frame shapes only; no HTML is generated.')
       expect(prompt).toContain('there is no follow-up HTML generation in Code mode')
+      expect(prompt).toContain('`design_export_canvas`')
+      expect(prompt).toContain('create/update the editable shapes first')
+      expect(prompt).toContain('do not call `generate_image` to redraw or rasterize the architecture diagram')
       expect(prompt).toContain('Code-mode whiteboard override')
       expect(prompt).toContain('creates plain editable frame shapes here')
       expect(prompt).toContain('does NOT trigger follow-up HTML screen generation')
@@ -109,6 +112,8 @@ describe("design turn prompt code canvas and context guidance", () => {
       expect(codePrompt).toContain('Do NOT use `design_create_screen` unless they explicitly ask for a UI screen mockup')
       expect(codePrompt).toContain('services/modules as frames or rects')
       expect(codePrompt).toContain('data/events as arrows')
+      expect(codePrompt).toContain('finish the editable diagram first and then call `design_export_canvas`')
+      expect(codePrompt).toContain('Do not export automatically when the user asked only for an editable diagram')
   
       const designPrompt = buildDesignTurnPrompt({
         target: 'canvas',

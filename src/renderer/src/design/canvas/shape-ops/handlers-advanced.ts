@@ -209,7 +209,12 @@ export function executeAdvancedShapeOp(
       const bounds = collectiveBounds(
         members.map((s) => ({ id: s.id, x: s.x, y: s.y, width: s.width, height: s.height }))
       )
-      const container = createDefaultShape(op.asFrame ? 'frame' : 'group', bounds.x, bounds.y)
+      const container = createDefaultShape(
+        op.asFrame ? 'frame' : 'group',
+        bounds.x,
+        bounds.y,
+        options.shapePreset
+      )
       container.name = op.name ?? 'Stack'
       container.width = bounds.width
       container.height = bounds.height

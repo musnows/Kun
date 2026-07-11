@@ -277,6 +277,12 @@ describe('replayActiveCanvasTurn', () => {
     expect(shouldApplyDesignCanvasToolBlock(completedCall)).toBe(false)
     expect(shouldApplyDesignCanvasToolBlock(finalResult)).toBe(true)
     expect(shouldApplyDesignCanvasToolBlock(legacyResult)).toBe(true)
+    expect(shouldApplyDesignCanvasToolBlock({
+      ...finalResult,
+      id: 'tool-export-1',
+      meta: { toolName: 'design_export_canvas', sourceItemKind: 'tool_result' },
+      detail: '{"ok":true,"action":"export_canvas"}'
+    })).toBe(true)
   })
 })
 

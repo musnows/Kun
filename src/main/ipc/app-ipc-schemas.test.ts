@@ -15,6 +15,7 @@ import {
   workspaceDirectoryTargetPayloadSchema,
   workspaceEntryDeletePayloadSchema,
   workspaceEntryRenamePayloadSchema,
+  workspaceImageBytesSavePayloadSchema,
   workspaceImagePickPayloadSchema,
   writeExportPayloadSchema,
   writeRichClipboardPayloadSchema,
@@ -903,5 +904,17 @@ describe('app-ipc-schemas', () => {
         somethingExtra: 'nope'
       })
     ).toThrow()
+  })
+
+  it('accepts an exact filename for workspace image bytes', () => {
+    expect(workspaceImageBytesSavePayloadSchema.parse({
+      workspaceRoot: '/tmp/workspace',
+      dataBase64: 'aW1hZ2U=',
+      mimeType: 'image/png',
+      imageDirectory: '.deepseekgui-images',
+      fileName: 'architecture-a1b2c3.png'
+    })).toMatchObject({
+      fileName: 'architecture-a1b2c3.png'
+    })
   })
 })

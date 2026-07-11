@@ -337,6 +337,8 @@ export type CanvasTool =
   | 'draw'
   | 'hand'
 
+export type CanvasShapePreset = 'diagram'
+
 export type Rect = { x: number; y: number; width: number; height: number }
 
 export type Point = { x: number; y: number }
@@ -365,7 +367,12 @@ export function createShapeId(): string {
   return `s_${Date.now().toString(36)}_${(++_counter).toString(36)}`
 }
 
-export function createDefaultShape(type: ShapeType, x: number, y: number): CanvasShape {
+export function createDefaultShape(
+  type: ShapeType,
+  x: number,
+  y: number,
+  preset?: CanvasShapePreset
+): CanvasShape {
   const id = createShapeId()
   const base: CanvasShape = {
     id,
@@ -428,7 +435,41 @@ export function createDefaultShape(type: ShapeType, x: number, y: number): Canva
       if (type === 'arrow') base.arrowheadEnd = 'arrow'
       break
   }
+  if (preset === 'diagram') applyDiagramShapeDefaults(base)
   return base
+}
+
+/**
+ * Excalidraw-inspired defaults for the Code whiteboard. `currentColor` keeps
+ * strokes and labels legible in both themes and survives SVG export through the
+ * export root's explicit color style.
+ */
+export function applyDiagramShapeDefaults(shape: CanvasShape): CanvasShape {
+  switch (shape.type) {
+    case 'rect':
+      shape.fills = []
+      shape.strokes = [{ color: 'currentColor', width: 2, opacity: 1, position: 'center', dash: 'solid' }]
+      shape.cornerRadius = 16
+      break
+    case 'ellipse':
+      shape.fills = []
+      shape.strokes = [{ color: 'currentColor', width: 2, opacity: 1, position: 'center', dash: 'solid' }]
+      break
+    case 'frame':
+      shape.fills = []
+      shape.strokes = [{ color: 'currentColor', width: 1.5, opacity: 0.7, position: 'center', dash: 'dashed' }]
+      shape.cornerRadius = 16
+      break
+    case 'text':
+      shape.fontColor = 'currentColor'
+      break
+    case 'arrow':
+    case 'line':
+    case 'draw':
+      shape.strokes = [{ color: 'currentColor', width: 2, opacity: 1, position: 'center', dash: 'solid' }]
+      break
+  }
+  return shape
 }
 
 const DEVICE_DIMENSIONS: Record<DevicePreset, { width: number; height: number }> = {

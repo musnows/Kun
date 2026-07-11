@@ -16,12 +16,11 @@ import {
   type SvgArtifactRequestHandler
 } from './svg-artifact-tool-replay'
 import { designSystemToolRevisionError, persistAppliedDesignSystemTool } from './design-system-tool-replay'
+import { dispatchCanvasExportToolBlock, type CanvasAgentExportRequestHandler } from './canvas-export-tool-replay'
 
 export {
-  hasDispatchedSvgFollowup,
-  shouldApplyDesignCanvasToolBlock,
-  shouldApplyDurableSvgCreate,
-  userTextBeforeToolBlock
+  hasDispatchedSvgFollowup, shouldApplyDesignCanvasToolBlock,
+  shouldApplyDurableSvgCreate, userTextBeforeToolBlock
 } from './svg-artifact-tool-replay'
 
 /** Coalesce per-token `liveAssistant` deltas so we re-parse at most this often. */
@@ -291,7 +290,8 @@ export function useApplyShapeOpsLive(
   executeOptions?: ExecuteOpsOptions,
   errorKey?: string,
   targetThreadId?: string | null,
-  onSvgArtifactRequested?: SvgArtifactRequestHandler
+  onSvgArtifactRequested?: SvgArtifactRequestHandler,
+  onCanvasExportRequested?: CanvasAgentExportRequestHandler
 ): void {
   const onScreenCreatedRef = useRef(onScreenCreated)
   onScreenCreatedRef.current = onScreenCreated
@@ -441,6 +441,7 @@ export function useApplyShapeOpsLive(
           blocks: chatState.blocks
         })
       )
+      if (dispatchCanvasExportToolBlock(block, parsed, appliedToolBlockIds, onCanvasExportRequested)) return
       if (block.meta?.toolName === 'design_svg_create') {
         // A dedicated SVG turn must start only after the canvas turn becomes
         // idle. Otherwise sendMessage puts it into a process-global transient
@@ -693,5 +694,5 @@ export function useApplyShapeOpsLive(
       if (svgDrainTimer) clearTimeout(svgDrainTimer)
       unsubscribe()
     }
-  }, [enabled, executeOptions, errorKey, targetThreadId])
+  }, [enabled, executeOptions, errorKey, targetThreadId, onCanvasExportRequested])
 }

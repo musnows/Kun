@@ -14,6 +14,7 @@ import type { DesignHtmlElementContext } from '../../../design/design-composer-c
 import { useDesignWorkspaceStore } from '../../../design/design-workspace-store'
 import type { DesignRuntimeQualityPayload } from '../../../design/design-html-quality'
 import { CanvasWorkspaceContext } from '../../../design/canvas/canvas-workspace-context'
+import { exportCanvasFromSvg, type CanvasExportFormat } from '../../../design/canvas/canvas-export'
 import {
   handleCanvasKeyDown,
   handleCanvasKeyUp,
@@ -418,13 +419,27 @@ export function CanvasViewport({
   const viewBoxStr = `${vbox.x} ${vbox.y} ${vbox.width} ${vbox.height}`
   const cursor = activeTool === 'hand' ? 'grab' : tool.cursor
   const root = document.objects[document.rootId]
+  const exportCanvas = useCallback(async (format: CanvasExportFormat): Promise<void> => {
+    const sourceSvg = svgRef.current
+    if (!sourceSvg) throw new Error(t('canvasExportUnavailable'))
+    const backgroundColor = containerRef.current
+      ? getComputedStyle(containerRef.current).backgroundColor
+      : '#ffffff'
+    await exportCanvasFromSvg({
+      sourceSvg,
+      document: useCanvasShapeStore.getState().document,
+      format,
+      filename: 'kun-whiteboard',
+      backgroundColor
+    })
+  }, [t])
 
   return (
     <CanvasWorkspaceContext.Provider value={workspaceValue}>
       <div
         ref={rootRef}
         tabIndex={surface === 'code' ? -1 : undefined}
-        className="ds-no-drag relative h-full w-full overflow-hidden bg-[#f8fafc] outline-none dark:bg-[#111318]"
+        className="ds-no-drag relative h-full w-full overflow-hidden bg-[#f8fafc] text-[#1e1e1e] outline-none dark:bg-[#111318] dark:text-[#e9ecef]"
       >
         <div className="pointer-events-none absolute left-3 top-3 z-40 flex min-w-0 items-start">
           <div
@@ -453,6 +468,7 @@ export function CanvasViewport({
             onOpenPrototypePlayer={() => setPrototypePlayerOpen(true)}
             onOpenAgentSettings={onOpenAgentSettings}
             onRequestCanvasCritique={requestCanvasCritique}
+            onExportCanvas={surface === 'code' ? exportCanvas : undefined}
           />
         </div>
         <div
@@ -487,6 +503,7 @@ export function CanvasViewport({
             <svg
               ref={svgRef}
               className="absolute inset-0 h-full w-full"
+              data-canvas-surface={surface}
               viewBox={viewBoxStr}
               xmlns="http://www.w3.org/2000/svg"
               style={{ cursor }}

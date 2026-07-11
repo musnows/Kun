@@ -357,7 +357,7 @@ export function buildCanvasTurnPrompt(options: DesignTurnOptions): string {
     '- CREATE A STANDALONE RASTER IMAGE ASSET — the user asks for a photo, textured/painterly illustration, poster, mascot, or other raster visual material, not a full page/screen. → call `generate_image`, then add/update an `image` shape on the canvas with the saved workspace-relative path. Keep it as a reusable whiteboard asset for later page drafts. Do NOT call `design_create_screen` and do NOT write or edit HTML.',
     ...(codeCanvasMode
       ? [
-          '- MAP CODE / ARCHITECTURE / FLOW — the user asks for system architecture, code structure, module relationships, data flow, API flow, state machine, database/schema map, sequence diagram, dependency graph, implementation plan, or debugging notes. → use `design_update_shapes` / `design_arrange` with normal frames, rects, text, arrows, lines, groups, and auto-layout. Do NOT use `design_create_screen` unless they explicitly ask for a UI screen mockup.'
+          '- MAP CODE / ARCHITECTURE / FLOW — the user asks for system architecture, code structure, module relationships, data flow, API flow, state machine, database/schema map, sequence diagram, dependency graph, implementation plan, or debugging notes. → use `design_update_shapes` / `design_arrange` with normal frames, rects, text, arrows, lines, groups, and auto-layout. Do NOT use `design_create_screen` unless they explicitly ask for a UI screen mockup. If they also ask for an image/PNG/SVG/file, finish the editable diagram first and then call `design_export_canvas`.'
         ]
       : []),
     codeCanvasMode
@@ -384,6 +384,9 @@ export function buildCanvasTurnPrompt(options: DesignTurnOptions): string {
       : '- `design_create_screen`: { "name": "Screen Name", "brief"?, "x"?, "y"?, "width"?, "height"?, "devicePreset"?: "mobile"|"tablet"|"desktop" } OR { "screens": [ ... ] }. Omit width/height/devicePreset unless the user asks for a custom device or breakpoint; omitted x/y are placed in the current viewport, and omitted dimensions follow the current target (Web -> desktop 1280x800, App -> mobile 390x844). The system auto-generates HTML afterwards.',
     '- `design_update_shapes`: { "ops": [ ShapeOp, ... ] }. Edits vector layers/images on the active board.',
     '- `design_arrange`: { "operation": "align"|"distribute"|"stack"|"grid"|"responsive_reflow", ... }. Use for layout mechanics and whiteboard cleanup.',
+    ...(codeCanvasMode
+      ? ['- `design_export_canvas`: { "format"?: "png"|"svg", "name"?: "short-file-stem" }. Call only after the editable diagram exists and only when the user explicitly asks for an image/export/file. PNG is the default.']
+      : []),
     codeCanvasMode
       ? '- `design_system`: { "operation": "create"|"update"|"apply"|"validate", ... }. Updates thread-scoped structured tokens/components without drawing a board.'
       : '- `design_system`: { "operation": "create"|"update"|"apply"|"validate", "expectedHash"?, "name"?, "seedColor"?, "mode"?: "light"|"dark"|"both", "template"?: "app"|"saas"|"game"|"editor"|"mobile"|"portfolio", "tone"?: "clean"|"playful"|"premium"|"technical"|"editorial", "targetIds"? }. Updates root DESIGN.md; pass the exact source hash when known. Its fixed board appears automatically.',
@@ -446,7 +449,8 @@ export function buildCanvasTurnPrompt(options: DesignTurnOptions): string {
       : '- Use `design_create_screen` ONLY when the user actually wants one new screen or a complete multi-screen experience (the two BUILD lanes above). If a filled `image` is selected and the user asked to change / edit / restyle it, do NOT create a screen / add-screen — edit that image instead. Screen creation only creates the frame placeholder; the system will AUTOMATICALLY generate the HTML content for the screen in a follow-up step. Do NOT call write/edit tools to create HTML files in this turn.',
     ...(codeCanvasMode
       ? [
-          '- For code/architecture diagrams, prefer semantic boxes and labeled arrows: services/modules as frames or rects, files/functions as smaller rects, data/events as arrows, notes as text, and related parts grouped with auto-layout. Keep labels short enough to fit.'
+          '- For code/architecture diagrams, prefer semantic boxes and labeled arrows: services/modules as frames or rects, files/functions as smaller rects, data/events as arrows, notes as text, and related parts grouped with auto-layout. Keep labels short enough to fit.',
+          '- `design_export_canvas` exports the actual editable whiteboard rendering. Never substitute `generate_image` for diagram export. Do not export automatically when the user asked only for an editable diagram.'
         ]
       : []),
     '- Coordinates are in CANVAS pixels (not screen pixels); 1 unit ≈ 1px at 100% zoom.',

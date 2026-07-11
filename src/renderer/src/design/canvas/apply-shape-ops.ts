@@ -5,6 +5,7 @@ export const DESIGN_CANVAS_TOOL_NAMES = new Set([
   'design_create_screen',
   'design_update_shapes',
   'design_arrange',
+  'design_export_canvas',
   'design_system_template',
   'design_system',
   'design_validate',

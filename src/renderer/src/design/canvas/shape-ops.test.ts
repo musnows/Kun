@@ -417,6 +417,24 @@ describe('group / ungroup ops', () => {
     expect(doc.objects[b].parentId).toBe(groupId)
   })
 
+  it('keeps diagram styling when grouping nodes into a frame', () => {
+    const added = executeOps([
+      { op: 'add', shape: { type: 'rect', x: 0, y: 0, width: 50, height: 50 } },
+      { op: 'add', shape: { type: 'rect', x: 80, y: 0, width: 50, height: 50 } }
+    ], 'diagram-add', { shapePreset: 'diagram' })
+    const grouped = executeOps([
+      { op: 'group', ids: added.affectedIds, name: 'Services', asFrame: true }
+    ], 'diagram-group', { shapePreset: 'diagram' })
+    const doc = useCanvasShapeStore.getState().document
+    const frame = grouped.affectedIds
+      .map((id) => doc.objects[id])
+      .find((shape) => shape?.type === 'frame')
+
+    expect(frame?.fills).toEqual([])
+    expect(frame?.cornerRadius).toBe(16)
+    expect(frame?.strokes[0]).toMatchObject({ color: 'currentColor', dash: 'dashed' })
+  })
+
   it('ungroup lifts children back to the grandparent and deletes the group', () => {
     const r1 = executeOps([
       { op: 'add', shape: { type: 'rect', x: 0, y: 0, width: 50, height: 50 } },

@@ -12,15 +12,12 @@ import { loadWorkspaceImageDataUrl } from '../../../design/canvas/canvas-image-s
  */
 
 type AnnotationTool = 'pen' | 'arrow' | 'rect' | 'text'
-
 type Point = { x: number; y: number }
-
 type AnnotationOp =
   | { kind: 'pen'; color: string; width: number; points: Point[] }
   | { kind: 'arrow'; color: string; width: number; from: Point; to: Point }
   | { kind: 'rect'; color: string; width: number; from: Point; to: Point }
   | { kind: 'text'; color: string; x: number; y: number; text: string; fontSize: number }
-
 export type ImageAnnotationTextDraft = {
   cssX: number
   cssY: number

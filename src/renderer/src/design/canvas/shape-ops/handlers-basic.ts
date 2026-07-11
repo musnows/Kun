@@ -103,7 +103,7 @@ export function executeBasicShapeOp(
       const { type } = shapeSpec
       const x = shapeSpec.x ?? 0
       const y = shapeSpec.y ?? 0
-      const base = createDefaultShape(type as ShapeType, x, y)
+      const base = createDefaultShape(type as ShapeType, x, y, options.shapePreset)
       // Apply optional overrides from the op (excluding type/x/y already baked in).
       const overrides: Partial<CanvasShape> = { ...shapeSpec }
       delete (overrides as Record<string, unknown>).type
@@ -412,7 +412,12 @@ export function executeBasicShapeOp(
       const bounds = collectiveBounds(
         members.map((s) => ({ id: s.id, x: s.x, y: s.y, width: s.width, height: s.height }))
       )
-      const container = createDefaultShape(op.asFrame ? 'frame' : 'group', bounds.x, bounds.y)
+      const container = createDefaultShape(
+        op.asFrame ? 'frame' : 'group',
+        bounds.x,
+        bounds.y,
+        options.shapePreset
+      )
       container.name = op.name ?? (op.asFrame ? 'Frame' : 'Group')
       container.width = bounds.width
       container.height = bounds.height

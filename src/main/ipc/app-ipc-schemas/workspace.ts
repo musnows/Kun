@@ -216,7 +216,8 @@ export const workspaceImageBytesSavePayloadSchema = z
     workspaceRoot: trimmedString(MAX_PATH_LENGTH),
     dataBase64: z.string().max(MAX_SAVE_FILE_BASE64_BYTES),
     mimeType: optionalTrimmedString(255),
-    imageDirectory: optionalTrimmedString(MAX_PATH_LENGTH)
+    imageDirectory: optionalTrimmedString(MAX_PATH_LENGTH),
+    fileName: optionalTrimmedString(255)
   })
   .strict()
 

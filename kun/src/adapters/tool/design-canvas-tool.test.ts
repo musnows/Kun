@@ -2,12 +2,14 @@ import { describe, expect, it } from 'vitest'
 import {
   createDesignCanvasTool,
   createDesignCreateScreenTool,
+  createDesignExportCanvasTool,
   createDesignSvgCreateTool,
   createDesignSystemTemplateTool,
   createDesignUpdateShapesTool,
   createDesignValidateTool,
   DESIGN_CANVAS_TOOL_NAME,
   DESIGN_CREATE_SCREEN_TOOL_NAME,
+  DESIGN_EXPORT_CANVAS_TOOL_NAME,
   DESIGN_SVG_CREATE_TOOL_NAME,
   DESIGN_SYSTEM_TEMPLATE_TOOL_NAME,
   DESIGN_UPDATE_SHAPES_TOOL_NAME,
@@ -94,6 +96,83 @@ describe('design_canvas tool', () => {
 })
 
 describe('dedicated design tools', () => {
+  it('queues a deterministic renderer-backed whiteboard image export only in Code canvas turns', async () => {
+    const tool = createDesignExportCanvasTool()
+    expect(tool.name).toBe(DESIGN_EXPORT_CANVAS_TOOL_NAME)
+    expect(tool.toolKind).toBe('file_change')
+    expect(tool.shouldAdvertise?.(context(true))).toBe(true)
+    expect(tool.shouldAdvertise?.({ ...context(true), guiDesignMode: true })).toBe(false)
+    expect(tool.shouldAdvertise?.(context(false))).toBe(false)
+    expect(tool.description).toContain('design_update_shapes first')
+
+    const result = await tool.execute({ name: '支付架构图' }, context(true))
+    expect(result.isError).toBeUndefined()
+    expect(result.output).toMatchObject({
+      ok: true,
+      tool: DESIGN_EXPORT_CANVAS_TOOL_NAME,
+      action: 'export_canvas',
+      exportRequest: {
+        format: 'png',
+        fileName: expect.stringMatching(/^kun-whiteboard-[a-f0-9]{12}\.png$/),
+        relativePath: expect.stringMatching(/^\.deepseekgui-images\/kun-whiteboard-[a-f0-9]{12}\.png$/)
+      },
+      generatedFiles: [{
+        name: expect.stringMatching(/\.png$/),
+        relativePath: expect.stringMatching(/^\.deepseekgui-images\/.+\.png$/),
+        mimeType: 'image/png'
+      }],
+      ops: []
+    })
+
+    const replay = await tool.execute({ name: '支付架构图' }, context(true))
+    expect((replay.output as { exportRequest: { relativePath: string } }).exportRequest.relativePath)
+      .toBe((result.output as { exportRequest: { relativePath: string } }).exportRequest.relativePath)
+  })
+
+  it('supports SVG export and is hidden by a read-only sandbox', async () => {
+    const tool = createDesignExportCanvasTool()
+    const result = await tool.execute({ format: 'svg', name: 'API map.svg' }, context(true))
+    expect(result.output).toMatchObject({
+      exportRequest: {
+        format: 'svg',
+        fileName: expect.stringMatching(/^API-map-[a-f0-9]{12}\.svg$/)
+      },
+      generatedFiles: [{ mimeType: 'image/svg+xml' }]
+    })
+
+    const host = new LocalToolHost({ tools: [tool] })
+    const names = (await host.listTools({
+      ...context(true),
+      sandboxMode: 'read-only'
+    })).map((candidate) => candidate.name)
+    expect(names).not.toContain(DESIGN_EXPORT_CANVAS_TOOL_NAME)
+  })
+
+  it('executes the export through the real local tool host in workspace-write mode', async () => {
+    const host = new LocalToolHost({ tools: [createDesignExportCanvasTool()] })
+    const toolContext = { ...context(true), sandboxMode: 'workspace-write' as const }
+    const listed = await host.listTools(toolContext)
+    expect(listed.map((tool) => tool.name)).toContain(DESIGN_EXPORT_CANVAS_TOOL_NAME)
+
+    const result = await host.execute({
+      callId: 'call_export_1',
+      toolName: DESIGN_EXPORT_CANVAS_TOOL_NAME,
+      arguments: { format: 'png', name: 'service-map' }
+    }, toolContext)
+    expect(result.item).toMatchObject({
+      kind: 'tool_result',
+      isError: false,
+      output: {
+        ok: true,
+        action: 'export_canvas',
+        generatedFiles: [{
+          relativePath: expect.stringMatching(/^\.deepseekgui-images\/service-map-.+\.png$/),
+          mimeType: 'image/png'
+        }]
+      }
+    })
+  })
+
   it('creates a first-class SVG handoff only for product Design turns', async () => {
     const tool = createDesignSvgCreateTool()
     const designContext = { ...context(true), guiDesignMode: true }
