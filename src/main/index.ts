@@ -65,7 +65,8 @@ import {
   kunRuntimeAdapter,
   getRuntimeBaseUrlForSettings,
   runtimeAuthHeaders,
-  runtimeRequestViaHost
+  runtimeRequestViaHost,
+  type RuntimeRequestInit
 } from './runtime/kun-adapter'
 import { waitForRuntimeTurnsIdle } from './runtime/managed-runtime-idle'
 import {
@@ -310,9 +311,9 @@ function syncCheckpointCleanupTimer(settings: AppSettingsV1): void {
 const runtimeShutdown = new ManagedRuntimeShutdownCoordinator(async () => {
   scheduleRuntime?.stop()
   workflowRuntime?.stop()
-  clawRuntime?.stop()
+  await clawRuntime?.stop()
   telegramRuntime?.stop()
-  stopWeixinBridgeRuntime()
+  await stopWeixinBridgeRuntime()
   await kunRuntimeAdapter.stopAndWait()
 })
 
@@ -1412,7 +1413,7 @@ async function waitForManagedRuntimeReadyBeforeStop(
 async function runtimeRequest(
   settings: AppSettingsV1,
   pathAndQuery: string,
-  init: { method?: string; body?: string; headers?: Record<string, string> }
+  init: RuntimeRequestInit
 ): Promise<{ ok: boolean; status: number; body: string }> {
   try {
     return await runtimeRequestViaHost(settings, pathAndQuery, init, ensureRuntime)

@@ -839,6 +839,8 @@ export class ClawRuntime {
   private readonly weixinConnectWelcomeAttempted = new Set<string>()
   /** `${threadId}:${turnId}` of turns with an in-flight delayed-result push. */
   private readonly pendingResultPushes = new Set<string>()
+  private readonly resultPushTasks = new Set<Promise<void>>()
+  private readonly stopController = new AbortController()
 
   constructor(deps: ClawRuntimeDeps) {
     this.deps = deps
@@ -870,6 +872,7 @@ export class ClawRuntime {
   }
 
   sync(settings: AppSettingsV1): void {
+    if (this.stopController.signal.aborted) return
     this.syncWebhook(settings)
     void this.feishuTransport.sync(settings)
     void this.syncWeixinConnectWelcomes(settings)
@@ -936,9 +939,11 @@ export class ClawRuntime {
     return imWelcomeText(settings, channel)
   }
 
-  stop(): void {
+  async stop(): Promise<void> {
+    this.stopController.abort()
     this.closeWebhook()
-    void this.feishuTransport.stop()
+    await this.feishuTransport.stop()
+    await Promise.allSettled([...this.resultPushTasks])
   }
 
   async status(): Promise<ClawRuntimeStatus> {
@@ -966,7 +971,7 @@ export class ClawRuntime {
         body.approvalPolicy = runtimeSettings.agents.kun.approvalPolicy
         body.sandboxMode = runtimeSettings.agents.kun.sandboxMode
       }
-      const create = await this.deps.runtimeRequest(runtimeSettings, '/v1/threads', {
+      const create = await this.requestRuntime(runtimeSettings, '/v1/threads', {
         method: 'POST',
         body: JSON.stringify(body)
       })
@@ -975,9 +980,15 @@ export class ClawRuntime {
     }
     const patchThreadTitle = (thread: ThreadRecordJson): void => {
       if (!options.title.trim()) return
-      void this.deps.runtimeRequest(runtimeSettings, `/v1/threads/${encodeURIComponent(thread.id)}`, {
+      void this.requestRuntime(runtimeSettings, `/v1/threads/${encodeURIComponent(thread.id)}`, {
         method: 'PATCH',
         body: JSON.stringify({ title: options.title.trim() })
+      }).catch((error) => {
+        if (this.stopController.signal.aborted) return
+        this.deps.logError('claw-runtime', 'Failed to update the IM thread title.', {
+          threadId: thread.id,
+          message: error instanceof Error ? error.message : String(error)
+        })
       })
     }
     let thread: ThreadRecordJson | null = existingThreadId ? { id: existingThreadId } : await createThread()
@@ -1084,12 +1095,18 @@ export class ClawRuntime {
   }> {
     const deadline = Date.now() + timeoutMs
     while (Date.now() < deadline) {
-      await sleep(1_500)
-      const detailRes = await this.deps.runtimeRequest(
+      await sleep(1_500, this.stopController.signal)
+      if (this.stopController.signal.aborted) {
+        return { status: 'aborted', text: '', files: [], error: 'Claw runtime stopped.' }
+      }
+      const detailRes = await this.requestRuntime(
         settings,
         `/v1/threads/${encodeURIComponent(threadId)}`,
         { method: 'GET' }
       )
+      if (this.stopController.signal.aborted) {
+        return { status: 'aborted', text: '', files: [], error: 'Claw runtime stopped.' }
+      }
       if (!detailRes.ok) {
         throw new Error(runtimeErrorMessage(detailRes, 'Failed to read thread result.'))
       }
@@ -1175,8 +1192,6 @@ export class ClawRuntime {
     responseTimeoutMs: number
     context: Record<string, unknown>
   }): Promise<{ ok: boolean; messageId: string; finalText: string; fellBack: boolean; message: string }> {
-    const cancel = new AbortController()
-    const timeout = setTimeout(() => cancel.abort(), input.responseTimeoutMs)
     const streamer = new FeishuStreamer({
       bridge: input.bridge,
       chatId: input.chatId,
@@ -1185,6 +1200,11 @@ export class ClawRuntime {
       replyOptions: input.replyOptions,
       logger: (category, message, detail) => this.deps.logError(category, message, detail)
     })
+    const stopSignal = this.stopController.signal
+    const stopStreaming = (): void => streamer.abort()
+    if (stopSignal.aborted) stopStreaming()
+    else stopSignal.addEventListener('abort', stopStreaming, { once: true })
+    const timeout = setTimeout(() => streamer.abort(), input.responseTimeoutMs)
     try {
       const settings = await this.deps.store.load()
       const result = await streamer.start({
@@ -1198,6 +1218,15 @@ export class ClawRuntime {
         message: result.ok ? 'streamed' : 'stream_failed'
       }
     } catch (error) {
+      if (stopSignal.aborted) {
+        return {
+          ok: false,
+          messageId: '',
+          finalText: streamer.getAccumulatedText(),
+          fellBack: false,
+          message: 'stopped'
+        }
+      }
       this.deps.logError('claw-feishu-stream', 'Streaming reply failed; falling back to one-shot send.', {
         message: error instanceof Error ? error.message : String(error),
         ...input.context
@@ -1221,8 +1250,20 @@ export class ClawRuntime {
       }
     } finally {
       clearTimeout(timeout)
+      stopSignal.removeEventListener('abort', stopStreaming)
       streamer.dispose()
     }
+  }
+
+  private requestRuntime(
+    settings: AppSettingsV1,
+    pathAndQuery: string,
+    init: { method?: string; body?: string; headers?: Record<string, string> } = {}
+  ): Promise<{ ok: boolean; status: number; body: string }> {
+    return this.deps.runtimeRequest(settings, pathAndQuery, {
+      ...init,
+      signal: this.stopController.signal
+    })
   }
 
   private startRuntimeTurn(
@@ -1230,7 +1271,7 @@ export class ClawRuntime {
     threadId: string,
     turnBody: Record<string, unknown>
   ): Promise<{ ok: boolean; status: number; body: string }> {
-    return this.deps.runtimeRequest(
+    return this.requestRuntime(
       settings,
       `/v1/threads/${encodeURIComponent(threadId)}/turns`,
       { method: 'POST', body: JSON.stringify(turnBody) }
@@ -1256,11 +1297,13 @@ export class ClawRuntime {
   ): void {
     const { channel, turnId } = input
     if (!channel || !turnId) return
+    if (this.stopController.signal.aborted) return
     if (!this.imTransport.canPush(channel)) return
     const key = `${input.threadId}:${turnId}`
     if (this.pendingResultPushes.has(key)) return
     this.pendingResultPushes.add(key)
-    void (async () => {
+    let task: Promise<void>
+    task = (async () => {
       try {
         const outcome = await this.waitForAssistantResult(
           settings,
@@ -1269,6 +1312,7 @@ export class ClawRuntime {
           RESULT_PUSH_MAX_WAIT_MS,
           input.workspaceRoot
         )
+        if (this.stopController.signal.aborted) return
         if (outcome.status === 'timeout') {
           this.deps.logError(
             'claw-im',
@@ -1309,7 +1353,11 @@ export class ClawRuntime {
       } finally {
         this.pendingResultPushes.delete(key)
       }
-    })()
+    })().finally(() => {
+      this.resultPushTasks.delete(task)
+    })
+    this.resultPushTasks.add(task)
+    void task
   }
 
   /** Pushes generated files for a delayed IM turn that finished after the response window. */
@@ -1466,7 +1514,7 @@ export class ClawRuntime {
     settings: AppSettingsV1,
     limit: number
   ): Promise<ThreadRecordJson[]> {
-    const response = await this.deps.runtimeRequest(
+    const response = await this.requestRuntime(
       settings,
       `/v1/threads?limit=${encodeURIComponent(String(limit))}`,
       { method: 'GET' }
@@ -1483,7 +1531,7 @@ export class ClawRuntime {
     settings: AppSettingsV1,
     channel: ClawImChannelV1 | undefined
   ): Promise<ThreadRecordJson[]> {
-    const response = await this.deps.runtimeRequest(
+    const response = await this.requestRuntime(
       settings,
       '/v1/threads?limit=50',
       { method: 'GET' }
@@ -1502,7 +1550,7 @@ export class ClawRuntime {
   }
 
   private async listIncomingImSkills(settings: AppSettingsV1): Promise<{ enabled: boolean; skills: ImSkillSummary[] }> {
-    const response = await this.deps.runtimeRequest(
+    const response = await this.requestRuntime(
       settings,
       '/v1/skills',
       { method: 'GET' }
@@ -1514,7 +1562,7 @@ export class ClawRuntime {
   }
 
   private async listIncomingImMcpServers(settings: AppSettingsV1): Promise<ImMcpServerSummary[]> {
-    const response = await this.deps.runtimeRequest(
+    const response = await this.requestRuntime(
       settings,
       '/v1/runtime/tools',
       { method: 'GET' }
@@ -1526,7 +1574,7 @@ export class ClawRuntime {
   }
 
   private async getIncomingImGoal(settings: AppSettingsV1, threadId: string): Promise<ImGoalSummary | null> {
-    const response = await this.deps.runtimeRequest(
+    const response = await this.requestRuntime(
       settings,
       `/v1/threads/${encodeURIComponent(threadId)}/goal`,
       { method: 'GET' }
@@ -1542,7 +1590,7 @@ export class ClawRuntime {
     threadId: string,
     objective: string
   ): Promise<ImGoalSummary | null> {
-    const response = await this.deps.runtimeRequest(
+    const response = await this.requestRuntime(
       settings,
       `/v1/threads/${encodeURIComponent(threadId)}/goal`,
       {
@@ -1557,7 +1605,7 @@ export class ClawRuntime {
   }
 
   private async getIncomingImThreadDetail(settings: AppSettingsV1, threadId: string): Promise<ThreadDetailJson> {
-    const response = await this.deps.runtimeRequest(
+    const response = await this.requestRuntime(
       settings,
       `/v1/threads/${encodeURIComponent(threadId)}`,
       { method: 'GET' }
@@ -1569,7 +1617,7 @@ export class ClawRuntime {
   }
 
   private async getIncomingImThreadUsage(settings: AppSettingsV1, threadId: string): Promise<ImThreadUsageSummary> {
-    const response = await this.deps.runtimeRequest(
+    const response = await this.requestRuntime(
       settings,
       `/v1/usage?group_by=thread&thread_id=${encodeURIComponent(threadId)}`,
       { method: 'GET' }
@@ -1604,7 +1652,7 @@ export class ClawRuntime {
     const detail = await this.getIncomingImThreadDetail(settings, threadId)
     const turnId = this.runningTurnId(detail)
     if (!turnId) return null
-    const response = await this.deps.runtimeRequest(
+    const response = await this.requestRuntime(
       settings,
       `/v1/threads/${encodeURIComponent(threadId)}/turns/${encodeURIComponent(turnId)}/interrupt`,
       {
@@ -1954,7 +2002,7 @@ export class ClawRuntime {
     const targetThreadId = threadId.trim()
     if (!targetThreadId) return []
     try {
-      const detailRes = await this.deps.runtimeRequest(
+      const detailRes = await this.requestRuntime(
         settings,
         `/v1/threads/${encodeURIComponent(targetThreadId)}`,
         { method: 'GET' }

@@ -253,7 +253,11 @@ describe('ClawRuntime', () => {
       ) => Promise<string | null>
     }).handleIncomingImCommand(settings, { text: '/list-skills' })
 
-    expect(runtimeRequest).toHaveBeenCalledWith(settings, '/v1/skills', { method: 'GET' })
+    expect(runtimeRequest).toHaveBeenCalledWith(
+      settings,
+      '/v1/skills',
+      expect.objectContaining({ method: 'GET', signal: expect.any(AbortSignal) })
+    )
     expect(reply).toContain('documents')
     expect(reply).toContain('Documents')
   })
@@ -299,7 +303,11 @@ describe('ClawRuntime', () => {
       ) => Promise<string | null>
     }).handleIncomingImCommand(settings, { text: '/list-mcp' })
 
-    expect(runtimeRequest).toHaveBeenCalledWith(settings, '/v1/runtime/tools', { method: 'GET' })
+    expect(runtimeRequest).toHaveBeenCalledWith(
+      settings,
+      '/v1/runtime/tools',
+      expect.objectContaining({ method: 'GET', signal: expect.any(AbortSignal) })
+    )
     expect(reply).toContain('github')
     expect(reply).toContain('12 tools')
     expect(reply).toContain('docs')
@@ -345,7 +353,11 @@ describe('ClawRuntime', () => {
       conversation: settings.claw.channels[0].conversations[0]
     })
 
-    expect(runtimeRequest).toHaveBeenCalledWith(settings, '/v1/threads/thr_workspace', { method: 'GET' })
+    expect(runtimeRequest).toHaveBeenCalledWith(
+      settings,
+      '/v1/threads/thr_workspace',
+      expect.objectContaining({ method: 'GET', signal: expect.any(AbortSignal) })
+    )
     expect(reply).toContain('/tmp/workspace/conversations/oc_chat_a')
   })
 
@@ -472,7 +484,7 @@ describe('ClawRuntime', () => {
     expect(runtimeRequest).toHaveBeenCalledWith(
       settings,
       '/v1/usage?group_by=thread&thread_id=thr_usage',
-      { method: 'GET' }
+      expect.objectContaining({ method: 'GET', signal: expect.any(AbortSignal) })
     )
     expect(reply).toContain('minimax')
     expect(reply).toContain('MiniMax-M3')
@@ -724,10 +736,11 @@ describe('ClawRuntime', () => {
     expect(runtimeRequest).toHaveBeenCalledWith(
       settings,
       '/v1/threads/thr_goal/goal',
-      {
+      expect.objectContaining({
         method: 'POST',
-        body: JSON.stringify({ objective: 'Finish document B' })
-      }
+        body: JSON.stringify({ objective: 'Finish document B' }),
+        signal: expect.any(AbortSignal)
+      })
     )
   })
 
@@ -788,10 +801,11 @@ describe('ClawRuntime', () => {
     expect(runtimeRequest).toHaveBeenCalledWith(
       settings,
       '/v1/threads/thr_stop/turns/turn_running/interrupt',
-      {
+      expect.objectContaining({
         method: 'POST',
-        body: JSON.stringify({ discard: false })
-      }
+        body: JSON.stringify({ discard: false }),
+        signal: expect.any(AbortSignal)
+      })
     )
   })
 
@@ -900,7 +914,11 @@ describe('ClawRuntime', () => {
       conversation: settings.claw.channels[0].conversations[0]
     })
 
-    expect(runtimeRequest).toHaveBeenCalledWith(settings, '/v1/threads?limit=3', { method: 'GET' })
+    expect(runtimeRequest).toHaveBeenCalledWith(
+      settings,
+      '/v1/threads?limit=3',
+      expect.objectContaining({ method: 'GET', signal: expect.any(AbortSignal) })
+    )
     expect(reply).toContain('Desktop chat')
     expect(reply).toContain('Document B')
     expect(reply).toContain('Document A')
@@ -1030,7 +1048,11 @@ describe('ClawRuntime', () => {
       conversation: settings.claw.channels[0].conversations[0]
     })
 
-    expect(runtimeRequest).toHaveBeenCalledWith(settings, '/v1/threads?limit=5', { method: 'GET' })
+    expect(runtimeRequest).toHaveBeenCalledWith(
+      settings,
+      '/v1/threads?limit=5',
+      expect.objectContaining({ method: 'GET', signal: expect.any(AbortSignal) })
+    )
     expect(reply).toContain('thr_four')
     expect(current().claw.channels[0].threadId).toBe('thr_four')
     expect(current().claw.channels[0].conversations[0].localThreadId).toBe('thr_four')
@@ -5221,6 +5243,7 @@ describe('ClawRuntime handleFeishuMessage streaming', () => {
 
   afterEach(() => {
     globalThis.fetch = originalFetch
+    vi.useRealTimers()
   })
 
   // Build a fake SSE Response whose body stays open and lets the test
@@ -5336,6 +5359,40 @@ describe('ClawRuntime handleFeishuMessage streaming', () => {
     }
     return vi.fn(request) as unknown as RuntimeRequestFn
   }
+
+  it('cancels pending assistant-result polling when the Claw runtime stops', async () => {
+    const settings = buildSettings()
+    const runtimeRequest = vi.fn(async () => {
+      throw new Error('polling should have been canceled before the request')
+    })
+    const runtime = createClawRuntime({
+      store: {
+        load: vi.fn(async () => settings),
+        patch: vi.fn(async () => settings)
+      } as never,
+      runtimeRequest: runtimeRequest as never,
+      logError: () => undefined
+    })
+
+    const pending = (runtime as unknown as {
+      waitForAssistantResult: (
+        settings: AppSettingsV1,
+        threadId: string,
+        turnId: string,
+        timeoutMs: number
+      ) => Promise<{ status: string; error?: string }>
+    }).waitForAssistantResult(settings, 'thr_1', 'turn_1', 60_000)
+
+    await runtime.stop()
+
+    await expect(pending).resolves.toEqual({
+      status: 'aborted',
+      text: '',
+      files: [],
+      error: 'Claw runtime stopped.'
+    })
+    expect(runtimeRequest).not.toHaveBeenCalled()
+  })
 
   it('routes through runStreamingReply when channel.feishuStream=true', async () => {
     // Open the SSE event stream; the test will push events as the
@@ -5480,6 +5537,72 @@ describe('ClawRuntime handleFeishuMessage streaming', () => {
       { markdown: 'Sorry, I could not finish streaming the response.' },
       { replyTo: 'om_inbound_fb', replyInThread: false }
     ])
+  })
+
+  it('aborts a stalled streaming reply at the configured response timeout', async () => {
+    vi.useFakeTimers()
+    stubFetchForThreadEvents()
+    const settings = buildSettings()
+    settings.claw.im.responseTimeoutMs = 25
+    const store = {
+      load: vi.fn(async () => settings),
+      patch: vi.fn(async () => settings)
+    }
+    const bridge = buildStreamingBridge()
+    bridge.stream.mockImplementation(
+      async (
+        _to: string,
+        input: {
+          markdown: (controller: {
+            append: (chunk: string) => Promise<void>
+            setContent: (content: string) => Promise<void>
+            messageId: string
+          }) => Promise<void>
+        }
+      ) => {
+        await input.markdown({
+          messageId: 'om_stream_stalled',
+          append: vi.fn(async () => undefined),
+          setContent: vi.fn(async () => undefined)
+        })
+        return { messageId: 'om_stream_stalled' }
+      }
+    )
+    const runtime = createClawRuntime({
+      store: store as never,
+      runtimeRequest: makeTurnRequest(),
+      logError: () => undefined
+    })
+
+    const resultPromise = (runtime as unknown as {
+      runStreamingReply: (input: {
+        bridge: unknown
+        chatId: string
+        threadId: string
+        turnId: string
+        replyOptions: { replyTo?: string; replyInThread?: boolean }
+        responseTimeoutMs: number
+        context: Record<string, unknown>
+      }) => Promise<{ ok: boolean; fellBack: boolean; message: string }>
+    }).runStreamingReply({
+      bridge,
+      chatId: 'oc_chat_a',
+      threadId: 'thr_1',
+      turnId: 'turn_1',
+      replyOptions: { replyTo: 'om_inbound_timeout', replyInThread: false },
+      responseTimeoutMs: settings.claw.im.responseTimeoutMs,
+      context: { channelId: 'channel_1' }
+    })
+
+    await vi.advanceTimersByTimeAsync(settings.claw.im.responseTimeoutMs)
+    const result = await resultPromise
+
+    expect(result).toMatchObject({ ok: true, fellBack: true, message: 'fell_back' })
+    expect(bridge.send).toHaveBeenCalledWith(
+      'oc_chat_a',
+      { markdown: 'Sorry, I could not finish streaming the response.' },
+      { replyTo: 'om_inbound_timeout', replyInThread: false }
+    )
   })
 
   it('falls back to setContent(partial) when controller.append throws mid-stream', async () => {
