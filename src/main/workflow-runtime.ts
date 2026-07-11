@@ -49,7 +49,7 @@ import {
   type InterpScope,
   type WorkflowPayload
 } from './workflow-expression'
-import { executeCoreWorkflowNode } from './workflow-core-node-adapter'
+import { executeCoreWorkflowNode, isCoreWorkflowNode } from './workflow-core-node-adapter'
 import { executeHttpWorkflowNode } from './workflow-http-node-adapter'
 import { executeAiWorkflowNode } from './workflow-ai-node-adapter'
 import { executeImageWorkflowNode } from './workflow-image-node-adapter'
@@ -1479,15 +1479,11 @@ export class WorkflowRuntime {
     if (node.type === 'generate-image') {
       return executeImageWorkflowNode({ node, payload, settings, runWorkspace, scope })
     }
-    const coreOutcome = await executeCoreWorkflowNode({
-      node,
-      payload,
-      inputs,
-      scope,
-      runVars,
-      sleep
-    })
-    if (coreOutcome) return coreOutcome
+    if (isCoreWorkflowNode(node)) {
+      const coreOutcome = await executeCoreWorkflowNode({ node, payload, inputs, scope, runVars, sleep })
+      if (coreOutcome) return coreOutcome
+      throw new Error(`Core workflow node adapter returned no outcome: ${node.type}`)
+    }
     switch (node.type) {
       case 'manual-trigger':
       case 'schedule-trigger':

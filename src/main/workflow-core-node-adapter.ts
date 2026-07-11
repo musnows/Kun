@@ -16,8 +16,21 @@ export type WorkflowNodeOutcome = {
   threadId?: string
 }
 
+const CORE_NODE_KINDS = new Set<WorkflowNodeV1['type']>([
+  'manual-trigger', 'schedule-trigger', 'webhook-trigger', 'condition', 'switch', 'merge',
+  'set-fields', 'filter', 'sort', 'limit', 'aggregate', 'delay', 'template', 'json', 'output'
+])
+export type CoreWorkflowNode = Extract<WorkflowNodeV1, {
+  type: 'manual-trigger' | 'schedule-trigger' | 'webhook-trigger' | 'condition' | 'switch' |
+    'merge' | 'set-fields' | 'filter' | 'sort' | 'limit' | 'aggregate' | 'delay' | 'template' |
+    'json' | 'output'
+}>
+export function isCoreWorkflowNode(node: WorkflowNodeV1): node is CoreWorkflowNode {
+  return CORE_NODE_KINDS.has(node.type)
+}
+
 export async function executeCoreWorkflowNode(input: {
-  node: WorkflowNodeV1
+  node: CoreWorkflowNode
   payload: WorkflowPayload
   inputs: WorkflowPayload[]
   scope: InterpScope
