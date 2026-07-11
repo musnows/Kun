@@ -8,7 +8,6 @@ import type {
   WorkflowApprovalDecision,
   WorkflowNodeRunResultV1,
   WorkflowNodeTestResult,
-  WorkflowPendingApprovalV1,
   WorkflowNodeRunStatus,
   WorkflowNodeV1,
   WorkflowRunResult,
@@ -33,7 +32,6 @@ import { WorkflowRunCoordinator } from './workflow-run-coordinator'
 import { WorkflowScheduler } from './workflow-scheduler'
 import { createWorkflowNodeExecutorRegistry } from './workflow-node-executor-registry'
 import {
-  evaluateCondition,
   getByPath,
   interpolate,
   resolveExpr,
@@ -50,6 +48,12 @@ import {
   executeCodeWorkflowNode,
   executeCustomWorkflowNode
 } from './workflow-code-node-adapter'
+import { executeNestedWorkflowNode } from './workflow-nested-node-adapter'
+import { executeApprovalWorkflowNode } from './workflow-approval-node-adapter'
+import {
+  collectWorkflowSecretValues,
+  redactWorkflowSecrets
+} from './workflow-secret-redaction'
 
 export { checkWorkflowCode } from './workflow-code-node-adapter'
 
@@ -58,7 +62,6 @@ const MAX_RUN_DURATION_MS = 30 * 60_000
 /** Sentinel branch that matches no output handle (e.g. switch with no rule + no fallback). */
 const NO_BRANCH = '__none__'
 const LIVE_STATUS_LINGER_MS = 8_000
-const MAX_SUBWORKFLOW_DEPTH = 5
 
 type ScheduleTriggerNode = Extract<WorkflowNodeV1, { type: 'schedule-trigger' }>
 
@@ -260,46 +263,6 @@ function missingRequiredInput(schema: WorkflowInputFieldV1[] | undefined, input:
     if (field.required && !(field.key in src) && !field.defaultValue.trim()) return field.label || field.key
   }
   return null
-}
-
-/** Run `fn` over items with at most `limit` in flight, preserving result order. */
-async function mapWithConcurrency<T, R>(
-  items: T[],
-  limit: number,
-  fn: (item: T, index: number) => Promise<R>
-): Promise<R[]> {
-  const results = new Array<R>(items.length)
-  let cursor = 0
-  const workerCount = Math.max(1, Math.min(limit, items.length))
-  const workers = Array.from({ length: workerCount }, async () => {
-    for (;;) {
-      const index = cursor
-      cursor += 1
-      if (index >= items.length) break
-      results[index] = await fn(items[index], index)
-    }
-  })
-  await Promise.all(workers)
-  return results
-}
-
-/** Replace every secret value with *** in a string. */
-function redactSecrets(secretValues: string[], text: string): string {
-  return secretValues.reduce((acc, secret) => acc.split(secret).join('***'), text)
-}
-
-/**
- * All secret-typed env values across every workflow. Used so a parent run redacts
- * secrets that belong to a sub-workflow / loop body it invoked, not just its own.
- */
-function collectSecretValues(settings: AppSettingsV1): string[] {
-  const values: string[] = []
-  for (const workflow of settings.workflow.workflows) {
-    for (const entry of workflow.env) {
-      if (entry.type === 'secret' && entry.value.trim()) values.push(entry.value)
-    }
-  }
-  return values
 }
 
 /** Coerce a resolved node-input value to its declared type. */
@@ -1047,8 +1010,8 @@ export class WorkflowRuntime {
     const nodeOutputs: Record<string, WorkflowPayload> = {}
     // Global secret set so this run also masks secrets owned by sub-workflows / loop
     // bodies whose output or error flows back across the workflow boundary.
-    const secretValues = collectSecretValues(settings)
-    const redact = (text: string): string => redactSecrets(secretValues, text)
+    const secretValues = collectWorkflowSecretValues(settings)
+    const redact = (text: string): string => redactWorkflowSecrets(secretValues, text)
     const scopeFor = (): InterpScope => ({ nodes: nodeOutputs, env, run: runVars, loop: ctx.loop })
 
     const incoming = (nodeId: string): readonly WorkflowConnectionV1[] => inEdges.get(nodeId) ?? []
@@ -1327,113 +1290,19 @@ export class WorkflowRuntime {
     return executeCodeWorkflowNode({ node, payload: context.payload })
   }
 
-  private async executeNestedNode(node: WorkflowNodeV1, context: NodeExecutionContext): Promise<NodeOutcome> {
-    const { depth, payload, scope, settings } = context
-    switch (node.type) {
-      case 'subworkflow': {
-        if (depth >= MAX_SUBWORKFLOW_DEPTH) throw new Error('Sub-workflow nesting is too deep.')
-        const target = settings.workflow.workflows.find((workflow) => workflow.id === node.config.workflowId)
-        if (!target) throw new Error('Sub-workflow not found.')
-        const trigger =
-          target.nodes.find((item) => item.type === 'manual-trigger') ??
-          target.nodes.find((item) => item.type === 'schedule-trigger')
-        if (!trigger) throw new Error('Sub-workflow has no trigger node.')
-        const result = await this.runGraph(target, trigger.id, payload, { settings, depth: depth + 1 })
-        if (result.status === 'error') throw new Error(result.errorMessage || 'Sub-workflow failed.')
-        return { payload: result.output, message: `ran ${target.name || 'sub-workflow'}` }
-      }
-      case 'loop': {
-        if (depth >= MAX_SUBWORKFLOW_DEPTH) throw new Error('Loop nesting is too deep.')
-        const target = settings.workflow.workflows.find((workflow) => workflow.id === node.config.workflowId)
-        if (!target) throw new Error('Loop body workflow not found.')
-        const trigger =
-          target.nodes.find((item) => item.type === 'manual-trigger') ??
-          target.nodes.find((item) => item.type === 'schedule-trigger') ??
-          target.nodes.find((item) => item.type === 'webhook-trigger')
-        if (!trigger) throw new Error('Loop body has no trigger node.')
-        if (node.config.mode === 'foreach') {
-          // for-each: iterate an array, running the body once per item, optionally
-          // in parallel. Each iteration sees $loop.index / $loop.item / $loop.total.
-          const source = node.config.arraySource?.trim()
-          const raw = source ? resolveExpr(payload, source, scope) : payload.json
-          const items = (Array.isArray(raw) ? raw : []).slice(0, node.config.maxIterations)
-          const total = items.length
-          // Fail-fast: once one iteration throws (and we're not collecting errors),
-          // short-circuit pending iterations so parallel workers stop launching new sub-runs.
-          let aborted = false
-          const runItem = async (item: unknown, index: number): Promise<unknown> => {
-            if (aborted) throw new Error('Loop aborted after an earlier item failed.')
-            const itemPayload: WorkflowPayload = {
-              json: item,
-              text: typeof item === 'string' ? item : safeJson(item)
-            }
-            try {
-              const result = await this.runGraph(target, trigger.id, itemPayload, {
-                settings,
-                depth: depth + 1,
-                loop: { index, item, total }
-              })
-              if (result.status === 'error') throw new Error(result.errorMessage || 'Loop item failed.')
-              return result.output.json
-            } catch (error) {
-              if (node.config.continueOnError) return { error: error instanceof Error ? error.message : String(error) }
-              aborted = true
-              throw error
-            }
-          }
-          const outputs =
-            node.config.execution === 'parallel'
-              ? await mapWithConcurrency(items, node.config.concurrency ?? 4, runItem)
-              : await (async (): Promise<unknown[]> => {
-                  const acc: unknown[] = []
-                  for (let index = 0; index < items.length; index += 1) acc.push(await runItem(items[index], index))
-                  return acc
-                })()
-          const failures = outputs.filter(
-            (value) => value && typeof value === 'object' && 'error' in (value as Record<string, unknown>)
-          ).length
-          return {
-            payload: { json: outputs, text: safeJson(outputs) },
-            message: `foreach ${total - failures}/${total}${node.config.execution === 'parallel' ? ' (parallel)' : ''}`
-          }
-        }
-        const stopCondition = {
-          leftExpr: node.config.leftExpr,
-          operator: node.config.operator,
-          rightValue: node.config.rightValue,
-          caseSensitive: node.config.caseSensitive
-        }
-        // Loop agent: run the body, feed its output back in, until the stop
-        // condition holds or maxIterations caps it.
-        let current = payload
-        let iterations = 0
-        let done = false
-        while (iterations < node.config.maxIterations) {
-          const result = await this.runGraph(target, trigger.id, current, {
-            settings,
-            depth: depth + 1,
-            loop: { index: iterations, item: current.json, total: node.config.maxIterations }
-          })
-          iterations += 1
-          if (result.status === 'error') throw new Error(result.errorMessage || 'Loop body failed.')
-          current = result.output
-          if (evaluateCondition(stopCondition, current, scope)) {
-            done = true
-            break
-          }
-        }
-        const baseJson =
-          current.json && typeof current.json === 'object' && !Array.isArray(current.json)
-            ? { ...(current.json as Record<string, unknown>) }
-            : { value: current.json }
-        return {
-          payload: { json: { ...baseJson, _iterations: iterations, _done: done }, text: current.text },
-          message: `looped ${iterations}${done ? ' (done)' : ' (max)'}`
-        }
-      }
-      default:
-        throw new Error(`Nested workflow node adapter received unsupported kind: ${node.type}`)
+  private executeNestedNode(node: WorkflowNodeV1, context: NodeExecutionContext): Promise<NodeOutcome> {
+    if (node.type !== 'subworkflow' && node.type !== 'loop') {
+      throw new Error(`Nested workflow node adapter received unsupported kind: ${node.type}`)
     }
+    return executeNestedWorkflowNode({
+      node,
+      payload: context.payload,
+      settings: context.settings,
+      depth: context.depth,
+      scope: context.scope,
+      runGraph: (workflow, triggerNodeId, payload, nestedContext) =>
+        this.runGraph(workflow, triggerNodeId, payload, nestedContext)
+    })
   }
 
   private executeHttpNode(node: WorkflowNodeV1, context: NodeExecutionContext): Promise<NodeOutcome> {
@@ -1443,41 +1312,19 @@ export class WorkflowRuntime {
     return executeHttpWorkflowNode(node.config, context.payload, context.scope)
   }
 
-  private async executeApprovalNode(node: WorkflowNodeV1, context: NodeExecutionContext): Promise<NodeOutcome> {
+  private executeApprovalNode(node: WorkflowNodeV1, context: NodeExecutionContext): Promise<NodeOutcome> {
     if (node.type !== 'human-approval') {
       throw new Error(`Approval workflow node adapter received unsupported kind: ${node.type}`)
     }
-    const { payload, runRef, scope, settings } = context
-    // Pause the run until a decision arrives. Routes to the approved/rejected branch.
-    // Note: the pending state is in-memory — an app restart mid-pause loses the run.
-    if (!runRef) {
-      // Single-node test / validation: cannot pause, so auto-approve.
-      return { payload, message: 'approved (test)', branch: 'approved' }
-    }
-    const token = randomUUID()
-    // Redact secrets: the instruction is surfaced via status() to the approval UI.
-    const approvalSecrets = collectSecretValues(settings)
-    const entry: WorkflowPendingApprovalV1 = {
-      token,
-      workflowId: runRef.workflowId,
-      runId: runRef.runId,
-      nodeId: node.id,
-      nodeName: node.name,
-      title: redactSecrets(approvalSecrets, node.config.title.trim() || node.name.trim() || 'Approval required'),
-      instruction: redactSecrets(approvalSecrets, interpolate(node.config.instruction, payload, scope)),
-      createdAt: new Date().toISOString()
-    }
-    const decision = await this.runCoordinator.awaitApproval(
-      entry,
-      node.config.timeoutMs,
-      node.config.onTimeout
-    )
-    if (decision === 'rejected') return { payload, message: 'rejected', branch: 'rejected' }
-    const approvedJson =
-      payload.json && typeof payload.json === 'object' && !Array.isArray(payload.json)
-        ? { ...(payload.json as Record<string, unknown>), _approved: true }
-        : payload.json
-    return { payload: { json: approvedJson, text: payload.text }, message: 'approved', branch: 'approved' }
+    return executeApprovalWorkflowNode({
+      node,
+      payload: context.payload,
+      settings: context.settings,
+      scope: context.scope,
+      runRef: context.runRef,
+      awaitApproval: (entry, timeoutMs, onTimeout) =>
+        this.runCoordinator.awaitApproval(entry, timeoutMs, onTimeout)
+    })
   }
 
   private executeCustomNode(node: WorkflowNodeV1, context: NodeExecutionContext): Promise<NodeOutcome> {
