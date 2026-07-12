@@ -121,6 +121,10 @@ export type { ComposerFileReference } from '../../lib/composer-file-references'
 export type { ComposerExecutionSettings } from './FloatingComposerExecutionPicker'
 
 export function shouldSurfaceComposerUserInput(route: AppRoute, compact: boolean): boolean {
+  // Write owns a single compact composer in its assistant rail, so it must
+  // surface the same runtime gate there. Other compact composers mirror a main
+  // Chat/Design surface and would duplicate the prompt if they rendered it.
+  if (route === 'write') return true
   return !compact && (route === 'chat' || route === 'design')
 }
 export type { DesignComposerContext } from '../../design/design-composer-context'
@@ -342,9 +346,10 @@ export function FloatingComposer({
   const resolveUserInput = useChatStore((s) => s.resolveUserInput)
   const compact = variant === 'compact'
   // The pending ask-user request for the active thread, surfaced as a panel
-  // docked above this composer. The main Chat and Design composers host it:
-  // `blocks` is the active thread's, so a compact side composer would otherwise
-  // mirror it. The timeline bubble remains the record in every surface.
+  // docked above this composer. The main Chat and Design composers host it, as
+  // does Write's only (compact) composer. Other compact side composers would
+  // otherwise mirror the active thread's prompt. The timeline bubble remains
+  // the record in every surface.
   const pendingUserInputBlock = useMemo<PendingUserInputBlock | null>(() => {
     if (!shouldSurfaceComposerUserInput(route, compact)) return null
     // Only surface a request the live runtime is actively awaiting. A stale
@@ -562,6 +567,8 @@ export function FloatingComposer({
     && goalPanelDraftObjective.length > 0
   const primaryActionLabel = highlightedSlashCommand
     ? t('slashCommandApply')
+    : userInput.active
+      ? t('userInputSubmit')
     : canSetGoalPanelDraft
       ? t('goalSetCurrentInput')
     : busy
@@ -569,6 +576,8 @@ export function FloatingComposer({
       : t('send')
   const primaryActionDisabled = highlightedSlashCommand
     ? highlightedSlashCommand.disabled === true
+    : userInput.active
+      ? !canCompose || input.trim().length === 0
     : canSetGoalPanelDraft
       ? false
     : !canSend
