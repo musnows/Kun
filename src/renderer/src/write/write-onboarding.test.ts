@@ -44,6 +44,13 @@ describe('Write onboarding decision', () => {
       ...baseState,
       loadingDirs: { __root__: true }
     })).toBe('pending')
+    expect(getWriteOnboardingDecision({
+      ...baseState,
+      settingsLoading: true,
+      defaultWorkspaceRoot: '',
+      workspaceRoots: [root],
+      entriesByDir: { [root]: [] }
+    })).toBe('pending')
   })
 
   it('shows onboarding only after a loaded default space is confirmed empty', () => {

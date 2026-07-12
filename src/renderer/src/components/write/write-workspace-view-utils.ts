@@ -76,7 +76,14 @@ export function formatSaveLabel(status: WriteSaveStatus, t: (key: string) => str
 export function isInlineCompletionToggleShortcut(
   event: Pick<
     KeyboardEvent,
-    'code' | 'ctrlKey' | 'metaKey' | 'shiftKey' | 'altKey' | 'repeat' | 'isComposing'
+    | 'code'
+    | 'ctrlKey'
+    | 'metaKey'
+    | 'shiftKey'
+    | 'altKey'
+    | 'repeat'
+    | 'isComposing'
+    | 'defaultPrevented'
   >
 ): boolean {
   return (
@@ -85,7 +92,8 @@ export function isInlineCompletionToggleShortcut(
     (event.ctrlKey || event.metaKey) &&
     !event.altKey &&
     !event.repeat &&
-    !event.isComposing
+    !event.isComposing &&
+    !event.defaultPrevented
   )
 }
 

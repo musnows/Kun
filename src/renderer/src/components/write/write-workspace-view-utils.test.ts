@@ -41,6 +41,7 @@ describe('isInlineCompletionToggleShortcut', () => {
     altKey: false,
     repeat: false,
     isComposing: false,
+    defaultPrevented: false,
     ...overrides
   }) as KeyboardEvent
 
@@ -53,6 +54,7 @@ describe('isInlineCompletionToggleShortcut', () => {
     expect(isInlineCompletionToggleShortcut(event({ shiftKey: false }))).toBe(false)
     expect(isInlineCompletionToggleShortcut(event({ repeat: true }))).toBe(false)
     expect(isInlineCompletionToggleShortcut(event({ isComposing: true }))).toBe(false)
+    expect(isInlineCompletionToggleShortcut(event({ defaultPrevented: true }))).toBe(false)
     expect(isInlineCompletionToggleShortcut(event({ altKey: true }))).toBe(false)
     expect(isInlineCompletionToggleShortcut(event({ code: 'Enter' }))).toBe(false)
   })

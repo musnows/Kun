@@ -67,7 +67,10 @@ import {
   type WriteDocumentContext
 } from '../../write/write-document-context'
 import { enqueueWriteWorkspaceFileTask } from '../../write/write-save-coordinator'
-import { writeFocusModeShellClassName } from '../../write/write-focus-mode'
+import {
+  isWriteFocusModeFormControl,
+  writeFocusModeShellClassName
+} from '../../write/write-focus-mode'
 import {
   getWriteOnboardingDecision,
   readWriteOnboardingComplete,
@@ -100,6 +103,7 @@ export function WriteWorkspaceView({
     defaultWorkspaceRoot,
     workspaceRoots,
     settingsLoading,
+    settingsError,
     workspaceRoot,
     activeFilePath,
     activeFileKind,
@@ -109,6 +113,7 @@ export function WriteWorkspaceView({
     rootDirectory,
     entriesByDir,
     loadingDirs,
+    treeError,
     inlineCompletion,
     inlineCompletionApiReady,
     selectionAssist,
@@ -155,6 +160,7 @@ export function WriteWorkspaceView({
       defaultWorkspaceRoot: s.defaultWorkspaceRoot,
       workspaceRoots: s.workspaceRoots,
       settingsLoading: s.settingsLoading,
+      settingsError: s.settingsError,
       workspaceRoot: s.workspaceRoot,
       activeFilePath: s.activeFilePath,
       activeFileKind: s.activeFileKind,
@@ -164,6 +170,7 @@ export function WriteWorkspaceView({
       rootDirectory: s.rootDirectory,
       entriesByDir: s.entriesByDir,
       loadingDirs: s.loadingDirs,
+      treeError: s.treeError,
       inlineCompletion: s.inlineCompletion,
       inlineCompletionApiReady: s.inlineCompletionApiReady,
       selectionAssist: s.selectionAssist,
@@ -251,6 +258,7 @@ export function WriteWorkspaceView({
       if (
         !activeFileIsText ||
         renderSafety.readOnly ||
+        isWriteFocusModeFormControl(event.target) ||
         !isInlineCompletionToggleShortcut(event)
       ) return
       event.preventDefault()
@@ -1199,7 +1207,9 @@ export function WriteWorkspaceView({
             focusMode={documentFocusMode}
             onFocusModeChange={setDocumentFocusMode}
             onboarding={onboardingDecision === 'show'}
-            workspaceLoading={onboardingDecision === 'pending'}
+            workspaceLoading={
+              onboardingDecision === 'pending' && !settingsError && !treeError
+            }
             debouncedPreviewContent={debouncedPreviewContent}
             isMarkdown={isMarkdown}
             inlineCompletion={inlineCompletion}

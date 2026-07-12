@@ -41,6 +41,10 @@ export function getWriteOnboardingDecision(
   state: WriteOnboardingState
 ): WriteOnboardingDecision {
   if (state.persistedComplete || state.activeFilePath) return 'complete'
+  // Workspace roots are populated as part of the same settings load. Do not
+  // classify a partially loaded default root as a custom space and persist a
+  // false completion before initialization has finished.
+  if (state.settingsLoading) return 'pending'
 
   const defaultRoot = normalizePath(state.defaultWorkspaceRoot)
   const hasConfiguredCustomWorkspace = state.workspaceRoots.some((root) => {
@@ -54,7 +58,6 @@ export function getWriteOnboardingDecision(
   const rootDirectory = normalizePath(state.rootDirectory)
   const root = rootDirectory || workspaceRoot
   const rootLoading = Boolean(
-    state.settingsLoading ||
     state.loadingDirs.__root__ ||
     state.loadingDirs[state.rootDirectory] ||
     state.loadingDirs[state.workspaceRoot] ||
