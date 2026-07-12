@@ -125,6 +125,32 @@ describe('chat projection reducer', () => {
     }))
   })
 
+  it.each(['allowed', 'denied'] as const)(
+    'clears stale approval errors when the runtime resolves it as %s',
+    (status) => {
+      const initial = {
+        ...state(),
+        blocks: [{
+          kind: 'approval' as const,
+          id: 'approval-approval_1',
+          approvalId: 'approval_1',
+          summary: 'Run tests',
+          status: 'error' as const,
+          errorMessage: 'response was lost'
+        }]
+      }
+
+      const projected = project(initial, [{
+        type: 'approval_status_changed',
+        payload: { approvalId: 'approval_1', status }
+      }])
+      const approval = projected.blocks[0]
+
+      expect(approval).toMatchObject({ kind: 'approval', status })
+      expect(approval).not.toHaveProperty('errorMessage')
+    }
+  )
+
   it('reconciles a persisted completion through the same projection reducer', () => {
     const initial = {
       ...state(),
