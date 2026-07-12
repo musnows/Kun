@@ -340,10 +340,12 @@ export function Workbench(): ReactElement {
     ) selectExtensionSurface(null)
   }, [activeExtensionSurface, activeExtensionSurfaceId, extensionContributionSnapshotReady, selectExtensionSurface])
   const {
-    composerFileReferences, fileTreeSidePanelOpen, fileTreeSidePanelView, openFilePreviewTargets, fileTreeWorkspaceRoot,
+    composerFileReferences, fileTreeSidePanelOpen, fileTreeSidePanelView, openFilePreviewTargets,
+    pinnedFilePreviewTargetKeys, preserveFilePreviewTargets, fileTreeWorkspaceRoot,
     clearComposerFileReferences, addComposerFileReference, pickComposerFileReferences,
     removeComposerFileReference, openWorkspaceFilePreviewTarget, previewWorkspaceFileFromSidebar,
-    closeWorkspaceFilePreviewTarget, addWorkspaceReferenceFromSidebar, toggleFileTreeSidePanel,
+    closeWorkspaceFilePreviewTarget, togglePinnedFilePreviewTarget, closeOtherFilePreviewTargets,
+    togglePreserveFilePreviewTargets, addWorkspaceReferenceFromSidebar, toggleFileTreeSidePanel,
     openFileTreeSidePanel, openDesignFileTreeSidePanel, setFileTreeSidePanelView,
     clearFilePreviewTargets
   } = useWorkbenchFileTreeController({
@@ -725,7 +727,12 @@ export function Workbench(): ReactElement {
       openTargets: openFilePreviewTargets,
       workspaceRoot,
       onSelectTarget: openWorkspaceFilePreviewTarget,
-      onCloseTarget: closeWorkspaceFilePreviewTarget
+      onCloseTarget: closeWorkspaceFilePreviewTarget,
+      pinnedTargetKeys: pinnedFilePreviewTargetKeys,
+      preserveAcrossThreads: preserveFilePreviewTargets,
+      onTogglePinnedTarget: togglePinnedFilePreviewTarget,
+      onCloseOtherTargets: closeOtherFilePreviewTargets,
+      onTogglePreserveAcrossThreads: togglePreserveFilePreviewTargets
     },
     extensionView: activeExtensionRightPanel,
     workspaceRoot
