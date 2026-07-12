@@ -50,6 +50,24 @@ describe('AgentLoop', () => {
     expect(h.inflight.size()).toBe(0)
   })
 
+  it('clears turn-scoped manual skill activation after terminal settlement', async () => {
+    const clearTurnActivation = vi.fn()
+    const skillRuntime = {
+      resolveTurn: async () => ({
+        activeSkillIds: [],
+        activations: [],
+        instructions: [],
+        injectedBytes: 0
+      }),
+      clearTurnActivation
+    }
+    const h = makeHarness(makeSilentModel(), { skillRuntime: skillRuntime as never })
+    await bootstrapThread(h)
+
+    await expect(h.loop.runTurn(h.threadId, h.turnId)).resolves.toBe('completed')
+    expect(clearTurnActivation).toHaveBeenCalledWith(h.threadId, h.turnId)
+  })
+
   it('runs delegated SDK turns through the shared steering lifecycle', async () => {
     let h!: ReturnType<typeof makeHarness>
     let observedSteering = false

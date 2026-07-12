@@ -594,6 +594,9 @@ export class AgentLoop {
         this.toolStormBreakers.delete(turnId)
         this.roundOutcome.clearTurn(turnId)
         this.goalTurns.clearTurn(turnId)
+        if (typeof this.opts.skillRuntime?.clearTurnActivation === 'function') {
+          this.opts.skillRuntime.clearTurnActivation(threadId, turnId)
+        }
         this.turnFailures.delete(turnId)
         this.telemetry.clearPromptPressure(threadId)
         await runTurnEndLifecycleHooks(this.lifecycleHookDeps(), {

@@ -8,6 +8,7 @@ const DEFAULT_ACTIVE_LIMIT = 3
 const DEFAULT_INSTRUCTION_BUDGET_BYTES = 24_000
 const DEFAULT_CATALOG_BUDGET_BYTES = 8_000
 const MAX_SKILL_PACKAGES_PER_ROOT = 64
+const MAX_MANUAL_SKILL_TURN_ACTIVATIONS = 512
 const MAX_SKILL_MANIFEST_BYTES = 64 * 1024
 const MAX_SKILL_ENTRY_BYTES = 256 * 1024
 const WORKSPACE_SKILL_RELATIVE_DIRS = [
@@ -118,6 +119,12 @@ export class SkillRuntime {
   }>()
   private lastActivations: SkillActivation[] = []
   private lastInjection: SkillRuntimeDiagnostics['lastInjection']
+  /**
+   * Explicit `load_skill` activations live only for one thread/turn. The map is
+   * process-local and bounded so an abnormal turn that never reaches cleanup
+   * cannot grow runtime state without limit.
+   */
+  private readonly manualSkillIdsByTurn = new Map<string, Set<string>>()
 
   private constructor(
     private config: SkillsCapabilityConfig,
@@ -155,6 +162,7 @@ export class SkillRuntime {
     this.skills = next.skills
     this.validationErrors = next.validationErrors
     this.workspaceSkillCache.clear()
+    this.manualSkillIdsByTurn.clear()
     this.lastActivations = []
     this.lastInjection = undefined
   }
@@ -166,12 +174,15 @@ export class SkillRuntime {
     this.skills = loaded.skills
     this.validationErrors = loaded.validationErrors
     this.workspaceSkillCache.clear()
+    this.manualSkillIdsByTurn.clear()
   }
 
   async resolveTurn(input: {
     prompt: string
     workspace: string
     filePaths?: readonly string[]
+    threadId?: string
+    turnId?: string
     /** Per-call skill-id deny-list (e.g. a subagent profile's blockedSkills). Hidden from catalog + auto-activation. */
     blockedSkillIds?: readonly string[]
   }): Promise<SkillTurnResolution> {
@@ -179,6 +190,20 @@ export class SkillRuntime {
     const skills = filterBlockedSkills(await this.skillsForWorkspace(input.workspace), input.blockedSkillIds)
     const catalogInstruction = renderCatalogInstruction(skills, this.options.catalogBudgetBytes)
     const matches = this.matchSkills(input, skills)
+    const matchedIds = new Set(matches.map((match) => match.skill.id))
+    for (const skillId of this.manualSkillIds(input.threadId, input.turnId)) {
+      if (matchedIds.has(skillId)) continue
+      const skill = skills.find((candidate) => candidate.id === skillId)
+      if (!skill) continue
+      matches.push({
+        skill,
+        skillId: skill.id,
+        reason: 'load_skill',
+        score: 1_100 + skill.priority
+      })
+      matchedIds.add(skillId)
+    }
+    matches.sort((a, b) => b.score - a.score || a.skill.id.localeCompare(b.skill.id))
     const active = matches.slice(0, this.options.activeLimit)
     const injection = buildInjection(active, this.options.instructionBudgetBytes)
     const catalogBytes = catalogInstruction ? Buffer.byteLength(catalogInstruction, 'utf8') : 0
@@ -220,7 +245,12 @@ export class SkillRuntime {
    * Returns an error payload (never throws) so the tool can surface it to the
    * model as a normal tool result.
    */
-  async loadSkillById(skillId: string, workspace = '', blockedIds?: readonly string[]): Promise<{
+  async loadSkillById(
+    skillId: string,
+    workspace = '',
+    blockedIds?: readonly string[],
+    turn?: { threadId: string; turnId: string }
+  ): Promise<{
     skillId: string
     name: string
     instruction: string
@@ -247,6 +277,9 @@ export class SkillRuntime {
       instruction = `${header}\n\n${truncateToBytes(skill.entry, room)}`
       truncated = true
     }
+    if (turn?.threadId.trim() && turn.turnId.trim()) {
+      this.rememberManualActivation(turn.threadId, turn.turnId, skill.id)
+    }
     return {
       skillId: skill.id,
       name: skill.name,
@@ -254,6 +287,10 @@ export class SkillRuntime {
       allowedTools: [...skill.allowedTools],
       truncated
     }
+  }
+
+  clearTurnActivation(threadId: string, turnId: string): void {
+    this.manualSkillIdsByTurn.delete(skillTurnKey(threadId, turnId))
   }
 
   diagnostics(): SkillRuntimeDiagnostics {
@@ -289,6 +326,17 @@ export class SkillRuntime {
     return (await this.skillsForWorkspace(workspace)).length
   }
 
+  async availableSkillIdsForWorkspace(
+    workspace: string,
+    blockedSkillIds?: readonly string[]
+  ): Promise<string[]> {
+    if (!this.config.enabled) return []
+    return filterBlockedSkills(
+      await this.skillsForWorkspace(workspace),
+      blockedSkillIds
+    ).map((skill) => skill.id)
+  }
+
   private matchSkills(input: {
     prompt: string
     workspace: string
@@ -320,6 +368,23 @@ export class SkillRuntime {
       }
     }
     return matches.sort((a, b) => b.score - a.score || a.skill.id.localeCompare(b.skill.id))
+  }
+
+  private manualSkillIds(threadId: string | undefined, turnId: string | undefined): readonly string[] {
+    if (!threadId?.trim() || !turnId?.trim()) return []
+    return [...(this.manualSkillIdsByTurn.get(skillTurnKey(threadId, turnId)) ?? [])]
+  }
+
+  private rememberManualActivation(threadId: string, turnId: string, skillId: string): void {
+    const key = skillTurnKey(threadId, turnId)
+    const active = new Set(this.manualSkillIdsByTurn.get(key) ?? [])
+    active.add(skillId)
+    this.manualSkillIdsByTurn.delete(key)
+    this.manualSkillIdsByTurn.set(key, active)
+    if (this.manualSkillIdsByTurn.size > MAX_MANUAL_SKILL_TURN_ACTIVATIONS) {
+      const oldest = this.manualSkillIdsByTurn.keys().next().value
+      if (oldest !== undefined) this.manualSkillIdsByTurn.delete(oldest)
+    }
   }
 
   private async skillsForWorkspace(workspace: string): Promise<LoadedSkill[]> {
@@ -409,6 +474,10 @@ function renderCatalogInstruction(skills: LoadedSkill[], budget: number): string
 function normalizeRoot(path: string | undefined): string {
   const trimmed = path?.trim()
   return trimmed ? resolve(trimmed) : ''
+}
+
+function skillTurnKey(threadId: string, turnId: string): string {
+  return `${threadId}\u0000${turnId}`
 }
 
 function isSameOrInside(parent: string, target: string): boolean {

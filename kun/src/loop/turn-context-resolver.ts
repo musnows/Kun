@@ -101,6 +101,8 @@ export class TurnContextResolver {
     const skillResolution = await this.deps.skillRuntime?.resolveTurn({
       prompt: input.turn.prompt,
       workspace,
+      threadId: input.threadId,
+      turnId: input.turnId,
       ...(this.deps.blockedSkillIds ? { blockedSkillIds: this.deps.blockedSkillIds } : {})
     }) ?? EMPTY_SKILL_RESOLUTION
     const instructionResolution = await this.deps.instructionRuntime?.resolveTurn({ workspace }) ??

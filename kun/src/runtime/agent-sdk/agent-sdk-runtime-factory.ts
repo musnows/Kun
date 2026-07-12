@@ -170,7 +170,24 @@ export function createAgentSdkRuntime(deps: AgentSdkRuntimeFactoryDeps): AgentSd
   // tool catalog so bridged execution sees the same skill-gated tools after a
   // GUI input pause/resume.
   const activeSkillIdsByTurn = new Map<string, readonly string[]>()
+  const skillPromptByTurn = new Map<string, string>()
   const skillTurnKey = (threadId: string, turnId: string): string => `${threadId}\u0000${turnId}`
+
+  const resolveActiveSkillIds = async (
+    thread: ThreadRecord,
+    turn: ThreadRecord['turns'][number]
+  ): Promise<readonly string[]> => {
+    const key = skillTurnKey(thread.id, turn.id)
+    if (!deps.skillRuntime) return activeSkillIdsByTurn.get(key) ?? []
+    const resolution = await deps.skillRuntime.resolveTurn({
+      prompt: skillPromptByTurn.get(key) ?? turn.prompt ?? '',
+      workspace: thread.workspace,
+      threadId: thread.id,
+      turnId: turn.id
+    })
+    activeSkillIdsByTurn.set(key, resolution.activeSkillIds)
+    return resolution.activeSkillIds
+  }
 
   const nowIso = (): string => (deps.nowIso ? deps.nowIso() : new Date().toISOString())
 
@@ -389,10 +406,17 @@ export function createAgentSdkRuntime(deps: AgentSdkRuntimeFactoryDeps): AgentSd
       // skill, and the SDK must see the same per-turn catalog as the native
       // Kun loop.
       const skillResolution = deps.skillRuntime
-        ? await deps.skillRuntime.resolveTurn({ prompt: userText, workspace: thread.workspace })
+        ? await deps.skillRuntime.resolveTurn({
+            prompt: userText,
+            workspace: thread.workspace,
+            threadId,
+            turnId
+          })
         : undefined
       const activeSkillIds = skillResolution?.activeSkillIds ?? []
-      activeSkillIdsByTurn.set(skillTurnKey(threadId, turnId), activeSkillIds)
+      const turnKey = skillTurnKey(threadId, turnId)
+      activeSkillIdsByTurn.set(turnKey, activeSkillIds)
+      skillPromptByTurn.set(turnKey, userText)
       // Plan turns expose create_plan (and narrow kun tools to the plan-allowed
       // set); resolve before listing tools so the bridge sees create_plan.
       // awaitUserInput presence is what advertises `user_input` (the signal here
@@ -413,7 +437,27 @@ export function createAgentSdkRuntime(deps: AgentSdkRuntimeFactoryDeps): AgentSd
         sandboxMode: thread.sandboxMode ?? deps.defaultSandboxMode,
         awaitUserInput: makeAwaitUserInput(threadId, turnId, new AbortController().signal)
       })
-      const bridgeableTools: BridgeableTool[] = deps.registry.listTools(ctx).map((spec) => ({
+      // An Agent SDK query pins its in-process MCP schemas at startup and
+      // cannot add tools after `load_skill` returns. Pre-bridge schemas gated
+      // by skills visible in this workspace; executeKunTool still re-resolves
+      // the real active ids for every call, so schema visibility is not
+      // execution authority.
+      const availableSkillIds = typeof deps.skillRuntime?.availableSkillIdsForWorkspace === 'function'
+        ? await deps.skillRuntime.availableSkillIdsForWorkspace(thread.workspace)
+        : activeSkillIds
+      const bridgeListingContext = toolContext(threadId, turnId, thread.workspace, {
+        ...plan,
+        ...(turn?.guiDesignCanvas ? { guiDesignCanvas: true } : {}),
+        ...(turn?.guiDesignMode ? { guiDesignMode: true } : {}),
+        ...(turn?.guiDesignArtifact ? { guiDesignArtifact: turn.guiDesignArtifact } : {}),
+        ...(turn?.guiDesignArtifact?.kind === 'svg'
+          ? { allowedToolNames: SVG_ARTIFACT_ALLOWED_TOOL_NAMES }
+          : {}),
+        activeSkillIds: [...new Set([...activeSkillIds, ...availableSkillIds])],
+        sandboxMode: thread.sandboxMode ?? deps.defaultSandboxMode,
+        awaitUserInput: makeAwaitUserInput(threadId, turnId, new AbortController().signal)
+      })
+      const bridgeableTools: BridgeableTool[] = deps.registry.listTools(bridgeListingContext).map((spec) => ({
         name: spec.name,
         description: spec.description,
         inputSchema: spec.inputSchema
@@ -510,15 +554,7 @@ export function createAgentSdkRuntime(deps: AgentSdkRuntimeFactoryDeps): AgentSd
       const approvalPolicy = thread.approvalPolicy ?? deps.defaultApprovalPolicy
       const sandboxMode = thread.sandboxMode ?? deps.defaultSandboxMode
       const toolSignal = signal ?? new AbortController().signal
-      let activeSkillIds = activeSkillIdsByTurn.get(skillTurnKey(threadId, turnId))
-      if (!activeSkillIds && deps.skillRuntime) {
-        const skillResolution = await deps.skillRuntime.resolveTurn({
-          prompt: turn.prompt ?? '',
-          workspace: thread.workspace
-        })
-        activeSkillIds = skillResolution.activeSkillIds
-        activeSkillIdsByTurn.set(skillTurnKey(threadId, turnId), activeSkillIds)
-      }
+      const activeSkillIds = await resolveActiveSkillIds(thread, turn)
       // Real per-call signal so an interactive user_input cancels on turn abort.
       const ctx = toolContext(threadId, turnId, thread.workspace, {
         ...(plan ?? {}),
@@ -566,6 +602,16 @@ export function createAgentSdkRuntime(deps: AgentSdkRuntimeFactoryDeps): AgentSd
       // LocalToolHost context above; asking here too would create two prompts.
       if (toolName.startsWith('mcp__kun__')) return { allow: true }
       const thread = await deps.threadStore.get(threadId)
+      const turn = thread?.turns.find((candidate) => candidate.id === turnId)
+      if (thread && turn && toolName === 'Bash') {
+        const activeSkillIds = await resolveActiveSkillIds(thread, turn)
+        if (activeSkillIds.includes('ppt-master')) {
+          return {
+            allow: false,
+            message: 'Bash is unavailable while PPT Master is active; use ppt_master_run for managed presentation steps.'
+          }
+        }
+      }
       const approvalPolicy = thread?.approvalPolicy ?? deps.defaultApprovalPolicy
       if (approvalPolicy === 'never') {
         return { allow: false, message: 'tools are disabled for this turn (policy: never)' }
@@ -601,6 +647,10 @@ export function createAgentSdkRuntime(deps: AgentSdkRuntimeFactoryDeps): AgentSd
         await deps.turns.finishTurn({ threadId, turnId, status, ...(error ? { error } : {}) })
       } finally {
         activeSkillIdsByTurn.delete(skillTurnKey(threadId, turnId))
+        skillPromptByTurn.delete(skillTurnKey(threadId, turnId))
+        if (typeof deps.skillRuntime?.clearTurnActivation === 'function') {
+          deps.skillRuntime.clearTurnActivation(threadId, turnId)
+        }
       }
     },
 
