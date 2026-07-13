@@ -318,4 +318,50 @@ describe('CanvasViewport surface behavior', () => {
     })
     expect(merged.objects[merged.rootId]?.children).toEqual([stale.id])
   })
+
+  it('merges a live motion edit over a late disk load without dropping loaded timelines', () => {
+    const initial = createEmptyDocument()
+    const loaded = createEmptyDocument()
+    const loadedFrame = createDefaultShape('frame', 0, 0)
+    loaded.objects[loadedFrame.id] = { ...loadedFrame, parentId: loaded.rootId }
+    loaded.objects[loaded.rootId].children = [loadedFrame.id]
+    loaded.motion!.timelines[loadedFrame.id] = {
+      id: 'timeline-loaded',
+      frameId: loadedFrame.id,
+      durationMs: 1_000,
+      playback: 'once',
+      tracks: [{
+        id: 'track-loaded',
+        targetShapeId: loadedFrame.id,
+        property: 'opacity',
+        operation: 'set',
+        baseValue: 1,
+        keyframes: [{ id: 'key-loaded', timeMs: 0, value: 1, easing: { type: 'linear' } }]
+      }]
+    }
+    const live = createEmptyDocument()
+    live.motion!.timelines[live.rootId] = {
+      id: 'timeline-live',
+      frameId: live.rootId,
+      durationMs: 2_000,
+      playback: 'loop',
+      tracks: [{
+        id: 'track-live',
+        targetShapeId: live.rootId,
+        property: 'rotation',
+        operation: 'offset',
+        baseValue: 0,
+        keyframes: [{ id: 'key-live', timeMs: 0, value: 0, easing: { type: 'linear' } }]
+      }]
+    }
+
+    const merged = mergeLoadedCanvasDocumentWithLiveChanges(loaded, live, initial)
+
+    expect(merged.motion?.timelines[loadedFrame.id]?.id).toBe('timeline-loaded')
+    expect(merged.motion?.timelines[live.rootId]).toMatchObject({
+      id: 'timeline-live',
+      durationMs: 2_000,
+      playback: 'loop'
+    })
+  })
 })

@@ -23,6 +23,7 @@ import {
 import { buildGoalLocalTools } from '../adapters/tool/goal-tools.js'
 import { buildTodoLocalTools } from '../adapters/tool/todo-tools.js'
 import { buildDesignCanvasLocalTools } from '../adapters/tool/design-canvas-tool.js'
+import { buildDesignMotionLocalTools } from '../adapters/tool/design-motion-tool.js'
 import { buildDesignSvgLocalTools } from '../adapters/tool/design-svg-tool.js'
 import { buildPptMasterLocalTools } from '../adapters/tool/ppt-master-tool.js'
 import { LocalToolHost, buildDefaultLocalTools } from '../adapters/tool/local-tool-host.js'
@@ -480,7 +481,11 @@ export async function createKunServeRuntime(
     available: true,
     // Safe to include in child runs: the tool is still gated per turn by
     // `context.guiDesignCanvas`, so only design-canvas child turns see it.
-    tools: [...buildDesignCanvasLocalTools(), ...buildDesignSvgLocalTools()]
+    tools: [
+      ...buildDesignCanvasLocalTools(),
+      ...buildDesignMotionLocalTools(),
+      ...buildDesignSvgLocalTools()
+    ]
   }
   const pptMasterProvider = {
     id: 'ppt-master',
