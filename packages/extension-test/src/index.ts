@@ -5,9 +5,24 @@ import {
   ExtensionApiError,
   ExtensionHostClient,
   ExtensionToolDeclarationSchema,
+  GeneratedArtifactSchema,
   HostMessageSchema,
+  JobCancelRequestSchema,
+  JobEventSchema,
+  JobFilterSchema,
+  JobListRequestSchema,
+  JobResultSchema,
+  JobSnapshotSchema,
   JsonObjectSchema,
   JsonValueSchema,
+  MediaMetadataSchema,
+  MediaOpenViewResourceRequestSchema,
+  MediaPickFilesRequestSchema,
+  MediaPickSaveTargetRequestSchema,
+  MediaProbeRequestSchema,
+  MediaProbeResultSchema,
+  MediaReleaseRequestSchema,
+  MediaStartFfmpegJobRequestSchema,
   ModelProviderDeclarationSchema,
   NetworkRequestSchema,
   NetworkResponseSchema,
@@ -33,10 +48,18 @@ import {
   type HostRequestHandler,
   type HostRequestOptions,
   type HostTransport,
+  type GeneratedArtifact,
+  type JobEvent,
+  type JobListRequest,
+  type JobResult,
+  type JobResultInput,
+  type JobSnapshot,
   type JsonObject,
   type JsonValue,
   type ModelProviderDeclaration,
   type ModelProviderStreamEvent,
+  type MediaMetadata,
+  type MediaProbeResult,
   type NetworkResponse,
   type Permission,
   type ProviderStatus,
@@ -50,7 +73,7 @@ type FakeHostHandler = (
   params: JsonValue | undefined,
   options: HostRequestOptions
 ) => unknown | Promise<unknown>
-type PermissionResolver = (params: JsonValue | undefined) => string | undefined
+type PermissionResolver = (params: JsonValue | undefined) => string | readonly string[] | undefined
 
 export class FakeClock {
   #now: number
@@ -100,8 +123,11 @@ export class FakeHostTransport implements HostTransport {
     })
   }
 
-  requirePermission(method: string, permission: string | PermissionResolver): void {
-    this.#permissionResolvers.set(method, typeof permission === 'string' ? () => permission : permission)
+  requirePermission(
+    method: string,
+    permission: string | readonly string[] | PermissionResolver
+  ): void {
+    this.#permissionResolvers.set(method, typeof permission === 'function' ? permission : () => permission)
   }
 
   grant(...permissions: string[]): void {
@@ -121,13 +147,15 @@ export class FakeHostTransport implements HostTransport {
     if (options.signal?.aborted) throw this.#cancelled(method)
     this.requests.push({ method, params })
     const required = this.#permissionResolvers.get(method)?.(params)
-    if (required && !hasPermission([...this.permissions], required)) {
+    const missing = (typeof required === 'string' ? [required] : required ?? [])
+      .find((permission) => !hasPermission([...this.permissions], permission))
+    if (missing) {
       throw new ExtensionApiError({
         code: 'PERMISSION_DENIED',
-        message: `Permission ${required} is required for ${method}`,
+        message: `Permission ${missing} is required for ${method}`,
         operation: method,
         retryable: false,
-        details: { permission: required }
+        details: { permission: missing }
       })
     }
     const handler = this.#hostHandlers.get(method)
@@ -413,6 +441,380 @@ export class FakeAgentService {
   }
 }
 
+export function createGeneratedArtifactFixture(
+  overrides: Partial<GeneratedArtifact> = {}
+): GeneratedArtifact {
+  return GeneratedArtifactSchema.parse({
+    schemaVersion: 1,
+    artifactId: 'fake_artifact_000001',
+    ownerExtensionId: 'test.extension',
+    ownerExtensionVersion: '1.1.0',
+    workspaceId: 'test-workspace',
+    mediaHandleId: 'fake_media_output_0001',
+    displayName: 'output.mp4',
+    mediaKind: 'video',
+    mimeType: 'video/mp4',
+    byteSize: 4096,
+    completionIdentity: 'fake-completion-identity-0001',
+    provenance: { jobId: 'fake-job-1', operation: 'media.ffmpeg' },
+    ...overrides
+  })
+}
+
+type FakeCancellationMode = 'immediate' | 'pending'
+
+export class FakeJobService {
+  readonly snapshots = new Map<string, JobSnapshot>()
+  readonly events = new Map<string, JobEvent[]>()
+  readonly #subscriptions = new Map<string, string>()
+  cancellationMode: FakeCancellationMode = 'immediate'
+  #nextJob = 1
+  #nextSubscription = 1
+
+  constructor(
+    private readonly transport: FakeHostTransport,
+    private readonly clock: FakeClock,
+    private readonly identity: ExtensionIdentity,
+    private readonly workspaceId: string
+  ) {}
+
+  install(): void {
+    this.transport.handle('jobs.get', (params) =>
+      this.get(String(JsonObjectSchema.parse(params).jobId)))
+    this.transport.handle('jobs.list', (params) => this.list(JobListRequestSchema.parse(params)))
+    this.transport.handle('jobs.subscribe', (params) => {
+      const input = JsonObjectSchema.parse(params)
+      const jobId = String(input.jobId)
+      const snapshot = this.get(jobId)
+      const subscriptionId = `job-subscription-${this.#nextSubscription++}`
+      this.#subscriptions.set(subscriptionId, jobId)
+      const retained = this.events.get(jobId) ?? []
+      const afterCursor = input.afterCursor === undefined ? undefined : String(input.afterCursor)
+      const afterIndex = afterCursor === undefined
+        ? -1
+        : retained.findIndex((event) => event.cursor === afterCursor)
+      const gap = afterCursor !== undefined && afterIndex < 0
+      const replay = retained.slice(gap ? 0 : afterIndex + 1)
+      return {
+        subscriptionId,
+        snapshot,
+        replay,
+        cursor: snapshot.latestCursor,
+        gap,
+        complete: isTerminalJob(snapshot.state)
+      }
+    })
+    this.transport.handle('jobs.unsubscribe', (params) => {
+      this.#subscriptions.delete(String(JsonObjectSchema.parse(params).subscriptionId))
+      return { ok: true }
+    })
+    this.transport.handle('jobs.cancel', (params) => {
+      const request = JobCancelRequestSchema.parse(params)
+      const snapshot = this.get(request.jobId)
+      if (isTerminalJob(snapshot.state)) return { accepted: false, snapshot }
+      const cancelRequestedAt = this.clock.nowIso()
+      this.#replace({ ...snapshot, cancelRequestedAt, updatedAt: cancelRequestedAt })
+      this.#append(request.jobId, 'cancellation-requested', snapshot.state)
+      if (this.cancellationMode === 'immediate') this.settleCancellation(request.jobId)
+      return { accepted: true, snapshot: this.get(request.jobId) }
+    })
+  }
+
+  create(kind: string, initiatingOperation: string): JobSnapshot {
+    const id = `fake-job-${this.#nextJob++}`
+    const timestamp = this.clock.nowIso()
+    const cursor = `${id}.1`
+    const snapshot = JobSnapshotSchema.parse({
+      schemaVersion: 1,
+      id,
+      kind,
+      kindSchemaVersion: 1,
+      ownerExtensionId: this.identity.id,
+      ownerExtensionVersion: this.identity.version,
+      workspaceId: this.workspaceId,
+      initiatingOperation,
+      state: 'queued',
+      executionAttempt: 0,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      latestCursor: cursor
+    })
+    this.snapshots.set(id, snapshot)
+    this.events.set(id, [])
+    this.#append(id, 'created', 'queued')
+    return this.get(id)
+  }
+
+  get(jobId: string): JobSnapshot {
+    const snapshot = this.snapshots.get(jobId)
+    if (!snapshot) throw notFound(`Job ${jobId} was not found`, 'jobs.get')
+    return structuredClone(snapshot)
+  }
+
+  list(request: JobListRequest = {}): {
+    items: JobSnapshot[]
+    page: { nextCursor?: string; hasMore: boolean }
+  } {
+    const parsed = JobListRequestSchema.parse(request)
+    const filter = parsed.filter ? JobFilterSchema.parse(parsed.filter) : undefined
+    const offset = parsed.cursor ? Number(parsed.cursor.slice('page_'.length)) : 0
+    const matches = [...this.snapshots.values()]
+      .filter((job) => !filter?.states || filter.states.includes(job.state))
+      .filter((job) => !filter?.kinds || filter.kinds.includes(job.kind))
+      .filter((job) => !filter?.workspaceId || filter.workspaceId === job.workspaceId)
+      .filter((job) => !filter?.createdAfter || job.createdAt >= filter.createdAfter)
+      .filter((job) => !filter?.createdBefore || job.createdAt <= filter.createdBefore)
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt) || left.id.localeCompare(right.id))
+    const items = matches.slice(offset, offset + parsed.limit).map((item) => structuredClone(item))
+    const nextOffset = offset + items.length
+    return {
+      items,
+      page: nextOffset < matches.length
+        ? { nextCursor: `page_${String(nextOffset).padStart(4, '0')}`, hasMore: true }
+        : { hasMore: false }
+    }
+  }
+
+  start(jobId: string): JobSnapshot {
+    const snapshot = this.get(jobId)
+    if (snapshot.state !== 'queued') return snapshot
+    const timestamp = this.clock.nowIso()
+    this.#replace({
+      ...snapshot,
+      state: 'running',
+      executionAttempt: snapshot.executionAttempt + 1,
+      startedAt: timestamp,
+      updatedAt: timestamp
+    })
+    this.#append(jobId, 'state', 'running')
+    return this.get(jobId)
+  }
+
+  reportProgress(
+    jobId: string,
+    progress: Omit<NonNullable<JobSnapshot['progress']>, 'updatedAt'>
+  ): JobSnapshot {
+    const snapshot = this.get(jobId)
+    if (snapshot.state !== 'running') return snapshot
+    const normalized = { ...progress, updatedAt: this.clock.nowIso() }
+    this.#replace({ ...snapshot, progress: normalized, updatedAt: normalized.updatedAt })
+    this.#append(jobId, 'progress', 'running', { progress: normalized })
+    return this.get(jobId)
+  }
+
+  complete(jobId: string, result: JobResultInput = { schemaVersion: 1 }): JobSnapshot {
+    const snapshot = this.get(jobId)
+    if (isTerminalJob(snapshot.state) || snapshot.cancelRequestedAt) return snapshot
+    const timestamp = this.clock.nowIso()
+    const normalized = JobResultSchema.parse(result)
+    this.#replace({
+      ...snapshot,
+      state: 'completed',
+      result: normalized,
+      updatedAt: timestamp,
+      terminalAt: timestamp
+    })
+    this.#append(jobId, 'completed', 'completed', { result: normalized })
+    return this.get(jobId)
+  }
+
+  fail(jobId: string, code = 'FAKE_JOB_FAILED', message = 'Fake job failed'): JobSnapshot {
+    return this.#terminate(jobId, 'failed', 'failed', { code, message, retryable: false })
+  }
+
+  interrupt(jobId: string, message = 'Fake runtime restarted'): JobSnapshot {
+    return this.#terminate(jobId, 'interrupted', 'interrupted', {
+      code: 'FAKE_JOB_INTERRUPTED',
+      message,
+      retryable: true
+    })
+  }
+
+  settleCancellation(jobId: string): JobSnapshot {
+    const snapshot = this.get(jobId)
+    if (isTerminalJob(snapshot.state)) return snapshot
+    return this.#terminate(jobId, 'cancelled', 'cancelled')
+  }
+
+  simulateRestart(): void {
+    this.#subscriptions.clear()
+    for (const snapshot of [...this.snapshots.values()]) {
+      if (snapshot.cancelRequestedAt) this.settleCancellation(snapshot.id)
+      else if (snapshot.state === 'running') this.interrupt(snapshot.id)
+    }
+  }
+
+  #terminate(
+    jobId: string,
+    state: 'failed' | 'cancelled' | 'interrupted',
+    type: 'failed' | 'cancelled' | 'interrupted',
+    error?: { code: string; message: string; retryable: boolean }
+  ): JobSnapshot {
+    const snapshot = this.get(jobId)
+    if (isTerminalJob(snapshot.state)) return snapshot
+    const timestamp = this.clock.nowIso()
+    this.#replace({ ...snapshot, state, error, updatedAt: timestamp, terminalAt: timestamp })
+    this.#append(jobId, type, state, error ? { error } : {})
+    return this.get(jobId)
+  }
+
+  #replace(snapshot: JobSnapshot): void {
+    this.snapshots.set(snapshot.id, JobSnapshotSchema.parse(snapshot))
+  }
+
+  #append(
+    jobId: string,
+    type: JobEvent['type'],
+    state: JobSnapshot['state'],
+    fields: Pick<JobEvent, 'progress' | 'result' | 'error'> | {} = {}
+  ): JobEvent {
+    const snapshot = this.snapshots.get(jobId)
+    if (!snapshot) throw notFound(`Job ${jobId} was not found`, 'jobs.event')
+    const list = this.events.get(jobId) ?? []
+    const sequence = list.length + 1
+    const cursor = `${jobId}.${sequence}`
+    const event = JobEventSchema.parse({
+      schemaVersion: 1,
+      jobId,
+      kind: snapshot.kind,
+      type,
+      state,
+      timestamp: this.clock.nowIso(),
+      executionAttempt: snapshot.executionAttempt,
+      sequence,
+      cursor,
+      ...fields
+    })
+    list.push(event)
+    this.events.set(jobId, list)
+    this.#replace({ ...this.get(jobId), latestCursor: cursor })
+    for (const [subscriptionId, subscribedJobId] of this.#subscriptions) {
+      if (subscribedJobId === jobId) this.transport.emit('jobs.event', { subscriptionId, event })
+    }
+    return structuredClone(event)
+  }
+}
+
+export class FakeMediaService {
+  readonly handles = new Map<string, MediaMetadata>()
+  readonly probes = new Map<string, MediaProbeResult>()
+  readonly leases = new Map<string, { handleId: string; revoked: boolean }>()
+  readonly #fileSelections: MediaMetadata[][] = []
+  readonly #saveSelections: Array<MediaMetadata | undefined> = []
+  executablesAvailable = true
+  #nextLease = 1
+
+  constructor(
+    private readonly transport: FakeHostTransport,
+    private readonly jobs: FakeJobService,
+    private readonly clock: FakeClock
+  ) {}
+
+  install(): void {
+    this.transport.handle('media.pickFiles', (params) => {
+      MediaPickFilesRequestSchema.parse(params)
+      const files = this.#fileSelections.shift()
+      return files && files.length > 0 ? { outcome: 'selected', files } : { outcome: 'cancelled', files: [] }
+    })
+    this.transport.handle('media.pickSaveTarget', (params) => {
+      MediaPickSaveTargetRequestSchema.parse(params)
+      const target = this.#saveSelections.shift()
+      return target ? { outcome: 'selected', target } : { outcome: 'cancelled' }
+    })
+    this.transport.handle('media.stat', (params) => {
+      const handle = this.#get(MediaProbeRequestSchema.parse(params).handleId, 'media.stat')
+      return handle
+    })
+    this.transport.handle('media.release', (params) => {
+      const request = MediaReleaseRequestSchema.parse(params)
+      if (request.resource === 'lease') {
+        const lease = this.leases.get(request.leaseId)
+        if (lease) lease.revoked = true
+        return { released: lease !== undefined }
+      }
+      const handle = this.handles.get(request.handleId)
+      if (handle) this.handles.set(request.handleId, { ...handle, revoked: true })
+      return { released: handle !== undefined }
+    })
+    this.transport.handle('media.openViewResource', (params) => {
+      const request = MediaOpenViewResourceRequestSchema.parse(params)
+      const handle = this.#get(request.handleId, 'media.openViewResource')
+      if (handle.mode !== 'read') throw notFound('Media handle is not readable', 'media.openViewResource')
+      const leaseId = `fake_media_lease_${String(this.#nextLease++).padStart(4, '0')}`
+      this.leases.set(leaseId, { handleId: handle.handleId, revoked: false })
+      return {
+        leaseId,
+        handleId: handle.handleId,
+        url: `kun-media://fake/${leaseId}`,
+        mimeType: handle.mimeType ?? 'application/octet-stream',
+        expiresAt: new Date(this.clock.now() + 60_000).toISOString()
+      }
+    })
+    this.transport.handle('media.probe', (params) => {
+      if (!this.executablesAvailable) throw unavailable('media.probe')
+      const request = MediaProbeRequestSchema.parse(params)
+      this.#get(request.handleId, 'media.probe')
+      const probe = this.probes.get(request.handleId)
+      if (!probe) throw notFound('Fake probe output was not configured', 'media.probe')
+      return probe
+    })
+    this.transport.handle('media.startFfmpegJob', (params) => {
+      if (!this.executablesAvailable) throw unavailable('media.startFfmpegJob')
+      const request = MediaStartFfmpegJobRequestSchema.parse(params)
+      for (const handleId of Object.values(request.inputs)) {
+        const handle = this.#get(handleId, 'media.startFfmpegJob')
+        if (handle.mode !== 'read') throw notFound('FFmpeg input is not readable', 'media.startFfmpegJob')
+      }
+      for (const handleId of Object.values(request.outputs)) {
+        const handle = this.#get(handleId, 'media.startFfmpegJob')
+        if (handle.mode !== 'export') throw notFound('FFmpeg output is not writable', 'media.startFfmpegJob')
+      }
+      for (const output of Object.values(request.textOutputs ?? {})) {
+        const handle = this.#get(output.handleId, 'media.startFfmpegJob')
+        if (handle.mode !== 'export') throw notFound('Text output is not writable', 'media.startFfmpegJob')
+      }
+      const job = this.jobs.create('media.ffmpeg', 'media.startFfmpegJob')
+      return { job: { jobId: job.id, kind: job.kind, state: job.state, cursor: job.latestCursor } }
+    })
+  }
+
+  addHandle(metadata: unknown): MediaMetadata {
+    const parsed = MediaMetadataSchema.parse(metadata)
+    this.handles.set(parsed.handleId, parsed)
+    return structuredClone(parsed)
+  }
+
+  queueFileSelection(...files: unknown[]): MediaMetadata[] {
+    const parsed = files.map((file) => this.addHandle(file))
+    this.#fileSelections.push(parsed)
+    return parsed
+  }
+
+  queuePickerCancellation(): void {
+    this.#fileSelections.push([])
+  }
+
+  queueSaveTarget(target?: unknown): MediaMetadata | undefined {
+    const parsed = target ? this.addHandle(target) : undefined
+    this.#saveSelections.push(parsed)
+    return parsed
+  }
+
+  setProbe(handleId: string, result: unknown): MediaProbeResult {
+    this.#get(handleId, 'media.setProbe')
+    const parsed = MediaProbeResultSchema.parse(result)
+    if (parsed.handleId !== handleId) throw new Error('Fake probe handleId must match the configured handle')
+    this.probes.set(handleId, parsed)
+    return structuredClone(parsed)
+  }
+
+  #get(handleId: string, operation: string): MediaMetadata {
+    const handle = this.handles.get(handleId)
+    if (!handle || handle.revoked) throw notFound('Media handle was not found', operation)
+    return structuredClone(handle)
+  }
+}
+
 export class FakeToolService {
   readonly registrations = new Map<string, ExtensionToolDeclaration>()
   #next = 1
@@ -644,6 +1046,8 @@ export class ExtensionTestHarness implements Disposable {
   readonly storage = new FakeStorageService()
   readonly workspace = new FakeWorkspaceService()
   readonly agent: FakeAgentService
+  readonly jobs: FakeJobService
+  readonly media: FakeMediaService
   readonly tools: FakeToolService
   readonly providers: FakeProviderService
   readonly accounts: FakeAccountService
@@ -661,6 +1065,13 @@ export class ExtensionTestHarness implements Disposable {
     this.transport = new FakeHostTransport({ permissions: options.permissions })
     this.permissions = this.transport.permissions
     this.agent = new FakeAgentService(this.transport, this.clock, this.identity)
+    this.jobs = new FakeJobService(
+      this.transport,
+      this.clock,
+      this.identity,
+      options.workspace?.id ?? 'test-workspace'
+    )
+    this.media = new FakeMediaService(this.transport, this.jobs, this.clock)
     this.tools = new FakeToolService(this.transport)
     this.providers = new FakeProviderService(this.transport, this.clock)
     this.accounts = new FakeAccountService(this.clock)
@@ -672,8 +1083,8 @@ export class ExtensionTestHarness implements Disposable {
       this.transport,
       {
         extension: this.identity,
-        apiVersion: '1.0.0',
-        capabilities: [],
+        apiVersion: '1.1.0',
+        capabilities: ['artifacts.generated', 'jobs.observe', 'media.brokered'],
         permissions: [...this.permissions],
         workspaceContext: options.workspace,
         activationEvent: 'onStartup'
@@ -705,6 +1116,8 @@ export class ExtensionTestHarness implements Disposable {
     this.storage.install(this.transport)
     this.workspace.install(this.transport)
     this.agent.install()
+    this.jobs.install()
+    this.media.install()
     this.tools.install()
     this.providers.install()
     this.accounts.install(this.transport)
@@ -793,6 +1206,27 @@ export class ExtensionTestHarness implements Disposable {
     this.transport.requirePermission('workspace.stat', 'workspace.read')
     this.transport.requirePermission('workspace.list', 'workspace.read')
     this.transport.requirePermission('workspace.writeFile', 'workspace.write')
+    this.transport.requirePermission('media.pickFiles', ['media.read', 'workspace.read'])
+    this.transport.requirePermission('media.pickSaveTarget', ['media.export', 'workspace.write'])
+    this.transport.requirePermission('media.stat', ['media.read', 'workspace.read'])
+    this.transport.requirePermission('media.release', 'media.read')
+    this.transport.requirePermission('media.openViewResource', ['media.read', 'workspace.read'])
+    this.transport.requirePermission('media.probe', [
+      'media.read',
+      'media.process',
+      'workspace.read'
+    ])
+    this.transport.requirePermission('media.startFfmpegJob', [
+      'media.read',
+      'media.process',
+      'media.export',
+      'jobs.manage',
+      'workspace.read',
+      'workspace.write'
+    ])
+    for (const method of ['jobs.get', 'jobs.list', 'jobs.subscribe', 'jobs.unsubscribe', 'jobs.cancel']) {
+      this.transport.requirePermission(method, 'jobs.manage')
+    }
   }
 }
 
@@ -811,6 +1245,19 @@ function notFound(message: string, operation: string): ExtensionApiError {
 
 function isTerminal(state: AgentRun['state']): boolean {
   return ['completed', 'failed', 'cancelled', 'budget-exhausted'].includes(state)
+}
+
+function isTerminalJob(state: JobSnapshot['state']): boolean {
+  return ['completed', 'failed', 'cancelled', 'interrupted'].includes(state)
+}
+
+function unavailable(operation: string): ExtensionApiError {
+  return new ExtensionApiError({
+    code: 'HOST_UNAVAILABLE',
+    message: 'Fake media executables are unavailable',
+    operation,
+    retryable: true
+  })
 }
 
 export function createExtensionTestHarness(

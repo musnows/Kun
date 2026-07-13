@@ -546,6 +546,11 @@ function normalizeGeneratedFileReference(entry: unknown): GeneratedFileReference
   if (!entry || typeof entry !== 'object') return null
   const raw = entry as Record<string, unknown>
   const id = readMediaString(raw, 'id', 'attachmentId')
+  const artifactId = readMediaString(raw, 'artifactId')
+  const mediaHandleId = readMediaString(raw, 'mediaHandleId')
+  const ownerExtensionId = readMediaString(raw, 'ownerExtensionId')
+  const ownerExtensionVersion = readMediaString(raw, 'ownerExtensionVersion')
+  const workspaceId = readMediaString(raw, 'workspaceId')
   const name = readMediaString(raw, 'name', 'fileName', 'filename')
   const mimeType = readMediaString(raw, 'mimeType', 'type', 'mediaType')
   const previewUrl = readMediaString(raw, 'previewUrl', 'dataUrl', 'url')
@@ -555,8 +560,17 @@ function normalizeGeneratedFileReference(entry: unknown): GeneratedFileReference
   const byteSize = typeof raw.byteSize === 'number' && Number.isFinite(raw.byteSize) ? raw.byteSize : undefined
   const width = typeof raw.width === 'number' && Number.isFinite(raw.width) ? raw.width : undefined
   const height = typeof raw.height === 'number' && Number.isFinite(raw.height) ? raw.height : undefined
+  const availability = raw.availability === 'available' || raw.availability === 'unavailable'
+    ? raw.availability
+    : undefined
   const normalized: GeneratedFileReference = {
     ...(id ? { id } : {}),
+    ...(artifactId ? { artifactId } : {}),
+    ...(mediaHandleId ? { mediaHandleId } : {}),
+    ...(availability ? { availability } : {}),
+    ...(ownerExtensionId ? { ownerExtensionId } : {}),
+    ...(ownerExtensionVersion ? { ownerExtensionVersion } : {}),
+    ...(workspaceId ? { workspaceId } : {}),
     ...(name ? { name } : {}),
     ...(mimeType ? { mimeType } : {}),
     ...(byteSize ? { byteSize } : {}),
@@ -686,7 +700,7 @@ function useMediaPreviewUrls(media: TimelineMediaReference[]): Record<string, st
         .map((item) => {
           const key = mediaKey(item)
           if (item.previewUrl || resolvedPreviewUrls[key] || failedPreviewIds[key]) return null
-          if (item.id && (mediaIsImage(item) || mediaIsVideo(item) || !item.mimeType)) {
+          if (item.id && !item.artifactId && (mediaIsImage(item) || mediaIsVideo(item) || !item.mimeType)) {
             return { key, id: item.id, mode: 'attachment' } satisfies MediaPreviewRequest
           }
           const path = mediaIsImage(item) ? mediaPath(item) : undefined
@@ -773,11 +787,12 @@ function MediaPreviewTile({
   const workspaceRoot = useChatStore((s) => s.workspaceRoot)
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [imagePreviewOpen, setImagePreviewOpen] = useState(false)
+  const unavailable = 'availability' in media && media.availability === 'unavailable'
   const title = mediaName(media)
   const filePath = mediaPath(media)
   const mimeType = media.mimeType || (mediaIsImage(media) ? 'image' : mediaIsVideo(media) ? 'video' : '')
   const byteSize = formatByteSize(media.byteSize)
-  const hasRichPreview = !!previewUrl && (mediaIsImage(media) || mediaIsVideo(media))
+  const hasRichPreview = !unavailable && !!previewUrl && (mediaIsImage(media) || mediaIsVideo(media))
   const tileClass =
     variant === 'conversation'
       ? hasRichPreview
@@ -788,7 +803,11 @@ function MediaPreviewTile({
         : 'block h-28 w-36 overflow-hidden rounded-lg border border-ds-border-muted bg-ds-card shadow-sm'
   const revealClass = variant === 'user' ? '' : ' ds-media-printer-reveal'
   const mediaClass = 'h-full w-full object-contain'
-  const canSave = Boolean(filePath || dataUrlPayload(previewUrl))
+  const canSave = !unavailable && Boolean(filePath || dataUrlPayload(previewUrl))
+  const canOpenArtifact = !unavailable && Boolean(
+    media.artifactId && media.ownerExtensionId && media.ownerExtensionVersion &&
+    media.workspaceId && workspaceRoot
+  )
   const saveLabel =
     saveState === 'saving'
       ? t('generatedFileSaving')
@@ -829,6 +848,18 @@ function MediaPreviewTile({
         title
       }).catch(() => undefined)
     }
+  }
+  const handleArtifactAction = async (action: 'open' | 'reveal'): Promise<void> => {
+    if (!canOpenArtifact || typeof window.kunGui?.openExtensionArtifact !== 'function') return
+    const result = await window.kunGui.openExtensionArtifact({
+      artifactId: media.artifactId!,
+      ownerExtensionId: media.ownerExtensionId!,
+      ownerExtensionVersion: media.ownerExtensionVersion!,
+      workspaceId: media.workspaceId!,
+      workspaceRoot: workspaceRoot!,
+      action
+    })
+    setSaveState(result.ok ? 'saved' : 'error')
   }
   const saveButtonClass =
     'inline-flex h-7 items-center justify-center rounded-md border border-ds-border-muted bg-ds-card/90 px-2 text-[11.5px] font-medium text-ds-muted shadow-sm transition hover:bg-ds-hover hover:text-ds-ink disabled:cursor-not-allowed disabled:opacity-50'
@@ -914,7 +945,9 @@ function MediaPreviewTile({
             {title}
           </div>
           <div className="mt-0.5 truncate text-[11px] text-ds-faint">
-            {[mimeType, byteSize].filter(Boolean).join(' · ') || t('generatedFilePreviewUnavailable')}
+            {unavailable
+              ? t('generatedFilePreviewUnavailable')
+              : [mimeType, byteSize].filter(Boolean).join(' · ') || t('generatedFilePreviewUnavailable')}
           </div>
         </div>
       </div>
@@ -929,7 +962,25 @@ function MediaPreviewTile({
           <span className="mr-1.5">{saveIcon}</span>
           {t('generatedFileDownload')}
         </button>
-      {filePath ? (
+      {canOpenArtifact ? (
+        <>
+          <button
+            type="button"
+            onClick={() => void handleArtifactAction('open')}
+            className={saveButtonClass}
+          >
+            {t('filePreviewOpenEditor')}
+          </button>
+          <button
+            type="button"
+            onClick={() => void handleArtifactAction('reveal')}
+            className={saveButtonClass}
+          >
+            {t('fileTreeRevealInFileManager')}
+          </button>
+        </>
+      ) : null}
+      {filePath && !unavailable ? (
         <button
           type="button"
           onClick={() => void openWorkspacePathInEditor({ path: filePath }, workspaceRoot)}

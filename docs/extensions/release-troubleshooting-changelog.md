@@ -31,6 +31,8 @@
 
 PR 检查必须在三种原生 runner 上完成上述 smoke，且只验证、上传临时 artifact，不创建 Release。最后一个 smoke 成功后才可运行 `npm run evidence:extension-native`；生成的三平台 JSON 证据必须绑定完整 commit、GitHub run/attempt、规范 artifact、bytes 和 SHA-256，并随 artifact 上传。证据生成对缺失、多余、错误架构、目录和 symlink fail closed。macOS PR 使用不含发布秘密的 ad-hoc 签名；正式发布记录仍必须来自 Developer ID 签名、公证和 stapled ticket 均通过的受保护工作流。
 
+可下载的 `kun-video-editor-*.kunx` 必须先于 Linux 原生 lifecycle smoke 打包，并把这个精确的普通文件依次用于 validate、install、activation、render、uninstall，且上传前复核 SHA-256 未变化；stable 与 daily publish 下载后还会再次校验该 archive。手工发布在任何构建前要求 tracked 与 untracked 工作区均干净。Windows 发布会 fetch 远端 tag，并要求它与本地 `HEAD` 指向同一 commit；将 draft 公开或把 R2 `latest` 推广前，还会下载该 tag 的完整 Release assets，统一校验三份 evidence JSON、六个原生安装包、唯一版本/commit、每个 size/SHA-256、所需 FFmpeg 能力和唯一 `.kunx`。所有以 `Kun-` 命名的 Release asset 必须命中六个 final artifact 或同版本 canonical blockmap allowlist，其他扩展名、架构、大小写或版本全部拒绝。因此缺少 Linux evidence 时，`--publish`/`-Publish` 与 `--r2-promote`/`-PromoteR2` 都必须失败；R2 推广还显式要求 mac、win、linux 三份 manifest，不能生成缺平台的 `latest`。macOS 单平台脚本的 `--r2` 只上传 metadata，并拒绝推广；推广必须由三平台校验后的 Windows 路径执行。手工发布清理会删除旧 evidence 和 `.kunx`，因为 evidence 生成刻意使用 create-only 语义。
+
 #### 发布证据记录
 
 | 证据 | 状态（Pass/Blocked/N/A） | Commit、CI run、artifact 或报告链接 | Reviewer/日期 |
@@ -194,10 +196,39 @@ Changelog 记录公开 Extension API，而不是 Kun 内部重构。每项包含
 下面的 public surface 快照由文档门禁从 package 入口、公开 export 和可达 `.d.ts` 计算。只有在本节已经解释兼容性影响后才更新快照；不能把更新 hash 当成 Changelog 条目。
 
 <!-- BEGIN GENERATED SDK PUBLIC SURFACE SNAPSHOTS -->
-<!-- sdk-surface-snapshot @kun/extension-api@1.0.0 sha256:f0d5ab4b66bce2be3c094f18bdb342ef66d097b057f954ef35a9dbb840567006 -->
-<!-- sdk-surface-snapshot @kun/extension-react@1.0.0 sha256:e2099a64dc22c05056dca0c599bafdfb22702b6d57e9b60edd2154b165323322 -->
-<!-- sdk-surface-snapshot @kun/extension-test@1.0.0 sha256:6a8a22ddd71ea7b7d88401f6fae3530775e59fdca52c9dc6052b4593950588be -->
+<!-- sdk-surface-snapshot @kun/extension-api@1.1.0 sha256:cdc0bd632da1bbcc647eee6d35153117384cc383a57836882d52240170044a4b -->
+<!-- sdk-surface-snapshot @kun/extension-react@1.1.0 sha256:e2099a64dc22c05056dca0c599bafdfb22702b6d57e9b60edd2154b165323322 -->
+<!-- sdk-surface-snapshot @kun/extension-test@1.1.0 sha256:33b2b05b8f258d9f56d4cba2b74ce080a498e2aa0880ae4402a09c79668985a3 -->
 <!-- END GENERATED SDK PUBLIC SURFACE SNAPSHOTS -->
+
+### v1.1.0 — Brokered media、durable job 与 generated artifact
+
+Added:
+
+- `media.read`、`media.process`、`media.export` 和 `jobs.manage` 最小权限。
+- `MediaApi` 的受保护 picker、不透明 handle/stat、normalized probe、短期 View resource lease、release 和 brokered FFmpeg job 契约。
+- Brokered FFmpeg job 新增可选、有界的 `textOutputs`，用于 Host 授权的 UTF-8、SRT 与 WebVTT sidecar，并与媒体输出共同原子提交或回滚；既有调用无需迁移。
+- `JobsApi` 的自有 job get/list/cursor subscription/cancel 契约、bounded progress/event/result、显式 interrupted state；不提供通用 `jobs.start` 或扩展 worker 注册。
+- Tool 和 terminal job result 顶层 `generatedArtifacts`，以及不携带本地路径的 artifact/media-handle result-preview reference。
+- `media.performArtifactAction()`：由已认证交互式 View 发起，对可用 generated artifact 执行 open/reveal；既有 media 调用无需迁移。
+- `@kun/extension-test` 中确定性的 fake media/jobs、权限失败、restart/cancellation control、executable-unavailable 行为和 artifact fixture。
+- 公开且 fail-closed 的 View-safe method catalog，用于 Host boundary drift 检查。
+
+Changed:
+
+- `@kun/extension-api`、`@kun/extension-react` 和 `@kun/extension-test` 一起升级到 1.1.0。Manifest v1 与 API v1.0.0 在 major 1 内继续被接受；已有 v1.0 扩展无需 source migration。
+- `ToolResult.generatedArtifacts` 和新增的 `ResultPreviewSource` artifact 字段均为可选，因此 v1.0 result envelope 与 relative-path preview 保持原有形状。
+
+Security:
+
+- 公开 media 契约只携带 opaque handle 与 lease，不携带绝对路径。交互式 picker/resource 方法在缺少受保护 surface 时显式失败；broker 契约不声称 trusted Node extension code 是操作系统 sandbox。
+- Artifact open/reveal 请求只携带 opaque artifact ID 与 action。Main 从已认证 View Session 派生 owner、精确扩展版本和 workspace，且不返回本地路径。
+- FFmpeg 创建只接受 argument array 与具名 input/output handle，并把执行交给 core-owned durable job；公开 API 不暴露 executable override、shell、process object 或 arbitrary job worker。
+
+Compatibility notes:
+
+- `SUPPORTED_EXTENSION_API_VERSIONS` 依次为 `1.1.0`、`1.0.0`；v1.0 Manifest 在当前 major 上协商，不需要 breaking adapter。
+- Media/job 方法要求新的显式 permission 和 Host v1.1 capability。既有 v1.0 方法、Manifest 和 result source 仍然有效。
 
 ### v1.0.0 — Initial stable API
 

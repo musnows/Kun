@@ -31,11 +31,25 @@ export type AttachmentReference = {
 
 export type GeneratedFileReference = {
   id?: string
+  artifactId?: string
+  mediaHandleId?: string
+  availability?: 'available' | 'unavailable'
   name?: string
   mimeType?: string
   byteSize?: number
   width?: number
   height?: number
+  durationMicros?: number
+  mediaKind?: 'video' | 'audio' | 'image' | 'subtitle' | 'document' | 'data' | 'other'
+  completionIdentity?: string
+  ownerExtensionId?: string
+  ownerExtensionVersion?: string
+  workspaceId?: string
+  provenance?: {
+    jobId?: string
+    invocationId?: string
+    operation: string
+  }
   previewUrl?: string
   path?: string
   relativePath?: string

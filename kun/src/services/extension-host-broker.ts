@@ -4,6 +4,8 @@ import { isAbsolute, relative, resolve } from 'node:path'
 import { z } from 'zod'
 import {
   AccountSchema,
+  ArtifactHostActionRequestSchema,
+  ArtifactHostActionResultSchema,
   AgentCancelRequestSchema,
   AgentCreateRunRequestSchema,
   AgentRunEventSchema,
@@ -17,6 +19,21 @@ import {
   JsonValueSchema,
   ListAccountsRequestSchema,
   ListOwnThreadsRequestSchema,
+  JobCancelRequestSchema,
+  JobGetRequestSchema,
+  JobListRequestSchema,
+  JobSnapshotSchema,
+  MediaMetadataSchema,
+  MediaOpenViewResourceRequestSchema,
+  MediaPickFilesRequestSchema,
+  MediaPickFilesResultSchema,
+  MediaPickSaveTargetRequestSchema,
+  MediaPickSaveTargetResultSchema,
+  MediaProbeRequestSchema,
+  MediaProbeResultSchema,
+  MediaReleaseRequestSchema,
+  MediaResourceLeaseSchema,
+  MediaStartFfmpegJobRequestSchema,
   ModelProviderDeclarationSchema,
   ModelProviderStreamEventSchema,
   NetworkRequestSchema,
@@ -45,6 +62,7 @@ import type {
   ExtensionBrokerRequest,
   ExtensionPrincipal as HostExtensionPrincipal
 } from '../extensions/host-process.js'
+import { extensionWorkspaceKey } from '../extensions/paths.js'
 import type { JsonValue } from '../extensions/types.js'
 import type { ExtensionStateStore } from '../extensions/state-store.js'
 import {
@@ -60,6 +78,12 @@ import {
 import type { ExtensionAccountBroker } from './extension-account-broker.js'
 import type { ExtensionCredentialStore } from './extension-credential-store.js'
 import type { ExtensionConfigurationService } from './extension-configuration-service.js'
+import type { ExtensionArtifactService } from './extension-artifact-service.js'
+import type { ExtensionMediaHandleService, MediaHandleProjection } from './extension-media-handle-service.js'
+import type { ExtensionMediaProcessService } from './extension-media-process-service.js'
+import type { ExtensionMediaJobService } from './extension-media-job-service.js'
+import type { ExtensionJobService } from './extension-job-service.js'
+import type { ExtensionJobSubscription } from './extension-job-subscription.js'
 import type {
   ExtensionAgentEvent,
   ExtensionAgentRun,
@@ -73,6 +97,7 @@ import {
   compileExtensionJsonSchema,
   type ExtensionJsonSchemaValidator
 } from '../extensions/json-schema-validator.js'
+import { extensionError } from '../extensions/errors.js'
 
 const RegistrationIdSchema = z.string().min(1).max(256)
 const RegistrationRequestSchema = z.strictObject({ registrationId: RegistrationIdSchema })
@@ -130,6 +155,11 @@ export type ExtensionHostBrokerOptions = {
   credentials: ExtensionCredentialStore
   state: ExtensionStateStore
   configuration: ExtensionConfigurationService
+  artifacts?: ExtensionArtifactService
+  mediaHandles?: ExtensionMediaHandleService
+  mediaProcesses?: ExtensionMediaProcessService
+  mediaJobs?: ExtensionMediaJobService
+  jobs?: ExtensionJobService
   invokeExtension(
     extensionId: string,
     activationEvent: string,
@@ -193,6 +223,12 @@ type AgentSubscription = {
   subscription: ExtensionAgentSubscription
 }
 
+type JobSubscription = {
+  extensionId: string
+  viewSessionId?: string
+  subscription: ExtensionJobSubscription
+}
+
 type CommandRegistration = {
   extensionId: string
   localId: string
@@ -238,6 +274,7 @@ export class ExtensionHostBroker {
   private readonly tools = new Map<string, ToolRegistration>()
   private readonly providers = new Map<string, ProviderRegistration>()
   private readonly subscriptions = new Map<string, AgentSubscription>()
+  private readonly jobSubscriptions = new Map<string, JobSubscription>()
   private readonly commands = new Map<string, CommandRegistration>()
   private readonly providerStreams = new Map<string, ProviderStreamEntry>()
   private readonly toolProgress = new Map<string, (value: ToolExecutionUpdate) => Promise<void>>()
@@ -452,6 +489,11 @@ export class ExtensionHostBroker {
       entry.subscription.close()
       this.subscriptions.delete(id)
     }
+    for (const [id, entry] of [...this.jobSubscriptions]) {
+      if (entry.extensionId !== extensionId) continue
+      entry.subscription.close()
+      this.jobSubscriptions.delete(id)
+    }
     for (const [id, entry] of [...this.commands]) {
       if (entry.extensionId === extensionId) this.commands.delete(id)
     }
@@ -483,6 +525,12 @@ export class ExtensionHostBroker {
       this.subscriptions.delete(id)
       disposed += 1
     }
+    for (const [id, entry] of [...this.jobSubscriptions]) {
+      if (entry.viewSessionId !== viewSessionId) continue
+      entry.subscription.close()
+      this.jobSubscriptions.delete(id)
+      disposed += 1
+    }
     return disposed
   }
 
@@ -491,6 +539,7 @@ export class ExtensionHostBroker {
       ...[...this.tools.values()].map((entry) => entry.extensionId),
       ...[...this.providers.values()].map((entry) => entry.extensionId),
       ...[...this.subscriptions.values()].map((entry) => entry.extensionId),
+      ...[...this.jobSubscriptions.values()].map((entry) => entry.extensionId),
       ...[...this.commands.values()].map((entry) => entry.extensionId),
       ...[...this.accountSessions.values()].map((entry) => entry.extensionId),
       ...[...this.providerStreams.values()].map((entry) => entry.extensionId),
@@ -605,9 +654,242 @@ export class ExtensionHostBroker {
       case 'workspace.stat':
       case 'workspace.list':
         return this.workspace(principal, request.method, request.params)
+      case 'media.pickFiles':
+        return this.mediaPickFiles(principal, request.params, request.signal)
+      case 'media.pickSaveTarget':
+        return this.mediaPickSaveTarget(principal, request.params, request.signal)
+      case 'media.stat':
+        return this.mediaStat(principal, request.params)
+      case 'media.release':
+        return this.mediaRelease(principal, request.params, request.signal)
+      case 'media.openViewResource':
+        return this.mediaOpenViewResource(principal, request.params, request.signal)
+      case 'media.performArtifactAction':
+        return this.mediaPerformArtifactAction(principal, request.params, request.signal)
+      case 'media.probe':
+        return this.mediaProbe(principal, request.params)
+      case 'media.startFfmpegJob':
+        return this.mediaStartFfmpegJob(principal, request.params)
+      case 'jobs.get':
+        return this.jobsGet(principal, request.params)
+      case 'jobs.list':
+        return this.jobsList(principal, request.params)
+      case 'jobs.subscribe':
+        return this.jobsSubscribe(principal, request.params)
+      case 'jobs.unsubscribe':
+        return this.jobsUnsubscribe(principal, request.params)
+      case 'jobs.cancel':
+        return this.jobsCancel(principal, request.params)
       default:
         throw new Error(`unsupported Extension Host broker method: ${request.method}`)
     }
+  }
+
+  private async mediaPickFiles(
+    principal: ExtensionPrincipal,
+    params: JsonValue,
+    signal: AbortSignal
+  ) {
+    const request = MediaPickFilesRequestSchema.parse(params)
+    const result = await this.requireUiOperation(principal, 'media.pickFiles', request, signal)
+    return MediaPickFilesResultSchema.parse(result)
+  }
+
+  private async mediaPickSaveTarget(
+    principal: ExtensionPrincipal,
+    params: JsonValue,
+    signal: AbortSignal
+  ) {
+    const request = MediaPickSaveTargetRequestSchema.parse(params)
+    const result = await this.requireUiOperation(principal, 'media.pickSaveTarget', request, signal)
+    return MediaPickSaveTargetResultSchema.parse(result)
+  }
+
+  private async mediaStat(principal: ExtensionPrincipal, params: JsonValue) {
+    if (!this.options.mediaHandles) throw new Error('Media handle service is unavailable')
+    const request = z.strictObject({ handleId: z.string().min(16).max(512) }).parse(params)
+    const handle = await this.options.mediaHandles.stat(principal, request.handleId)
+    return publicMediaMetadata(handle)
+  }
+
+  private async mediaRelease(
+    principal: ExtensionPrincipal,
+    params: JsonValue,
+    signal: AbortSignal
+  ) {
+    const request = MediaReleaseRequestSchema.parse(params)
+    if (request.resource === 'handle') {
+      if (!this.options.mediaHandles) throw new Error('Media handle service is unavailable')
+      return { released: await this.options.mediaHandles.release(principal, request.handleId) }
+    }
+    const result = await this.requireUiOperation(principal, 'media.release', request, signal)
+    return z.strictObject({ released: z.boolean() }).parse(result)
+  }
+
+  private async mediaOpenViewResource(
+    principal: ExtensionPrincipal,
+    params: JsonValue,
+    signal: AbortSignal
+  ) {
+    if (!principal.viewSessionId || !principal.viewContributionId) {
+      throw new Error('Media View resources require an authenticated View Session')
+    }
+    const request = MediaOpenViewResourceRequestSchema.parse(params)
+    const result = await this.requireUiOperation(principal, 'media.openViewResource', request, signal)
+    return MediaResourceLeaseSchema.parse(result)
+  }
+
+  private async mediaPerformArtifactAction(
+    principal: ExtensionPrincipal,
+    params: JsonValue,
+    signal: AbortSignal
+  ) {
+    if (!principal.viewSessionId || !principal.viewContributionId) {
+      throw new Error('Artifact actions require an authenticated View Session')
+    }
+    const request = ArtifactHostActionRequestSchema.parse(params)
+    const result = await this.requireUiOperation(
+      principal,
+      'media.performArtifactAction',
+      request,
+      signal
+    )
+    return ArtifactHostActionResultSchema.parse(result)
+  }
+
+  private async mediaProbe(principal: ExtensionPrincipal, params: JsonValue) {
+    if (!this.options.mediaProcesses) throw new Error('Media process service is unavailable')
+    const request = MediaProbeRequestSchema.parse(params)
+    return MediaProbeResultSchema.parse(await this.options.mediaProcesses.probe(
+      principal,
+      request.handleId
+    ))
+  }
+
+  private async mediaStartFfmpegJob(principal: ExtensionPrincipal, params: JsonValue) {
+    if (!this.options.mediaJobs) throw new Error('Media job service is unavailable')
+    const request = MediaStartFfmpegJobRequestSchema.parse(params)
+    return { job: await this.options.mediaJobs.start(principal, request) }
+  }
+
+  private async jobsGet(principal: ExtensionPrincipal, params: JsonValue) {
+    const jobs = this.requireJobs(principal)
+    const request = JobGetRequestSchema.parse(params)
+    return JobSnapshotSchema.parse(await jobs.getOwned(jobCaller(principal), request.jobId))
+  }
+
+  private async jobsList(principal: ExtensionPrincipal, params: JsonValue) {
+    const jobs = this.requireJobs(principal)
+    const request = JobListRequestSchema.parse(params)
+    return await jobs.listOwned(jobCaller(principal), {
+      ...(request.filter ? { filter: request.filter } : {}),
+      ...(request.cursor ? { cursor: request.cursor } : {}),
+      limit: request.limit
+    })
+  }
+
+  private async jobsSubscribe(principal: ExtensionPrincipal, params: JsonValue) {
+    const jobs = this.requireJobs(principal)
+    const request = z.strictObject({
+      jobId: z.string().min(8).max(512),
+      afterCursor: z.string().min(8).max(512).optional()
+    }).parse(params)
+    const subscription = await jobs.subscribe(
+      jobCaller(principal),
+      request.jobId,
+      request.afterCursor
+    )
+    if (!subscription.complete) {
+      this.jobSubscriptions.set(subscription.subscriptionId, {
+        extensionId: principal.extensionId,
+        ...(principal.viewSessionId ? { viewSessionId: principal.viewSessionId } : {}),
+        subscription
+      })
+      void this.pumpJobSubscription(principal, subscription)
+    }
+    return {
+      subscriptionId: subscription.subscriptionId,
+      snapshot: JobSnapshotSchema.parse(subscription.snapshot),
+      replay: subscription.replay,
+      cursor: subscription.cursor,
+      gap: subscription.gap,
+      complete: subscription.complete
+    }
+  }
+
+  private jobsUnsubscribe(principal: ExtensionPrincipal, params: JsonValue) {
+    const jobs = this.requireJobs(principal)
+    const { subscriptionId } = SubscriptionIdSchema.parse(params)
+    const entry = this.jobSubscriptions.get(subscriptionId)
+    if (entry?.extensionId === principal.extensionId && entry.viewSessionId === principal.viewSessionId) {
+      jobs.unsubscribe(jobCaller(principal), subscriptionId)
+      entry.subscription.close()
+      this.jobSubscriptions.delete(subscriptionId)
+    }
+    return null
+  }
+
+  private async jobsCancel(principal: ExtensionPrincipal, params: JsonValue) {
+    const jobs = this.requireJobs(principal)
+    const request = JobCancelRequestSchema.parse(params)
+    return await jobs.cancel(jobCaller(principal), request.jobId, request.reason)
+  }
+
+  private requireJobs(principal: ExtensionPrincipal): ExtensionJobService {
+    if (!principal.permissions.includes('jobs.manage')) throw new Error('Missing permission: jobs.manage')
+    if (!this.options.jobs) throw new Error('Extension job service is unavailable')
+    return this.options.jobs
+  }
+
+  private async pumpJobSubscription(
+    principal: ExtensionPrincipal,
+    subscription: ExtensionJobSubscription
+  ): Promise<void> {
+    try {
+      for await (const item of subscription) {
+        if (item.type === 'overflow') break
+        const notification = toJson({ subscriptionId: subscription.subscriptionId, event: item.event })
+        if (principal.viewSessionId) {
+          if (!this.options.notifyView) throw new Error('View notification bridge is unavailable')
+          await this.options.notifyView({ principal, method: 'jobs.event', params: notification })
+        } else {
+          await this.options.notifyExtension?.(principal.extensionId, 'jobs.event', notification)
+        }
+      }
+    } finally {
+      const entry = this.jobSubscriptions.get(subscription.subscriptionId)
+      if (entry?.subscription === subscription) this.jobSubscriptions.delete(subscription.subscriptionId)
+      subscription.close()
+    }
+  }
+
+  private async requireUiOperation(
+    principal: ExtensionPrincipal,
+    method: string,
+    params: unknown,
+    signal: AbortSignal
+  ): Promise<JsonValue> {
+    if (!this.options.onUiRequest) {
+      throw extensionError(
+        'MEDIA_INTERACTION_REQUIRED',
+        'Media operation requires protected desktop interaction',
+        { operation: method }
+      )
+    }
+    const result = await this.options.onUiRequest({
+      principal,
+      method,
+      params: toJson(params),
+      signal
+    })
+    if (result === undefined) {
+      throw extensionError(
+        'MEDIA_INTERACTION_REQUIRED',
+        'Media operation requires protected desktop interaction',
+        { operation: method }
+      )
+    }
+    return result
   }
 
   private async registerCommand(principal: ExtensionPrincipal, params: JsonValue) {
@@ -979,6 +1261,16 @@ export class ExtensionHostBroker {
             workspaceRoots: [...principal.workspaceRoots]
           }
         ))
+        if (result.generatedArtifacts?.length) {
+          if (!this.options.artifacts) {
+            throw new Error('Generated artifact validation service is unavailable')
+          }
+          result.generatedArtifacts = await this.options.artifacts.validateToolResult(
+            principal,
+            extensionWorkspaceKey(invocation.workspace),
+            result.generatedArtifacts
+          )
+        }
         return { output: result, declaredOutput: result.content, isError: false }
       } finally {
         this.toolProgress.delete(invocation.invocationId)
@@ -1568,6 +1860,17 @@ export function requiredExtensionBrokerPermission(method: string, params: JsonVa
   if (method === 'authentication.listAccounts') return 'accounts.read'
   if (method === 'workspace.writeFile') return 'workspace.write'
   if (method.startsWith('workspace.')) return 'workspace.read'
+  if (method === 'media.pickSaveTarget') return 'media.export'
+  if (method === 'media.probe' || method === 'media.startFfmpegJob') return 'media.process'
+  if (
+    method === 'media.pickFiles' ||
+    method === 'media.stat' ||
+    method === 'media.openViewResource' ||
+    method === 'media.performArtifactAction'
+  ) {
+    return 'media.read'
+  }
+  if (method.startsWith('jobs.')) return 'jobs.manage'
   if (method.startsWith('storage.global')) return 'storage.global'
   if (method.startsWith('storage.workspace')) return 'storage.workspace'
   if (method.startsWith('storage.')) {
@@ -1578,6 +1881,41 @@ export function requiredExtensionBrokerPermission(method: string, params: JsonVa
   if (method === 'ui.showNotification') return 'ui.notifications'
   if (method.startsWith('ui.')) return 'ui.views'
   return undefined
+}
+
+function publicMediaMetadata(handle: MediaHandleProjection) {
+  const kind = handle.mimeType.startsWith('video/')
+    ? 'video'
+    : handle.mimeType.startsWith('audio/')
+      ? 'audio'
+      : handle.mimeType.startsWith('image/')
+        ? 'image'
+        : handle.mimeType === 'text/vtt' || handle.mimeType === 'application/x-subrip'
+          ? 'subtitle'
+          : handle.mimeType === 'application/octet-stream'
+            ? 'unknown'
+            : 'data'
+  return MediaMetadataSchema.parse({
+    handleId: handle.id,
+    mode: handle.mode === 'write' ? 'export' : 'read',
+    kind,
+    displayName: handle.displayName,
+    mimeType: handle.mimeType,
+    ...(handle.byteSize !== undefined ? { byteSize: handle.byteSize } : {}),
+    ...(handle.modifiedAt ? { modifiedAt: handle.modifiedAt } : {}),
+    ...(handle.completionIdentity ? { completionIdentity: handle.completionIdentity } : {}),
+    ...(handle.workspaceRelativePath
+      ? { workspaceRelativeDisplayLocation: handle.workspaceRelativePath }
+      : {}),
+    revoked: !handle.available
+  })
+}
+
+function jobCaller(principal: ExtensionPrincipal) {
+  return {
+    extensionId: principal.extensionId,
+    workspaceIds: principal.workspaceRoots.map(extensionWorkspaceKey)
+  }
 }
 
 function hostPrincipal(input: HostExtensionPrincipal): ExtensionPrincipal {

@@ -1,5 +1,5 @@
 import { mkdir } from 'node:fs/promises'
-import { isAbsolute, join } from 'node:path'
+import { basename, isAbsolute, join } from 'node:path'
 import { isDeepStrictEqual } from 'node:util'
 import { buildRouter } from './routes/index.js'
 import type { ServerRuntime } from './routes/server-runtime.js'
@@ -129,7 +129,8 @@ import {
   ExtensionPaths,
   ExtensionRegistry,
   ExtensionStateMigrationCoordinator,
-  ExtensionStateStore
+  ExtensionStateStore,
+  seedBundledExtensions
 } from '../extensions/index.js'
 import { ExtensionAgentProfileRegistry } from '../services/extension-agent-profile-registry.js'
 import { ExtensionAgentService } from '../services/extension-agent-service.js'
@@ -148,12 +149,21 @@ import { ExtensionViewSessionService } from '../services/extension-view-session-
 import { ExtensionViewHostGenerationTracker } from '../extensions/view-host-generation-tracker.js'
 import { ExtensionSecretRevealConsentService } from '../services/extension-secret-reveal-consent.js'
 import { ExtensionConfigurationService } from '../services/extension-configuration-service.js'
+import { ExtensionJobStore } from '../services/extension-job-store.js'
+import { ExtensionJobService, type ExtensionJobDiagnostic } from '../services/extension-job-service.js'
+import { ExtensionMediaHandleService } from '../services/extension-media-handle-service.js'
+import { ExtensionMediaProcessService } from '../services/extension-media-process-service.js'
+import { ExtensionMediaFfmpegService } from '../services/extension-media-ffmpeg-service.js'
+import { ExtensionArtifactService } from '../services/extension-artifact-service.js'
+import { ExtensionMediaJobService } from '../services/extension-media-job-service.js'
 
 export type KunServeRuntimeOptions = {
   host: string
   port: number
   configPath?: string
   dataDir: string
+  /** Product-owned catalog of default local .kunx packages. */
+  bundledExtensionsDir?: string
   runtimeToken: string
   apiKey: string
   credentialSourceId?: string
@@ -822,15 +832,20 @@ export async function createKunServeRuntime(
 	  const extensionRegistry = new ExtensionRegistry(extensionPaths)
 	  const extensionApiCapabilities = [
 	    'commands', 'storage', 'configuration', 'network', 'ui', 'agent', 'threads', 'tools',
-	    'modelProviders', 'authentication', 'workspace'
+	    'modelProviders', 'authentication', 'workspace', 'media', 'jobs'
 	  ]
+	  const legacyExtensionApiCapabilities = extensionApiCapabilities.filter((capability) =>
+	    capability !== 'media' && capability !== 'jobs')
 	  const extensionValidation = {
 	    compatibility: {
 	      kunVersion: '0.1.0',
 	      supportedManifestVersions: [CURRENT_MANIFEST_VERSION],
 	      supportedApiVersions: SUPPORTED_EXTENSION_API_VERSIONS,
 	      capabilitiesByApiVersion: Object.fromEntries(
-	        SUPPORTED_EXTENSION_API_VERSIONS.map((version) => [version, extensionApiCapabilities])
+	        SUPPORTED_EXTENSION_API_VERSIONS.map((version) => [
+	          version,
+	          version === '1.0.0' ? legacyExtensionApiCapabilities : extensionApiCapabilities
+	        ])
 	      )
 	    }
 	  }
@@ -841,6 +856,50 @@ export async function createKunServeRuntime(
 	  )
 	  const extensionState = new ExtensionStateStore(extensionPaths)
 	  const extensionConfiguration = new ExtensionConfigurationService(extensionState)
+	  const extensionMediaHandles = new ExtensionMediaHandleService({ dataDir: activeOptions.dataDir })
+	  const extensionMediaProcesses = new ExtensionMediaProcessService({
+	    handleService: extensionMediaHandles,
+	    ...(process.env.KUN_FFPROBE_PATH ? { ffprobePath: process.env.KUN_FFPROBE_PATH } : {}),
+	    ...(process.env.KUN_FFMPEG_PATH ? { ffmpegPath: process.env.KUN_FFMPEG_PATH } : {})
+	  })
+	  const extensionArtifacts = new ExtensionArtifactService({
+	    dataDir: activeOptions.dataDir,
+	    handleService: extensionMediaHandles
+	  })
+	  const extensionJobDiagnostics: ExtensionJobDiagnostic[] = []
+	  const extensionJobStore = new ExtensionJobStore({
+	    path: join(activeOptions.dataDir, 'extensions', 'jobs.json')
+	  })
+	  const extensionJobs = new ExtensionJobService({
+	    store: extensionJobStore,
+	    reauthorize: async (snapshot, workspaceRoot) => {
+	      const entry = await extensionRegistry.get(snapshot.ownerExtensionId)
+	      if (!entry) return false
+	      const manifest = entry.useDevelopment
+	        ? entry.development?.manifest
+	        : entry.selectedVersion ? entry.versions[entry.selectedVersion]?.manifest : undefined
+	      if (!manifest) return false
+	      const workspaceKey = extensionPaths.workspaceKey(workspaceRoot)
+	      if (workspaceKey !== snapshot.workspaceId) return false
+	      return workspaceKey in entry.workspaceEnablement
+	        ? entry.workspaceEnablement[workspaceKey] === true
+	        : entry.globallyEnabled === true
+	    },
+	    onDiagnostic: (diagnostic) => {
+	      extensionJobDiagnostics.push(diagnostic)
+	      if (extensionJobDiagnostics.length > 128) extensionJobDiagnostics.shift()
+	    }
+	  })
+	  const extensionFfmpeg = new ExtensionMediaFfmpegService({
+	    handleService: extensionMediaHandles,
+	    processService: extensionMediaProcesses
+	  })
+	  const extensionMediaJobs = new ExtensionMediaJobService({
+	    jobs: extensionJobs,
+	    ffmpeg: extensionFfmpeg,
+	    media: extensionMediaProcesses,
+	    artifacts: extensionArtifacts
+	  })
 	  const extensionViewSessions = new ExtensionViewSessionService()
 	  const extensionViewHostGenerations = new ExtensionViewHostGenerationTracker()
 	  const extensionSecretReveals = new ExtensionSecretRevealConsentService()
@@ -860,6 +919,7 @@ export async function createKunServeRuntime(
 	    onStream: (principal, requestId, sequence, payload, terminal) =>
 	      extensionBroker.stream(principal, requestId, sequence, payload, terminal),
 	    onHostActivated: (principal) => {
+	      extensionJobs.clearExtensionFence(principal.extensionId)
 	      extensionViewHostGenerations.bindExtension(
 	        principal.extensionId,
 	        principal.lifecycleNonce
@@ -872,6 +932,7 @@ export async function createKunServeRuntime(
 	      // teardown from deleting a newly retained View that is waiting for the
 	      // old Host cleanup to finish before reactivation.
 	      if (!exit.expected) {
+	        await extensionJobs.handleExtensionHostCrash(exit.extensionId)
 	        for (const sessionId of extensionViewHostGenerations.takeExitedGeneration(
 	          exit.extensionId,
 	          exit.lifecycleNonce
@@ -901,6 +962,11 @@ export async function createKunServeRuntime(
 	    credentials: extensionCredentials,
 	    state: extensionState,
 	    configuration: extensionConfiguration,
+	    artifacts: extensionArtifacts,
+	    mediaHandles: extensionMediaHandles,
+	    mediaProcesses: extensionMediaProcesses,
+	    mediaJobs: extensionMediaJobs,
+	    jobs: extensionJobs,
 	    invokeExtension: (extensionId, activationEvent, method, params, invokeOptions) =>
 	      extensionManager.invoke(extensionId, activationEvent, method, params, invokeOptions),
 	    notifyExtension: (extensionId, method, params) =>
@@ -951,6 +1017,8 @@ export async function createKunServeRuntime(
 	  const extensionLifecycle = extensionStateMigrations.lifecycle()
 	  extensionPackageManager.setLifecycle({
 	    runVersionSwitch: async (context, commitSelection) => {
+	      await extensionJobs.handleExtensionRollback(context.extensionId)
+	      await extensionMediaHandles.revokeExtension(context.extensionId)
 	      extensionViewSessions.disposeExtension(context.extensionId)
 	      await extensionBroker.disposeExtension(context.extensionId)
 	      if (extensionLifecycle.runVersionSwitch === undefined) {
@@ -963,30 +1031,61 @@ export async function createKunServeRuntime(
 	    recoverVersionSwitches: () =>
 	      extensionLifecycle.recoverVersionSwitches?.() ?? Promise.resolve(),
 	    beforeDisable: async (extensionId, workspaceKey) => {
+	      await extensionJobs.handleExtensionDisabled(extensionId)
+	      await extensionMediaHandles.revokeExtension(extensionId)
 	      await extensionLifecycle.beforeDisable?.(extensionId, workspaceKey)
 	      extensionViewSessions.disposeExtension(extensionId)
 	      await extensionBroker.disposeExtension(extensionId)
 	    },
 	    beforePermissionChange: async (extensionId) => {
+	      await extensionJobs.handleExtensionDisabled(extensionId)
+	      await extensionMediaHandles.revokeExtension(extensionId)
 	      extensionViewSessions.disposeExtension(extensionId)
 	      await extensionManager.deactivate(extensionId)
 	      await extensionBroker.disposeExtension(extensionId)
 	    },
 	    beforeUninstall: async (extensionId) => {
+	      await extensionJobs.handleExtensionUninstalled(extensionId)
+	      await extensionMediaHandles.revokeExtension(extensionId)
 	      await extensionLifecycle.beforeUninstall?.(extensionId)
 	      extensionViewSessions.disposeExtension(extensionId)
 	      await extensionBroker.disposeExtension(extensionId)
 	    }
 	  })
 	  await extensionPackageManager.recover()
+	  await extensionJobs.initialize()
+	  if (activeOptions.bundledExtensionsDir) {
+	    try {
+	      const bundledResults = await seedBundledExtensions({
+	        directory: activeOptions.bundledExtensionsDir,
+	        packageManager: extensionPackageManager
+	      })
+	      for (const result of bundledResults) {
+	        if (result.outcome === 'unchanged') continue
+	        const suffix = result.code ? ` (${result.code})` : ''
+	        const message = `[extensions] bundled ${result.extensionId}@${result.version}: ${result.outcome}${suffix}`
+	        if (result.outcome === 'failed' || result.outcome.startsWith('skipped-')) {
+	          console.warn(message)
+	        } else {
+	          console.info(message)
+	        }
+	      }
+	    } catch (error) {
+	      const message = error instanceof Error ? error.message : 'unknown bundled extension error'
+	      console.warn(`[extensions] bundled catalog unavailable: ${message}`)
+	    }
+	  }
 	  const extensionIndexClient = new ExtensionIndexClient()
 	  const activateDeclaredHeadlessContributions = async (
 	    document: Awaited<ReturnType<ExtensionRegistry['read']>>,
 	    context?: ToolHostContext
 	  ): Promise<boolean> => {
 	    const outcomes = await Promise.allSettled(Object.values(document.extensions).map(async (entry) => {
-	      const workspaceKey = context?.workspace && isAbsolute(context.workspace)
-	        ? extensionPaths.workspaceKey(context.workspace)
+	      const workspaceRoot = context?.workspace && isAbsolute(context.workspace)
+	        ? context.workspace
+	        : undefined
+	      const workspaceKey = workspaceRoot
+	        ? extensionPaths.workspaceKey(workspaceRoot)
 	        : undefined
 	      const enabled = workspaceKey && workspaceKey in entry.workspaceEnablement
 	        ? entry.workspaceEnablement[workspaceKey]
@@ -1005,7 +1104,18 @@ export async function createKunServeRuntime(
 	        manifest.activationEvents.includes(candidate)
 	      ) ?? (manifest.activationEvents.includes('onStartup') ? 'onStartup' : undefined)
 	      if (event) await extensionManager.activate(entry.id, event, {
-	        ...(context?.workspace ? { workspaceRoot: context.workspace } : {})
+	        ...(workspaceRoot
+	          ? {
+	              workspaceRoot,
+	              workspaceContext: {
+	                id: workspaceKey!,
+	                name: basename(workspaceRoot) || workspaceRoot,
+	                root: workspaceRoot,
+	                trusted: true,
+	                active: true
+	              }
+	            }
+	          : {})
 	      })
 	    }))
 	    return outcomes.every((outcome) => outcome.status === 'fulfilled')
@@ -1391,6 +1501,8 @@ export async function createKunServeRuntime(
 	      credentials: extensionCredentials,
 	      state: extensionState,
 	      configuration: extensionConfiguration,
+	      mediaHandles: extensionMediaHandles,
+	      artifacts: extensionArtifacts,
 	      viewSessions: extensionViewSessions,
 	      secretReveals: extensionSecretReveals
 	    },
@@ -1471,7 +1583,12 @@ export async function createKunServeRuntime(
 	        tools: extensionTools.list(),
 	        providers: [...extensionModelProviders.clientMap().keys()].sort(),
 	        providerDiagnostics: extensionModelProviders.diagnostics(),
-	        hosts: await extensionManager.listDiagnostics()
+	        hosts: await extensionManager.listDiagnostics(),
+	        jobs: {
+	          activeCount: extensionJobs.activeCount,
+	          subscriptionCount: extensionJobs.subscriptionCount,
+	          recent: extensionJobDiagnostics.map((diagnostic) => ({ ...diagnostic }))
+	        }
 	      }
 	    }),
     mcpOAuth: async () => mcpProviders.oauth,
@@ -1483,7 +1600,9 @@ export async function createKunServeRuntime(
         shuttingDown = true
         eventStreamRegistry.closeAll()
         loop.shutdownGoalResume()
-        await backgroundShellRuntime.shutdown()
+	        await backgroundShellRuntime.shutdown()
+	        await extensionJobs.handleRuntimeShutdown()
+	        extensionMediaJobs.dispose()
         await turnService.interruptActiveTurns()
         await waitForActiveRuns(activeRuntimeRuns)
 	        stopExtensionModelListener()

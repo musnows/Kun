@@ -66,6 +66,20 @@ import type {
   WorkspaceFileWritePayload,
   WorkspaceFileWriteResult
 } from './workspace-file'
+
+export type ExtensionArtifactActionPayload = {
+  artifactId: string
+  ownerExtensionId: string
+  ownerExtensionVersion: string
+  workspaceId: string
+  workspaceRoot: string
+  action: 'open' | 'reveal'
+}
+
+export type ExtensionArtifactActionResult = {
+  ok: boolean
+  message?: string
+}
 import type { ProjectDesignMdOfficialLintResult } from './project-design-md'
 import type {
   WriteInlineCompletionDebugEntry,
@@ -502,6 +516,9 @@ export type KunGuiApi = ExtensionIpcApi & {
   readWorkspacePdf: (options: WorkspaceFileTarget) => Promise<WorkspacePdfReadResult>
   readLocalPdfText: (options: LocalPdfTextTarget) => Promise<LocalPdfTextReadResult>
   saveWorkspaceFileAs: (payload: WorkspaceFileSaveAsPayload) => Promise<WorkspaceFileSaveAsResult>
+  openExtensionArtifact: (
+    payload: ExtensionArtifactActionPayload
+  ) => Promise<ExtensionArtifactActionResult>
   writeWorkspaceFile: (payload: WorkspaceFileWritePayload) => Promise<WorkspaceFileWriteResult>
   createWorkspaceFile: (payload: WorkspaceFileCreatePayload) => Promise<WorkspaceFileCreateResult>
   createWorkspaceDirectory: (

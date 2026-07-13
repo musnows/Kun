@@ -14,6 +14,7 @@ const expected = [
   'agent-assistant',
   'direct-dom',
   'hello-sidebar',
+  'kun-video-editor',
   'streaming-model-provider',
   'tool-provider',
   'workspace-dashboard'
@@ -38,6 +39,9 @@ try {
     const manifest = JSON.parse(await readFile(join(directory, 'kun-extension.json'), 'utf8'))
     run('npm', ['--prefix', directory, 'run', 'typecheck'])
     run('npm', ['--prefix', directory, 'run', 'build'])
+    if (manifest.main !== undefined) {
+      await assertNodeBuild(directory, manifest.main)
+    }
     if (manifest.browser !== undefined) {
       await assertBrowserBuild(directory, manifest.browser)
     }
@@ -106,6 +110,19 @@ async function assertBrowserBuild(directory, browserEntry) {
   }
 }
 
+async function assertNodeBuild(directory, mainEntry) {
+  const entryPath = resolve(directory, mainEntry)
+  assertInside(resolve(directory), entryPath, 'Node Host entry')
+  const source = await readFile(entryPath, 'utf8')
+  for (const specifier of moduleSpecifiers(source)) {
+    if (!specifier.startsWith('.') && !specifier.startsWith('node:')) {
+      throw new Error(
+        `${relative(root, entryPath)} contains an unresolved Node Host module specifier: ${specifier}`
+      )
+    }
+  }
+}
+
 async function collectJavaScript(directory) {
   const result = []
   for (const entry of await readdir(directory, { withFileTypes: true })) {
@@ -119,7 +136,8 @@ async function collectJavaScript(directory) {
 function moduleSpecifiers(source) {
   const result = []
   const patterns = [
-    /\b(?:import|export)\s*(?:[^'"`;]*?\bfrom\s*)?["']([^"']+)["']/gu,
+    /\bimport\s+(?:[\w$*{},\s]+\s+from\s+)?["']([^"']+)["']/gu,
+    /\bexport\s+(?:\*\s*(?:as\s+[\w$]+\s*)?|\{[^}]{0,4096}\})\s*from\s*["']([^"']+)["']/gu,
     /\bimport\s*\(\s*["']([^"']+)["']\s*\)/gu
   ]
   for (const pattern of patterns) {

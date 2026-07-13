@@ -2,10 +2,14 @@ import { describe, expect, it, vi } from 'vitest'
 import { ExtensionManifestSchema, type ModelProviderAdapter } from '@kun/extension-api'
 import type { ExtensionToolHandler } from '../adapters/tool/extension-tool-provider.js'
 import type { ExtensionBrokerRequest, ExtensionPrincipal as HostPrincipal } from '../extensions/host-process.js'
+import { extensionWorkspaceKey } from '../extensions/paths.js'
 import {
   ExtensionHostBroker,
   requiredExtensionBrokerPermission
 } from './extension-host-broker.js'
+
+const WORKSPACE_ROOT = '/tmp/workspace'
+const WORKSPACE_ID = extensionWorkspaceKey(WORKSPACE_ROOT)
 
 const manifest = ExtensionManifestSchema.parse({
   manifestVersion: 1,
@@ -83,7 +87,7 @@ const principal: HostPrincipal = {
   apiVersion: '1.0.0',
   lifecycleNonce: 'de7c65b3-f455-4199-aa83-1722fdf8309d',
   grantedPermissions: manifest.permissions,
-  workspaceRoots: ['/tmp/workspace'],
+  workspaceRoots: [WORKSPACE_ROOT],
   development: true
 }
 
@@ -129,6 +133,264 @@ describe('ExtensionHostBroker', () => {
     await expect(broker.handle(request('storage.keys', {
       scope: 'global'
     }))).resolves.toEqual(['visible'])
+  })
+
+  it('validates generatedArtifacts against the connection-bound owner and invocation workspace', async () => {
+    let toolHandler: ExtensionToolHandler | undefined
+    const artifact = {
+      schemaVersion: 1 as const,
+      artifactId: 'artifact_1234567890',
+      ownerExtensionId: 'acme.broker',
+      ownerExtensionVersion: '1.0.0',
+      workspaceId: WORKSPACE_ID,
+      mediaHandleId: 'media_123456789012',
+      displayName: 'final.mp4',
+      mediaKind: 'video' as const,
+      mimeType: 'video/mp4',
+      byteSize: 100,
+      completionIdentity: 'identity_1234567890',
+      availability: 'available' as const,
+      provenance: { invocationId: 'invocation_1', operation: 'video-render' }
+    }
+    const validateToolResult = vi.fn(async () => [artifact])
+    const broker = createBroker({
+      artifacts: { validateToolResult } as never,
+      invokeExtension: vi.fn(async () => ({
+        content: { summary: 'done' },
+        generatedArtifacts: [artifact]
+      })),
+      tools: {
+        register: vi.fn(async (_principal, _declaration, handler) => {
+          toolHandler = handler
+          return {
+            canonicalToolId: 'extension:acme.broker/summarize',
+            modelAlias: 'ext_summary',
+            dispose() {}
+          }
+        })
+      }
+    })
+    await broker.handle(request('tools.register', manifest.contributes.tools[0]))
+    const result = await toolHandler!({
+      invocationId: 'invocation_1',
+      canonicalToolId: 'extension:acme.broker/summarize',
+      modelAlias: 'ext_summary',
+      arguments: { text: 'hello' },
+      threadId: 'thread_1',
+      turnId: 'turn_1',
+      workspace: WORKSPACE_ROOT,
+      signal: new AbortController().signal,
+      reportProgress: vi.fn(async () => undefined)
+    })
+    expect(validateToolResult).toHaveBeenCalledWith(
+      expect.objectContaining({
+        extensionId: 'acme.broker',
+        extensionVersion: '1.0.0',
+        workspaceRoots: [WORKSPACE_ROOT]
+      }),
+      WORKSPACE_ID,
+      [artifact]
+    )
+    expect(result.output).toMatchObject({ generatedArtifacts: [artifact] })
+    expect(JSON.stringify(result.output)).not.toContain(WORKSPACE_ROOT)
+  })
+
+  it('routes opaque media operations without exposing Host paths', async () => {
+    const mediaPrincipal = {
+      extensionId: 'acme.broker',
+      extensionVersion: '1.0.0',
+      permissions: [
+        'media.read', 'media.process', 'media.export',
+        'workspace.read', 'workspace.write', 'jobs.manage'
+      ],
+      workspaceRoots: ['/tmp/workspace'],
+      workspaceTrusted: true,
+      viewSessionId: 'view-session-1',
+      viewContributionId: 'editor'
+    }
+    const stat = vi.fn(async () => ({
+      id: 'media_123456789012',
+      displayName: 'clip.mp4',
+      mode: 'read',
+      source: 'picker',
+      mimeType: 'video/mp4',
+      byteSize: 123,
+      completionIdentity: 'identity_1234567890',
+      available: true,
+      createdAt: '2026-01-01T00:00:00.000Z'
+    }))
+    const probe = vi.fn(async () => ({
+      schemaVersion: 1,
+      handleId: 'media_123456789012',
+      container: { formatNames: ['mov', 'mp4'], durationMicros: 1_000_000 },
+      streams: []
+    }))
+    const start = vi.fn(async () => ({
+      jobId: 'job_12345678',
+      kind: 'media.ffmpeg',
+      state: 'queued',
+      cursor: 'cursor_12345678'
+    }))
+    const onUiRequest = vi.fn(async ({ method }: { method: string }) => {
+      if (method === 'media.pickFiles') {
+        return {
+          outcome: 'selected',
+          files: [{
+            handleId: 'media_123456789012',
+            mode: 'read',
+            kind: 'video',
+            displayName: 'clip.mp4',
+            mimeType: 'video/mp4',
+            revoked: false
+          }]
+        }
+      }
+      if (method === 'media.openViewResource') {
+        return {
+          leaseId: 'lease_123456789012',
+          handleId: 'media_123456789012',
+          url: 'kun-media://resource/opaque-token',
+          mimeType: 'video/mp4',
+          expiresAt: '2026-01-01T00:05:00.000Z'
+        }
+      }
+      if (method === 'media.performArtifactAction') return { performed: true }
+      return undefined
+    })
+    const broker = createBroker({
+      mediaHandles: { stat, release: vi.fn(async () => true) } as never,
+      mediaProcesses: { probe } as never,
+      mediaJobs: { start } as never,
+      onUiRequest
+    })
+    const call = (method: string, params: unknown) => broker.handlePrincipal({
+      principal: mediaPrincipal,
+      method,
+      params: params as never,
+      signal: new AbortController().signal,
+      requestId: `request-${method}`
+    })
+    await expect(call('media.pickFiles', {})).resolves.toMatchObject({
+      outcome: 'selected', files: [{ handleId: 'media_123456789012' }]
+    })
+    await expect(call('media.stat', { handleId: 'media_123456789012' })).resolves.toEqual({
+      handleId: 'media_123456789012',
+      mode: 'read',
+      kind: 'video',
+      displayName: 'clip.mp4',
+      mimeType: 'video/mp4',
+      byteSize: 123,
+      completionIdentity: 'identity_1234567890',
+      revoked: false
+    })
+    await expect(call('media.probe', { handleId: 'media_123456789012' }))
+      .resolves.toMatchObject({ handleId: 'media_123456789012' })
+    await expect(call('media.openViewResource', { handleId: 'media_123456789012' }))
+      .resolves.toMatchObject({ url: 'kun-media://resource/opaque-token' })
+    await expect(call('media.performArtifactAction', {
+      artifactId: 'artifact_1234567890',
+      action: 'reveal'
+    })).resolves.toEqual({ performed: true })
+    expect(onUiRequest).toHaveBeenCalledWith(expect.objectContaining({
+      principal: mediaPrincipal,
+      method: 'media.performArtifactAction',
+      params: { artifactId: 'artifact_1234567890', action: 'reveal' }
+    }))
+    await expect(call('media.startFfmpegJob', {
+      arguments: ['-i', '{{input:source}}', '{{output:video}}'],
+      inputs: { source: 'media_123456789012' },
+      outputs: { video: 'media_abcdefghijkl' }
+    })).resolves.toMatchObject({ job: { jobId: 'job_12345678' } })
+    expect(JSON.stringify(await call('media.stat', { handleId: 'media_123456789012' })))
+      .not.toContain('/tmp/workspace')
+  })
+
+  it('returns an explicit interaction-required error for headless picker calls', async () => {
+    const broker = createBroker()
+    await expect(broker.handle(request('media.pickFiles', {}))).rejects.toMatchObject({
+      code: 'MEDIA_INTERACTION_REQUIRED',
+      details: { operation: 'media.pickFiles' }
+    })
+    await expect(broker.handle(request('media.pickSaveTarget', {}))).rejects.toMatchObject({
+      code: 'MEDIA_INTERACTION_REQUIRED',
+      details: { operation: 'media.pickSaveTarget' }
+    })
+    await expect(broker.handle(request('media.performArtifactAction', {
+      artifactId: 'artifact_1234567890',
+      action: 'open'
+    }))).rejects.toThrow(/authenticated View Session/)
+  })
+
+  it('routes owned job observation, replay subscriptions, and cancellation', async () => {
+    const snapshot = {
+      schemaVersion: 1 as const,
+      id: 'job_12345678',
+      kind: 'media.ffmpeg',
+      kindSchemaVersion: 1,
+      ownerExtensionId: 'acme.broker',
+      ownerExtensionVersion: '1.0.0',
+      workspaceId: WORKSPACE_ID,
+      initiatingOperation: 'media.startFfmpegJob',
+      state: 'completed' as const,
+      executionAttempt: 1,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:01.000Z',
+      terminalAt: '2026-01-01T00:00:01.000Z',
+      latestCursor: 'cursor_12345678',
+      result: { schemaVersion: 1 as const, generatedArtifacts: [] }
+    }
+    const jobs = {
+      getOwned: vi.fn(async () => snapshot),
+      listOwned: vi.fn(async () => ({ items: [snapshot], page: { hasMore: false } })),
+      cancel: vi.fn(async () => ({ accepted: false, snapshot })),
+      subscribe: vi.fn(async () => ({
+        subscriptionId: 'jobsub_12345678',
+        snapshot,
+        replay: [],
+        cursor: snapshot.latestCursor,
+        gap: false,
+        complete: true,
+        close: vi.fn(),
+        async *[Symbol.asyncIterator]() {}
+      })),
+      unsubscribe: vi.fn(() => true)
+    }
+    const broker = createBroker({ jobs })
+    const principal = {
+      extensionId: 'acme.broker',
+      extensionVersion: '1.0.0',
+      permissions: ['jobs.manage'],
+      workspaceRoots: [WORKSPACE_ROOT],
+      workspaceTrusted: true
+    }
+    const call = (method: string, params: unknown) => broker.handlePrincipal({
+      principal,
+      method,
+      params: params as never,
+      signal: new AbortController().signal,
+      requestId: `request-${method}`
+    })
+    await expect(call('jobs.get', { jobId: snapshot.id })).resolves.toEqual(snapshot)
+    await expect(call('jobs.list', {})).resolves.toMatchObject({ items: [snapshot] })
+    await expect(call('jobs.subscribe', { jobId: snapshot.id })).resolves.toMatchObject({
+      subscriptionId: 'jobsub_12345678', complete: true, gap: false
+    })
+    await expect(call('jobs.cancel', { jobId: snapshot.id })).resolves.toEqual({
+      accepted: false, snapshot
+    })
+    const caller = { extensionId: 'acme.broker', workspaceIds: [WORKSPACE_ID] }
+    expect(jobs.getOwned).toHaveBeenCalledWith(caller, snapshot.id)
+    expect(jobs.listOwned).toHaveBeenCalledWith(caller, expect.any(Object))
+    expect(jobs.subscribe).toHaveBeenCalledWith(caller, snapshot.id, undefined)
+    expect(jobs.cancel).toHaveBeenCalledWith(caller, snapshot.id, undefined)
+    expect(JSON.stringify(snapshot)).not.toContain(WORKSPACE_ROOT)
+    await expect(broker.handlePrincipal({
+      principal: { ...principal, permissions: [] },
+      method: 'jobs.get',
+      params: { jobId: snapshot.id },
+      signal: new AbortController().signal,
+      requestId: 'denied'
+    })).rejects.toThrow(/jobs\.manage/)
   })
 
   it('routes commands and tools using only the connection-bound identity', async () => {

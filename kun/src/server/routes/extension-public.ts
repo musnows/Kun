@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { isAbsolute, resolve } from 'node:path'
+import { basename, isAbsolute, resolve } from 'node:path'
 import { z } from 'zod'
 import {
   AccountSchema,
@@ -13,6 +13,7 @@ import {
   JsonValueSchema,
   LocaleSchema,
   MANIFEST_CONTRIBUTION_PERMISSION_REQUIREMENTS,
+  MediaMetadataSchema,
   ProviderBindingSchema,
   ThemeSchema,
   hasPermission,
@@ -37,6 +38,10 @@ import {
 } from '../../services/extension-provider-account-store.js'
 import { requiredExtensionBrokerPermission } from '../../services/extension-host-broker.js'
 import { ExtensionConfigurationConflictError } from '../../services/extension-configuration-service.js'
+import {
+  ExtensionMediaHandleError,
+  type MediaHandleProjection
+} from '../../services/extension-media-handle-service.js'
 import {
   ExtensionBrokerError,
   type ExtensionAgentEvent,
@@ -185,6 +190,45 @@ const WorkbenchNotificationResponseSchema = z.strictObject({
 })
 const WorkbenchNotificationIdSchema = z.string().regex(/^notification_[0-9a-f-]{36}$/i)
 
+const ProtectedMediaViewBindingSchema = z.strictObject({
+  sessionId: SessionIdSchema,
+  runtimeSessionId: SessionIdSchema,
+  sessionNonce: z.string().min(32).max(256),
+  extensionId: ExtensionIdSchema,
+  extensionVersion: z.string().trim().min(1).max(128),
+  contributionId: z.string().regex(
+    /^extension:[a-z0-9][a-z0-9-]{0,63}\.[a-z0-9][a-z0-9-]{0,63}\/[a-z][a-z0-9-]{0,63}$/
+  ),
+  workspaceRoot: WorkspaceRootSchema,
+  senderWebContentsId: z.number().int().positive(),
+  senderMainFrameProcessId: z.number().int().nonnegative(),
+  senderMainFrameRoutingId: z.number().int()
+})
+const ProtectedMediaSelectionRegistrationSchema = z.strictObject({
+  operationToken: z.string().min(32).max(512).regex(/^[A-Za-z0-9_-]+$/),
+  binding: ProtectedMediaViewBindingSchema,
+  mode: z.enum(['read', 'export']),
+  selections: z.array(z.strictObject({
+    absolutePath: z.string().trim().min(1).max(16_384).refine(isAbsolute),
+    displayName: z.string().trim().min(1).max(256),
+    mimeType: z.string().min(3).max(128)
+      .regex(/^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/)
+      .optional()
+  })).min(1).max(128)
+})
+const ProtectedMediaLeaseResolutionSchema = z.strictObject({
+  binding: ProtectedMediaViewBindingSchema,
+  handleId: z.string().min(16).max(512).regex(/^[A-Za-z0-9_-]+$/),
+  requestedTtlMs: z.number().int().min(1_000).max(60 * 60 * 1_000).optional()
+})
+const ProtectedArtifactResolutionSchema = z.strictObject({
+  artifactId: z.string().min(16).max(512).regex(/^[A-Za-z0-9_-]+$/),
+  ownerExtensionId: ExtensionIdSchema,
+  ownerExtensionVersion: z.string().min(1).max(64),
+  workspaceId: z.string().regex(/^[a-f0-9]{64}$/),
+  workspaceRoot: WorkspaceRootSchema
+})
+
 /** Guest-safe broker methods. Protected account/secret operations stay in Main-owned UI. */
 const VIEW_BROKER_METHODS = new Set([
   'ui.getTheme',
@@ -212,7 +256,8 @@ const VIEW_BROKER_METHODS = new Set([
   'workspace.readFile',
   'workspace.writeFile',
   'workspace.stat',
-  'workspace.list'
+  'workspace.list',
+  'media.performArtifactAction'
 ])
 
 const ProviderProbeSchema = z.strictObject({
@@ -267,6 +312,7 @@ export function registerExtensionPublicRoutes(router: Router, runtime: ServerRun
     if (!isRuntimeTokenAuthorized(request.headers, runtime.runtimeToken)) return ERRORS.unauthorized()
     return handler(request, context)
   })
+  const protectedMediaTokens = new ProtectedMediaOperationTokenRegistry()
 
   router.add('GET', '/v1/extensions/workbench', trusted((request) => workbenchSnapshot(platform, request)))
   router.add('POST', '/v1/extensions/configuration/snapshot', trusted((request) =>
@@ -311,6 +357,12 @@ export function registerExtensionPublicRoutes(router: Router, runtime: ServerRun
     jsonResponse({ schemaVersion: 1, requests: platform.secretReveals.list() })))
   router.add('POST', '/v1/extensions/secret-reveal-requests/:requestId/decision', trusted((request, context) =>
     decideSecretReveal(platform, request, context)))
+  router.add('POST', '/v1/extensions/media/selections', trusted((request) =>
+    registerProtectedMediaSelections(platform, protectedMediaTokens, request)))
+  router.add('POST', '/v1/extensions/media/leases/resolve', trusted((request) =>
+    resolveProtectedMediaLease(platform, request)))
+  router.add('POST', '/v1/extensions/media/artifacts/resolve', trusted((request) =>
+    resolveProtectedArtifact(platform, request)))
   router.add('POST', '/v1/extensions/view-sessions', trusted((request) => createViewSession(platform, request)))
   router.add('POST', '/v1/extensions/view-sessions/:sessionId/host-messages', trusted((request, context) =>
     postHostViewMessage(platform, request, context)))
@@ -1233,6 +1285,208 @@ function assertProviderAuthenticationContribution(
   }
   // The broker repeats scope-subset validation against the persisted provider
   // definition immediately before beginning authorization.
+}
+
+class ProtectedMediaOperationTokenRegistry {
+  private readonly consumed = new Set<string>()
+
+  consume(token: string): void {
+    const digest = createHash('sha256').update(token).digest('hex')
+    if (this.consumed.has(digest)) {
+      throw new ExtensionBrokerError(
+        'conflict',
+        'Protected media operation was already consumed'
+      )
+    }
+    if (this.consumed.size >= 65_536) {
+      throw new ExtensionBrokerError(
+        'conflict',
+        'Protected media operation capacity was reached; restart Kun before retrying'
+      )
+    }
+    // Burn first. A mismatched binding cannot turn the token into an oracle or
+    // retry it later with a different selection.
+    this.consumed.add(digest)
+  }
+}
+
+async function registerProtectedMediaSelections(
+  platform: ExtensionPlatformRuntime,
+  tokens: ProtectedMediaOperationTokenRegistry,
+  request: Request
+): Promise<JsonResponse> {
+  const body = await parseBody(
+    request,
+    ProtectedMediaSelectionRegistrationSchema,
+    MAX_EXTENSION_VIEW_BODY_BYTES
+  )
+  if (!body.ok) return body.response
+  tokens.consume(body.data.operationToken)
+
+  const binding = body.data.binding
+  if (binding.sessionId !== binding.runtimeSessionId) {
+    throw new ExtensionViewSessionError('unauthorized', 'Protected media View identity mismatch')
+  }
+  const projection = platform.viewSessions.authenticate(
+    binding.runtimeSessionId,
+    binding.sessionNonce
+  )
+  const target = platform.viewSessions.target(binding.runtimeSessionId)
+  if (
+    projection.sessionId !== binding.runtimeSessionId ||
+    projection.extensionId !== binding.extensionId ||
+    projection.extensionVersion !== binding.extensionVersion ||
+    projection.contributionId !== binding.contributionId ||
+    projection.workspaceRoot !== binding.workspaceRoot ||
+    target.extensionId !== binding.extensionId ||
+    target.extensionVersion !== binding.extensionVersion ||
+    target.contributionId !== binding.contributionId ||
+    target.workspaceRoot !== binding.workspaceRoot
+  ) {
+    throw new ExtensionViewSessionError('unauthorized', 'Protected media View binding mismatch')
+  }
+
+  const principal = platform.viewSessions.principal(binding.runtimeSessionId)
+  const created: MediaHandleProjection[] = []
+  try {
+    for (const selection of body.data.selections) {
+      if (basename(selection.absolutePath) !== selection.displayName) {
+        throw new ExtensionBrokerError(
+          'validation_error',
+          'Protected media selection display name does not match the selected file'
+        )
+      }
+      created.push(await platform.mediaHandles.register(principal, {
+        workspaceRoot: binding.workspaceRoot,
+        path: selection.absolutePath,
+        mode: body.data.mode === 'export' ? 'write' : 'read',
+        source: 'picker',
+        displayName: selection.displayName,
+        ...(selection.mimeType ? { mimeType: selection.mimeType } : {})
+      }))
+    }
+  } catch (error) {
+    await Promise.all(created.map((handle) =>
+      platform.mediaHandles.release(principal, handle.id).catch(() => false)
+    ))
+    throw error
+  }
+  return jsonResponse({
+    selections: created.map(protectedMediaMetadata)
+  }, 201)
+}
+
+function protectedMediaMetadata(handle: MediaHandleProjection) {
+  const kind = handle.mimeType.startsWith('video/')
+    ? 'video'
+    : handle.mimeType.startsWith('audio/')
+      ? 'audio'
+      : handle.mimeType.startsWith('image/')
+        ? 'image'
+        : handle.mimeType === 'text/vtt' || handle.mimeType === 'application/x-subrip'
+          ? 'subtitle'
+          : handle.mimeType === 'application/octet-stream'
+            ? 'unknown'
+            : 'data'
+  return MediaMetadataSchema.parse({
+    handleId: handle.id,
+    mode: handle.mode === 'write' ? 'export' : 'read',
+    kind,
+    displayName: handle.displayName,
+    mimeType: handle.mimeType,
+    ...(handle.byteSize !== undefined ? { byteSize: handle.byteSize } : {}),
+    ...(handle.modifiedAt ? { modifiedAt: handle.modifiedAt } : {}),
+    ...(handle.completionIdentity ? { completionIdentity: handle.completionIdentity } : {}),
+    ...(handle.workspaceRelativePath
+      ? { workspaceRelativeDisplayLocation: handle.workspaceRelativePath }
+      : {}),
+    revoked: !handle.available
+  })
+}
+
+async function resolveProtectedMediaLease(
+  platform: ExtensionPlatformRuntime,
+  request: Request
+): Promise<JsonResponse> {
+  const body = await parseBody(
+    request,
+    ProtectedMediaLeaseResolutionSchema,
+    MAX_EXTENSION_VIEW_BODY_BYTES
+  )
+  if (!body.ok) return body.response
+  const binding = body.data.binding
+  if (binding.sessionId !== binding.runtimeSessionId) {
+    throw new ExtensionViewSessionError('unauthorized', 'Protected media View identity mismatch')
+  }
+  const projection = platform.viewSessions.authenticate(binding.runtimeSessionId, binding.sessionNonce)
+  const target = platform.viewSessions.target(binding.runtimeSessionId)
+  if (
+    projection.extensionId !== binding.extensionId ||
+    projection.extensionVersion !== binding.extensionVersion ||
+    projection.contributionId !== binding.contributionId ||
+    projection.workspaceRoot !== binding.workspaceRoot ||
+    target.extensionId !== binding.extensionId ||
+    target.extensionVersion !== binding.extensionVersion ||
+    target.contributionId !== binding.contributionId ||
+    target.workspaceRoot !== binding.workspaceRoot
+  ) {
+    throw new ExtensionViewSessionError('unauthorized', 'Protected media View binding mismatch')
+  }
+  const principal = platform.viewSessions.principal(binding.runtimeSessionId)
+  const media = await platform.mediaHandles.resolve(principal, body.data.handleId, 'read')
+  if (!media.identity) {
+    throw new ExtensionBrokerError('not_found', 'Media resource is unavailable')
+  }
+  const ttlMs = Math.min(body.data.requestedTtlMs ?? 5 * 60_000, 5 * 60_000)
+  return jsonResponse({
+    binding,
+    handleId: media.id,
+    absolutePath: media.absolutePath,
+    mimeType: media.mimeType,
+    fileIdentity: {
+      byteSize: media.identity.size,
+      modifiedAtMs: media.identity.mtimeMs,
+      device: media.identity.device,
+      inode: media.identity.inode
+    },
+    expiresAt: new Date(Date.now() + ttlMs).toISOString()
+  })
+}
+
+async function resolveProtectedArtifact(
+  platform: ExtensionPlatformRuntime,
+  request: Request
+): Promise<JsonResponse> {
+  const body = await parseBody(
+    request,
+    ProtectedArtifactResolutionSchema,
+    MAX_EXTENSION_VIEW_BODY_BYTES
+  )
+  if (!body.ok) return body.response
+  if (platform.paths.workspaceKey(body.data.workspaceRoot) !== body.data.workspaceId) {
+    throw new ExtensionBrokerError('not_found', 'Generated artifact is unavailable')
+  }
+  const principal: ExtensionPrincipal = {
+    extensionId: body.data.ownerExtensionId,
+    extensionVersion: body.data.ownerExtensionVersion,
+    permissions: ['media.read', 'workspace.read'],
+    workspaceRoots: [body.data.workspaceRoot],
+    workspaceTrusted: true
+  }
+  const artifact = await platform.artifacts.getOwned(principal, body.data.artifactId)
+  if (artifact.workspaceId !== body.data.workspaceId || artifact.availability !== 'available') {
+    throw new ExtensionBrokerError('not_found', 'Generated artifact is unavailable')
+  }
+  const media = await platform.mediaHandles.resolve(principal, artifact.mediaHandleId, 'read')
+  if (media.completionIdentity !== artifact.completionIdentity) {
+    throw new ExtensionBrokerError('not_found', 'Generated artifact is unavailable')
+  }
+  return jsonResponse({
+    artifactId: artifact.artifactId,
+    absolutePath: media.absolutePath,
+    displayName: artifact.displayName,
+    mimeType: artifact.mimeType
+  })
 }
 
 async function createViewSession(
@@ -2335,6 +2589,21 @@ function publicRouteError(error: unknown): JsonResponse {
     if (error.code === 'permission_denied' || error.code === 'workspace_denied') return ERRORS.forbidden(error.message)
     if (error.code === 'not_found') return ERRORS.notFound(error.message)
     if (error.code === 'conflict') return ERRORS.conflict(error.message)
+    return ERRORS.validation(error.message)
+  }
+  if (error instanceof ExtensionMediaHandleError) {
+    if (
+      error.code === 'permission_denied' ||
+      error.code === 'workspace_untrusted' ||
+      error.code === 'workspace_denied' ||
+      error.code === 'mode_denied'
+    ) return ERRORS.forbidden(error.message)
+    if (
+      error.code === 'not_found' ||
+      error.code === 'file_changed' ||
+      error.code === 'handle_consumed'
+    ) return ERRORS.notFound('Protected media selection is not available')
+    if (error.code === 'handle_limit') return ERRORS.rateLimited(error.message)
     return ERRORS.validation(error.message)
   }
   return jsonResponse(safeErrorBody(error), 500)

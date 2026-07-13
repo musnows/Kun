@@ -130,7 +130,7 @@ describe('runtime factory usage carryover', () => {
       expect(runtime.extensionPlatform).toBeDefined()
       expect(runtime.info().extensions).toMatchObject({
         enabled: true,
-        apiVersions: ['1.0.0'],
+        apiVersions: ['1.1.0', '1.0.0'],
         manifestVersions: [1]
       })
       expect(runtime.info().capabilities.instructions.enabled).toBe(true)
@@ -299,6 +299,59 @@ describe('runtime factory usage carryover', () => {
       await runtime.shutdown?.()
     }
   })
+
+  it('passes an explicitly trusted workspace context to headless extension tools', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'kun-runtime-extension-workspace-'))
+    const sourceDir = await mkdtemp(join(tmpdir(), 'kun-runtime-extension-workspace-source-'))
+    const workspace = join(sourceDir, 'workspace')
+    tempDirs.push(dataDir, sourceDir)
+    await mkdir(workspace, { recursive: true })
+    await writeLazyToolExtension(sourceDir)
+    const runnerPath = await writeLazyFixtureRunner(sourceDir)
+    const runtime = await createKunServeRuntime({
+      host: '127.0.0.1',
+      port: 0,
+      dataDir,
+      runtimeToken: 'tok',
+      apiKey: 'sk-default',
+      baseUrl: 'https://api.example.test/v1',
+      model: 'model-before',
+      approvalPolicy: 'auto',
+      sandboxMode: 'danger-full-access',
+      tokenEconomyMode: false,
+      insecure: false,
+      storage: { backend: 'file' },
+      capabilities: KunCapabilitiesConfig.parse({}),
+      extensionHostRunnerPath: runnerPath
+    })
+
+    try {
+      const platform = runtime.extensionPlatform!
+      await platform.packageManager.registerDevelopment(sourceDir, {
+        grantedPermissions: ['tools.register'],
+        enable: true,
+        select: true
+      })
+      await platform.packageManager.setWorkspacePermissionGrant(
+        'acme.lazy',
+        platform.paths.workspaceKey(workspace),
+        ['tools.register']
+      )
+      const tools = await runtime.toolHost!.listTools({
+        threadId: 'thread_workspace',
+        turnId: 'turn_workspace',
+        workspace,
+        approvalPolicy: 'auto',
+        abortSignal: new AbortController().signal,
+        awaitApproval: async () => 'allow'
+      })
+
+      expect(tools.some((tool) => tool.providerId === 'extension:acme.lazy')).toBe(true)
+      await expect(platform.manager.diagnostic('acme.lazy')).resolves.toMatchObject({ active: true })
+    } finally {
+      await runtime.shutdown?.()
+    }
+  })
 })
 
 async function writeLazyToolExtension(root: string): Promise<void> {
@@ -378,6 +431,26 @@ process.on('message', (message) => {
   }
   if (message.method === 'host.load') { result(message.id, { loaded: true }); return; }
   if (message.method === 'extension.activate') {
+    if (initialization.workspaceRoots.length > 0) {
+      const workspace = initialization.workspaceContext;
+      if (
+        !workspace ||
+        workspace.root !== initialization.workspaceRoots[0] ||
+        workspace.trusted !== true ||
+        workspace.active !== true
+      ) {
+        send({
+          rpcVersion: 1,
+          kind: 'response',
+          id: message.id,
+          error: {
+            code: 'EXTENSION_WORKSPACE_CONTEXT_MISSING',
+            message: 'trusted active workspace context is required'
+          }
+        });
+        return;
+      }
+    }
     const brokerId = 'broker_' + Math.random().toString(16).slice(2);
     pending.set(brokerId, message.id);
     send({

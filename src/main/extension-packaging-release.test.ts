@@ -1,4 +1,5 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -26,6 +27,23 @@ function packContext(root: string, platform: 'darwin' | 'win32' | 'linux') {
     electronPlatformName: platform,
     packager: { appInfo: { productFilename: 'Kun' } }
   }
+}
+
+function writeBundledExtensionResources(context: ReturnType<typeof packContext>): void {
+  const root = join(afterPack._internals.packedResourcesDir(context), 'bundled-extensions')
+  const archive = Buffer.from('deterministic bundled extension archive')
+  const sha256 = createHash('sha256').update(archive).digest('hex')
+  mkdirSync(root, { recursive: true })
+  writeFileSync(join(root, 'kun-video-editor-0.1.0.kunx'), archive)
+  writeFileSync(join(root, 'catalog.json'), `${JSON.stringify({
+    schemaVersion: 1,
+    extensions: [{
+      id: 'kun-examples.kun-video-editor',
+      version: '0.1.0',
+      archive: 'kun-video-editor-0.1.0.kunx',
+      sha256
+    }]
+  }, null, 2)}\n`)
 }
 
 afterEach(() => {
@@ -57,6 +75,14 @@ describe('Extension Platform packaged release resources', () => {
       'packages/create-kun-extension/templates/react/src/webview/main.tsx',
       'packages/create-kun-extension/templates/webview/src/webview/main.ts'
     ]))
+    expect(builderConfig.extraResources).toEqual(expect.arrayContaining([{
+      from: 'resources/bundled-extensions',
+      to: 'bundled-extensions',
+      filter: ['catalog.json', '*.kunx']
+    }]))
+    expect(afterPack.REQUIRED_BUNDLED_EXTENSION_IDS).toContain(
+      'kun-examples.kun-video-editor'
+    )
   })
 
   it.each(['darwin', 'win32', 'linux'] as const)(
@@ -70,8 +96,10 @@ describe('Extension Platform packaged release resources', () => {
         touch(join(unpackedRoot, relativePath))
       }
       touch(join(unpackedRoot, 'node_modules/better-sqlite3/package.json'))
+      writeBundledExtensionResources(context)
 
       expect(() => afterPack._internals.validateBundledKunRuntime(context)).not.toThrow()
+      expect(() => afterPack._internals.validateBundledExtensionResources(context)).not.toThrow()
       if (platform === 'darwin') {
         expect(unpackedRoot).toContain(join('Kun.app', 'Contents', 'Resources', 'app.asar.unpacked'))
       } else {
@@ -79,4 +107,17 @@ describe('Extension Platform packaged release resources', () => {
       }
     }
   )
+
+  it('fails packaged validation when bundled archive bytes no longer match the catalog', () => {
+    const root = temporaryRoot()
+    const context = packContext(root, 'darwin')
+    writeBundledExtensionResources(context)
+    writeFileSync(
+      join(afterPack._internals.packedResourcesDir(context), 'bundled-extensions', 'kun-video-editor-0.1.0.kunx'),
+      'tampered'
+    )
+    expect(() => afterPack._internals.validateBundledExtensionResources(context)).toThrow(
+      /digest mismatch/
+    )
+  })
 })

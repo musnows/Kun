@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { ExtensionApiError } from '@kun/extension-api'
-import { createExtensionTestHarness } from '../src/index.js'
+import { createExtensionTestHarness, createGeneratedArtifactFixture } from '../src/index.js'
 
 const permissions = [
   'commands.register',
@@ -15,6 +15,15 @@ const permissions = [
   'workspace.write',
   'ui.notifications',
   'network:api.example.com'
+]
+
+const mediaPermissions = [
+  'media.read',
+  'media.process',
+  'media.export',
+  'jobs.manage',
+  'workspace.read',
+  'workspace.write'
 ]
 
 describe('ExtensionTestHarness', () => {
@@ -167,6 +176,118 @@ describe('ExtensionTestHarness', () => {
       'textDelta',
       'completed'
     ])
+    await harness.dispose()
+  })
+
+  it('fakes protected media selection, probe, leases, FFmpeg jobs, and artifacts', async () => {
+    const harness = createExtensionTestHarness({ permissions: mediaPermissions })
+    const inputHandle = 'fake_media_input_0001'
+    const outputHandle = 'fake_media_output_0001'
+    harness.media.queueFileSelection({
+      handleId: inputHandle,
+      mode: 'read',
+      kind: 'video',
+      displayName: 'interview.mp4',
+      mimeType: 'video/mp4',
+      byteSize: 2048
+    })
+    harness.media.queueSaveTarget({
+      handleId: outputHandle,
+      mode: 'export',
+      kind: 'video',
+      displayName: 'export.mp4',
+      mimeType: 'video/mp4'
+    })
+    harness.media.setProbe(inputHandle, {
+      schemaVersion: 1,
+      handleId: inputHandle,
+      container: { formatNames: ['mp4'], durationMicros: 1_000_000 },
+      streams: [{
+        index: 0,
+        kind: 'video',
+        codecName: 'h264',
+        frameRate: { numerator: 30_000, denominator: 1001 },
+        width: 1920,
+        height: 1080,
+        disposition: { default: true }
+      }]
+    })
+
+    const selection = await harness.client.media.pickFiles()
+    expect(selection).toMatchObject({ outcome: 'selected', files: [{ handleId: inputHandle }] })
+    expect(await harness.client.media.probe({ handleId: inputHandle })).toMatchObject({
+      handleId: inputHandle,
+      streams: [{ codecName: 'h264' }]
+    })
+    expect(await harness.client.media.openViewResource({ handleId: inputHandle }))
+      .toMatchObject({ handleId: inputHandle, mimeType: 'video/mp4' })
+    expect(await harness.client.media.pickSaveTarget()).toMatchObject({
+      outcome: 'selected',
+      target: { handleId: outputHandle }
+    })
+
+    const started = await harness.client.media.startFfmpegJob({
+      arguments: ['-i', '{{input:source}}', '{{output:export}}'],
+      inputs: { source: inputHandle },
+      outputs: { export: outputHandle }
+    })
+    const subscription = await harness.client.jobs.subscribe({ jobId: started.job.jobId })
+    const states: string[] = []
+    subscription.onEvent((event) => states.push(event.state))
+    harness.jobs.start(started.job.jobId)
+    harness.jobs.reportProgress(started.job.jobId, { completed: 1, total: 2, percentage: 50 })
+    const artifact = createGeneratedArtifactFixture({
+      ownerExtensionVersion: harness.identity.version,
+      mediaHandleId: outputHandle,
+      provenance: { jobId: started.job.jobId, operation: 'media.ffmpeg' }
+    })
+    harness.jobs.complete(started.job.jobId, { schemaVersion: 1, generatedArtifacts: [artifact] })
+    expect(states).toEqual(['queued', 'running', 'running', 'completed'])
+    expect(subscription.complete).toBe(true)
+    expect(subscription.snapshot.result?.generatedArtifacts).toEqual([
+      expect.objectContaining({ artifactId: artifact.artifactId })
+    ])
+    await subscription.dispose()
+    await harness.dispose()
+  })
+
+  it('fakes permission denial, picker cancellation, executable absence, cancellation races, and restart', async () => {
+    const denied = createExtensionTestHarness({ permissions: [] })
+    await expect(denied.client.media.pickFiles()).rejects.toMatchObject({
+      code: 'PERMISSION_DENIED',
+      operation: 'media.pickFiles'
+    })
+    await denied.dispose()
+
+    const harness = createExtensionTestHarness({ permissions: mediaPermissions })
+    harness.media.queuePickerCancellation()
+    expect(await harness.client.media.pickFiles()).toEqual({ outcome: 'cancelled', files: [] })
+    harness.media.executablesAvailable = false
+    harness.media.addHandle({
+      handleId: 'fake_media_input_0002',
+      mode: 'read',
+      kind: 'video',
+      displayName: 'missing-tool.mp4'
+    })
+    await expect(harness.client.media.probe({ handleId: 'fake_media_input_0002' })).rejects.toMatchObject({
+      code: 'HOST_UNAVAILABLE',
+      operation: 'media.probe'
+    })
+
+    const cancelling = harness.jobs.create('media.ffmpeg', 'media.startFfmpegJob')
+    harness.jobs.start(cancelling.id)
+    harness.jobs.cancellationMode = 'pending'
+    const cancellation = await harness.client.jobs.cancel({ jobId: cancelling.id, reason: 'test' })
+    expect(cancellation).toMatchObject({ accepted: true, snapshot: { state: 'running' } })
+    expect(harness.jobs.complete(cancelling.id).state).toBe('running')
+    expect(harness.jobs.settleCancellation(cancelling.id).state).toBe('cancelled')
+
+    const interrupted = harness.jobs.create('media.ffmpeg', 'media.startFfmpegJob')
+    harness.jobs.start(interrupted.id)
+    harness.jobs.simulateRestart()
+    expect((await harness.client.jobs.get(interrupted.id)).state).toBe('interrupted')
+    expect((await harness.client.jobs.list({ filter: { states: ['interrupted'] } })).items)
+      .toEqual([expect.objectContaining({ id: interrupted.id })])
     await harness.dispose()
   })
 })

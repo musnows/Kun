@@ -426,8 +426,10 @@ function readGeneratedFileString(raw: Record<string, unknown>, ...keys: string[]
 function normalizeGeneratedFileReference(entry: unknown): GeneratedFileReference | null {
   if (!entry || typeof entry !== 'object') return null
   const raw = entry as Record<string, unknown>
-  const id = readGeneratedFileString(raw, 'id', 'attachmentId')
-  const name = readGeneratedFileString(raw, 'name', 'fileName', 'filename')
+  const artifactId = readGeneratedFileString(raw, 'artifactId')
+  const mediaHandleId = readGeneratedFileString(raw, 'mediaHandleId')
+  const id = readGeneratedFileString(raw, 'id', 'attachmentId', 'artifactId')
+  const name = readGeneratedFileString(raw, 'name', 'fileName', 'filename', 'displayName')
   const mimeType = readGeneratedFileString(raw, 'mimeType', 'type', 'mediaType')
   const previewUrl = readGeneratedFileString(raw, 'previewUrl', 'dataUrl', 'url')
   const path = readGeneratedFileString(raw, 'path', 'file')
@@ -436,13 +438,55 @@ function normalizeGeneratedFileReference(entry: unknown): GeneratedFileReference
   const byteSize = raw.byteSize
   const width = raw.width
   const height = raw.height
+  const durationMicros = raw.durationMicros
+  const availability = raw.availability === 'available' || raw.availability === 'unavailable'
+    ? raw.availability
+    : undefined
+  const mediaKind = raw.mediaKind === 'video' || raw.mediaKind === 'audio' ||
+    raw.mediaKind === 'image' || raw.mediaKind === 'subtitle' ||
+    raw.mediaKind === 'document' || raw.mediaKind === 'data' || raw.mediaKind === 'other'
+    ? raw.mediaKind
+    : undefined
+  const completionIdentity = readGeneratedFileString(raw, 'completionIdentity')
+  const ownerExtensionId = readGeneratedFileString(raw, 'ownerExtensionId')
+  const ownerExtensionVersion = readGeneratedFileString(raw, 'ownerExtensionVersion')
+  const workspaceId = readGeneratedFileString(raw, 'workspaceId')
+  const rawProvenance = raw.provenance && typeof raw.provenance === 'object' && !Array.isArray(raw.provenance)
+    ? raw.provenance as Record<string, unknown>
+    : undefined
+  const provenanceOperation = rawProvenance
+    ? readGeneratedFileString(rawProvenance, 'operation')
+    : undefined
+  const provenanceJobId = rawProvenance
+    ? readGeneratedFileString(rawProvenance, 'jobId')
+    : undefined
+  const provenanceInvocationId = rawProvenance
+    ? readGeneratedFileString(rawProvenance, 'invocationId')
+    : undefined
+  const provenance = rawProvenance && provenanceOperation
+    ? {
+        ...(provenanceJobId ? { jobId: provenanceJobId } : {}),
+        ...(provenanceInvocationId ? { invocationId: provenanceInvocationId } : {}),
+        operation: provenanceOperation
+      }
+    : undefined
   const normalized: GeneratedFileReference = {
     ...(id ? { id } : {}),
+    ...(artifactId ? { artifactId } : {}),
+    ...(mediaHandleId ? { mediaHandleId } : {}),
+    ...(availability ? { availability } : {}),
     ...(name ? { name } : {}),
     ...(mimeType ? { mimeType } : {}),
     ...(typeof byteSize === 'number' && Number.isFinite(byteSize) ? { byteSize } : {}),
     ...(typeof width === 'number' && Number.isFinite(width) ? { width } : {}),
     ...(typeof height === 'number' && Number.isFinite(height) ? { height } : {}),
+    ...(typeof durationMicros === 'number' && Number.isFinite(durationMicros) ? { durationMicros } : {}),
+    ...(mediaKind ? { mediaKind } : {}),
+    ...(completionIdentity ? { completionIdentity } : {}),
+    ...(ownerExtensionId ? { ownerExtensionId } : {}),
+    ...(ownerExtensionVersion ? { ownerExtensionVersion } : {}),
+    ...(workspaceId ? { workspaceId } : {}),
+    ...(provenance ? { provenance } : {}),
     ...(previewUrl ? { previewUrl } : {}),
     ...(path ? { path } : {}),
     ...(relativePath ? { relativePath } : {}),
@@ -471,6 +515,7 @@ function extractToolGeneratedFiles(item: CoreTurnItemJson): GeneratedFileReferen
   const payload = payloadFor(item)
   const candidates = [
     ...(Array.isArray(payload.generatedFiles) ? payload.generatedFiles : []),
+    ...(Array.isArray(payload.generatedArtifacts) ? payload.generatedArtifacts : []),
     ...(isGeneratedFileToolName(item.toolName) && Array.isArray(payload.files) ? payload.files : [])
   ]
   const generatedFiles: GeneratedFileReference[] = []
@@ -479,6 +524,7 @@ function extractToolGeneratedFiles(item: CoreTurnItemJson): GeneratedFileReferen
     const normalized = normalizeGeneratedFileReference(candidate)
     if (!normalized) continue
     const key =
+      normalized.artifactId ??
       normalized.id ??
       normalized.absolutePath ??
       normalized.relativePath ??

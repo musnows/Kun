@@ -1,4 +1,5 @@
 import type { App, WebContents, WebPreferences } from 'electron'
+import { parseKunMediaUrl } from './extension-media-protocol'
 import { parseKunExtensionUrl } from './extension-resource-protocol'
 import {
   ExtensionViewSessionRegistry,
@@ -125,6 +126,21 @@ export function isAllowedExtensionNavigation(
   }
 }
 
+export function isAllowedExtensionSubresource(
+  rawUrl: string,
+  record: Pick<ExtensionViewSessionRecord, 'extensionId'>
+): boolean {
+  if (isAllowedExtensionNavigation(rawUrl, record)) return true
+  try {
+    // The isolated partition's kun-media handler remains the lease authority;
+    // this outer Host filter only lets well-formed requests reach it.
+    parseKunMediaUrl(rawUrl)
+    return true
+  } catch {
+    return false
+  }
+}
+
 function hardenAttachedExtensionGuest(
   guest: WebContents,
   record: ExtensionViewSessionRecord,
@@ -145,12 +161,7 @@ function hardenAttachedExtensionGuest(
   isolatedSession.setDevicePermissionHandler(() => false)
   isolatedSession.on('will-download', (event) => event.preventDefault())
   isolatedSession.webRequest.onBeforeRequest({ urls: ['<all_urls>'] }, (details, callback) => {
-    let allowed = false
-    try {
-      allowed = parseKunExtensionUrl(details.url).extensionId === record.extensionId
-    } catch {
-      allowed = false
-    }
+    const allowed = isAllowedExtensionSubresource(details.url, record)
     callback({ cancel: !allowed })
   })
 }

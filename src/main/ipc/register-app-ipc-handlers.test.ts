@@ -24,14 +24,21 @@ import {
 } from '../../../kun/src/server/approval-consent.js'
 
 const handlers = new Map<string, (event: unknown, payload?: unknown) => Promise<unknown>>()
-const electronMock = vi.hoisted(() => ({ showMessageBox: vi.fn() }))
+const electronMock = vi.hoisted(() => ({
+  showMessageBox: vi.fn(),
+  openPath: vi.fn(async () => ''),
+  showItemInFolder: vi.fn()
+}))
 
 vi.mock('electron', () => ({
   app: {
     quit: vi.fn()
   },
   dialog: { showMessageBox: electronMock.showMessageBox },
-  shell: {},
+  shell: {
+    openPath: electronMock.openPath,
+    showItemInFolder: electronMock.showItemInFolder
+  },
   ipcMain: {
     handle: vi.fn((channel: string, handler: (event: unknown, payload?: unknown) => Promise<unknown>) => {
       handlers.set(channel, handler)
@@ -102,6 +109,8 @@ describe('registerAppIpcHandlers', () => {
   beforeEach(() => {
     handlers.clear()
     electronMock.showMessageBox.mockReset()
+    electronMock.openPath.mockClear()
+    electronMock.showItemInFolder.mockClear()
   })
 
   it('rejects invalid settings patches at the handler boundary', async () => {
@@ -337,6 +346,61 @@ describe('registerAppIpcHandlers', () => {
     } finally {
       rmSync(temp, { recursive: true, force: true })
     }
+  })
+
+  it('opens and reveals only runtime-validated generated artifacts', async () => {
+    const mainFrame = { processId: 10, routingId: 20 }
+    const mainContents = { id: 1, mainFrame }
+    const runtimeRequest = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      body: JSON.stringify({
+        artifactId: 'artifact_1234567890',
+        absolutePath: '/tmp/workspace/exports/final.mp4',
+        displayName: 'final.mp4',
+        mimeType: 'video/mp4'
+      })
+    }))
+    registerAppIpcHandlers(registerOptions({
+      getMainWindow: () => ({
+        isDestroyed: () => false,
+        webContents: mainContents
+      }) as never,
+      runtimeRequest
+    }))
+    const handler = handlers.get('extension:artifact:open')!
+    const payload = {
+      artifactId: 'artifact_1234567890',
+      ownerExtensionId: 'kun.video-editor',
+      ownerExtensionVersion: '1.1.0',
+      workspaceId: 'a'.repeat(64),
+      workspaceRoot: '/tmp/workspace',
+      action: 'open'
+    }
+    await expect(handler({ sender: mainContents, senderFrame: mainFrame }, payload))
+      .resolves.toEqual({ ok: true })
+    expect(runtimeRequest).toHaveBeenCalledWith(
+      '/v1/extensions/media/artifacts/resolve',
+      'POST',
+      JSON.stringify({
+        artifactId: payload.artifactId,
+        ownerExtensionId: payload.ownerExtensionId,
+        ownerExtensionVersion: payload.ownerExtensionVersion,
+        workspaceId: payload.workspaceId,
+        workspaceRoot: payload.workspaceRoot
+      })
+    )
+    expect(electronMock.openPath).toHaveBeenCalledWith('/tmp/workspace/exports/final.mp4')
+
+    await expect(handler(
+      { sender: mainContents, senderFrame: mainFrame },
+      { ...payload, action: 'reveal' }
+    )).resolves.toEqual({ ok: true })
+    expect(electronMock.showItemInFolder).toHaveBeenCalledWith('/tmp/workspace/exports/final.mp4')
+    await expect(handler(
+      { sender: { id: 99 }, senderFrame: { processId: 99, routingId: 99 } },
+      payload
+    )).rejects.toThrow(/trusted workbench frame/)
   })
 
   it('keeps workspace watches alive across atomic replacements and releases the sender listener', async () => {

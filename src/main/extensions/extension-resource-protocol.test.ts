@@ -89,6 +89,12 @@ describe('kun-extension protocol confinement', () => {
     expect(extensionResourceHeaders('dist/index.html')['Content-Security-Policy']).toContain(
       "connect-src 'none'"
     )
+    expect(extensionResourceHeaders('dist/index.html')['Content-Security-Policy']).toContain(
+      "img-src 'self' data: kun-media:"
+    )
+    expect(extensionResourceHeaders('dist/index.html')['Content-Security-Policy']).toContain(
+      "media-src 'self' kun-media:"
+    )
     expect(extensionResourceHeaders('payload.unknown')['Content-Type']).toBe(
       'application/octet-stream'
     )

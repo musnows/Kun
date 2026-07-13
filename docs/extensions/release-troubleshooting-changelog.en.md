@@ -31,6 +31,8 @@ After packaging, every platform must run two foundational smoke layers in order.
 
 PR checks must complete these smokes on all three native runners and only validate and upload temporary artifacts; they do not create a Release. `npm run evidence:extension-native` may run only after the final smoke succeeds. Its three platform JSON evidence files must bind the full commit, GitHub run/attempt, canonical artifact, byte size, and SHA-256 and travel with the artifacts. Evidence generation fails closed for missing, extra, wrong-architecture, directory, and symlink candidates. The macOS PR uses an ad-hoc signature without release secrets; the formal release record must still come from the protected workflow after Developer ID signing, notarization, and stapled-ticket validation all pass.
 
+The downloadable `kun-video-editor-*.kunx` is packed before the Linux native lifecycle smoke and that exact regular file is passed through validate, install, activation, render, uninstall, and an unchanged SHA-256 check before upload. Stable and daily publish jobs then validate the downloaded archive again. Manual release helpers require a clean tracked and untracked worktree before any build. The Windows path fetches the remote tag and requires it to identify local `HEAD`; before making a draft public or promoting R2 `latest`, it downloads the tag's complete Release assets and verifies all three evidence JSON files, all six native installers, one shared version/commit, every size and SHA-256, required FFmpeg capabilities, and the unique `.kunx`. Every `Kun-`-named Release asset must match the six final artifacts or the same-version canonical blockmap allowlist; every other extension, architecture, case variant, or version is rejected. Missing Linux evidence therefore blocks both `--publish`/`-Publish` and `--r2-promote`/`-PromoteR2`, and R2 promotion explicitly requires mac, win, and linux manifests so it cannot produce a platform-incomplete `latest`. The single-platform macOS helper's `--r2` only uploads metadata and refuses promotion; promotion must use the Windows path after three-platform verification. Manual cleanup removes old evidence and `.kunx` files because evidence creation is intentionally create-only.
+
 #### Release evidence record
 
 | Evidence | Status (Pass/Blocked/N/A) | Commit, CI run, artifact, or report link | Reviewer/date |
@@ -194,10 +196,39 @@ The Changelog records public Extension API, not Kun internal refactors. Each ent
 The public surface snapshots below are computed from package entries, public exports, and reachable `.d.ts` declarations. Update them only after this section explains the compatibility impact; changing a hash is not itself a Changelog entry.
 
 <!-- BEGIN GENERATED SDK PUBLIC SURFACE SNAPSHOTS -->
-<!-- sdk-surface-snapshot @kun/extension-api@1.0.0 sha256:f0d5ab4b66bce2be3c094f18bdb342ef66d097b057f954ef35a9dbb840567006 -->
-<!-- sdk-surface-snapshot @kun/extension-react@1.0.0 sha256:e2099a64dc22c05056dca0c599bafdfb22702b6d57e9b60edd2154b165323322 -->
-<!-- sdk-surface-snapshot @kun/extension-test@1.0.0 sha256:6a8a22ddd71ea7b7d88401f6fae3530775e59fdca52c9dc6052b4593950588be -->
+<!-- sdk-surface-snapshot @kun/extension-api@1.1.0 sha256:cdc0bd632da1bbcc647eee6d35153117384cc383a57836882d52240170044a4b -->
+<!-- sdk-surface-snapshot @kun/extension-react@1.1.0 sha256:e2099a64dc22c05056dca0c599bafdfb22702b6d57e9b60edd2154b165323322 -->
+<!-- sdk-surface-snapshot @kun/extension-test@1.1.0 sha256:33b2b05b8f258d9f56d4cba2b74ce080a498e2aa0880ae4402a09c79668985a3 -->
 <!-- END GENERATED SDK PUBLIC SURFACE SNAPSHOTS -->
+
+### v1.1.0 — Brokered media, durable jobs, and generated artifacts
+
+Added:
+
+- `media.read`, `media.process`, `media.export`, and `jobs.manage` least-privilege permissions.
+- `MediaApi` protected picker, opaque handle/stat, normalized probe, short-lived View resource lease, release, and brokered FFmpeg job contracts.
+- Optional bounded `textOutputs` on brokered FFmpeg jobs for Host-granted UTF-8, SRT, and WebVTT sidecars that commit or roll back atomically with media outputs; existing callers need no migration.
+- `JobsApi` owned job get/list/cursor subscription/cancel contracts, bounded progress/events/results, explicit interrupted state, and no generic `jobs.start` or extension worker registration.
+- Top-level `generatedArtifacts` on tool and terminal job results, plus artifact/media-handle result-preview references without local paths.
+- `media.performArtifactAction()` for user-initiated open/reveal of available generated artifacts from an authenticated interactive View; existing media callers need no migration.
+- Deterministic fake media/jobs, permission failures, restart/cancellation controls, executable-unavailable behavior, and artifact fixtures in `@kun/extension-test`.
+- A public fail-closed View-safe method catalog for Host boundary drift checks.
+
+Changed:
+
+- `@kun/extension-api`, `@kun/extension-react`, and `@kun/extension-test` move together to 1.1.0. Manifest v1 and API v1.0.0 remain accepted within major 1; no source migration is required for an existing v1.0 extension.
+- `ToolResult.generatedArtifacts` and the new `ResultPreviewSource` artifact fields are optional, so v1.0 result envelopes and relative-path previews preserve their shape.
+
+Security:
+
+- Public media contracts carry opaque handles and leases, never absolute paths. Interactive picker/resource methods fail explicitly without a protected surface, and broker contracts do not claim that trusted Node extension code is an operating-system sandbox.
+- Artifact open/reveal requests carry only an opaque artifact ID and action. Main derives owner, exact extension version, and workspace from the authenticated View Session and returns no local path.
+- FFmpeg creation accepts argument arrays plus named input/output handles and hands execution to a core-owned durable job; the public API exposes no executable override, shell, process object, or arbitrary job worker.
+
+Compatibility notes:
+
+- `SUPPORTED_EXTENSION_API_VERSIONS` is `1.1.0`, then `1.0.0`; v1.0 manifests negotiate on the current major without receiving a breaking adapter.
+- Media/job methods require new explicit permissions and Host v1.1 capability support. Existing v1.0 methods, manifests, and result sources remain valid.
 
 ### v1.0.0 — Initial stable API
 

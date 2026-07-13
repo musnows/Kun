@@ -441,6 +441,217 @@ describe('extension public routes', () => {
     expect(rejected.status).toBe(401)
   })
 
+  it('registers Main-confirmed media selections once and returns only opaque metadata', async () => {
+    const fixture = await createFixture()
+    const router = buildExtensionPublicRouter(fixture.runtime)
+    const created = await dispatchJson(router, 'POST', '/v1/extensions/view-sessions', {
+      contributionId: 'extension:acme.dashboard/panel',
+      workspaceRoot: '/workspace'
+    }, runtimeHeaders())
+    const body = {
+      operationToken: 't'.repeat(43),
+      binding: {
+        sessionId: created.body.sessionId,
+        runtimeSessionId: created.body.sessionId,
+        sessionNonce: created.body.nonce,
+        extensionId: 'acme.dashboard',
+        extensionVersion: '1.0.0',
+        contributionId: 'extension:acme.dashboard/panel',
+        workspaceRoot: '/workspace',
+        senderWebContentsId: 42,
+        senderMainFrameProcessId: 7,
+        senderMainFrameRoutingId: 11
+      },
+      mode: 'read',
+      selections: [{
+        absolutePath: '/private/media/interview.mp4',
+        displayName: 'interview.mp4'
+      }]
+    }
+
+    const unauthorized = await dispatchJson(
+      router,
+      'POST',
+      '/v1/extensions/media/selections',
+      body
+    )
+    expect(unauthorized.status).toBe(401)
+    expect(fixture.mediaHandles.register).not.toHaveBeenCalled()
+
+    const registered = await dispatchJson(
+      router,
+      'POST',
+      '/v1/extensions/media/selections',
+      body,
+      runtimeHeaders()
+    )
+    expect(registered).toMatchObject({
+      status: 201,
+      body: {
+        selections: [{
+          handleId: 'media_handle_0000000001',
+          mode: 'read',
+          kind: 'video',
+          displayName: 'interview.mp4',
+          mimeType: 'video/mp4',
+          revoked: false
+        }]
+      }
+    })
+    expect(JSON.stringify(registered.body)).not.toContain('/private/media')
+    expect(JSON.stringify(registered.body)).not.toContain('operationToken')
+    expect(JSON.stringify(registered.body)).not.toContain(created.body.nonce)
+    expect(fixture.mediaHandles.register).toHaveBeenCalledWith(
+      expect.objectContaining({
+        extensionId: 'acme.dashboard',
+        extensionVersion: '1.0.0',
+        viewSessionId: created.body.sessionId,
+        viewContributionId: 'extension:acme.dashboard/panel',
+        workspaceRoots: ['/workspace']
+      }),
+      {
+        workspaceRoot: '/workspace',
+        path: '/private/media/interview.mp4',
+        mode: 'read',
+        source: 'picker',
+        displayName: 'interview.mp4'
+      }
+    )
+
+    const replayed = await dispatchJson(
+      router,
+      'POST',
+      '/v1/extensions/media/selections',
+      body,
+      runtimeHeaders()
+    )
+    expect(replayed).toMatchObject({
+      status: 409,
+      body: { code: 'conflict' }
+    })
+    expect(fixture.mediaHandles.register).toHaveBeenCalledTimes(1)
+  })
+
+  it('burns a protected media token when its View binding is forged', async () => {
+    const fixture = await createFixture()
+    const router = buildExtensionPublicRouter(fixture.runtime)
+    const created = await dispatchJson(router, 'POST', '/v1/extensions/view-sessions', {
+      contributionId: 'extension:acme.dashboard/panel',
+      workspaceRoot: '/workspace'
+    }, runtimeHeaders())
+    const binding = {
+      sessionId: created.body.sessionId,
+      runtimeSessionId: created.body.sessionId,
+      sessionNonce: created.body.nonce,
+      extensionId: 'acme.dashboard',
+      extensionVersion: '1.0.0',
+      contributionId: 'extension:acme.dashboard/panel',
+      workspaceRoot: '/workspace',
+      senderWebContentsId: 42,
+      senderMainFrameProcessId: 7,
+      senderMainFrameRoutingId: 11
+    }
+    const selection = {
+      operationToken: 'f'.repeat(43),
+      binding: { ...binding, extensionId: 'other.extension' },
+      mode: 'export',
+      selections: [{ absolutePath: '/private/exports/final.mp4', displayName: 'final.mp4' }]
+    }
+    const forged = await dispatchJson(
+      router,
+      'POST',
+      '/v1/extensions/media/selections',
+      selection,
+      runtimeHeaders()
+    )
+    expect(forged.status).toBe(401)
+    expect(fixture.mediaHandles.register).not.toHaveBeenCalled()
+
+    const retried = await dispatchJson(
+      router,
+      'POST',
+      '/v1/extensions/media/selections',
+      { ...selection, binding },
+      runtimeHeaders()
+    )
+    expect(retried).toMatchObject({ status: 409, body: { code: 'conflict' } })
+    expect(fixture.mediaHandles.register).not.toHaveBeenCalled()
+  })
+
+  it('resolves a readable handle for Main lease creation without exposing it to a View route', async () => {
+    const fixture = await createFixture()
+    const router = buildExtensionPublicRouter(fixture.runtime)
+    const created = await dispatchJson(router, 'POST', '/v1/extensions/view-sessions', {
+      contributionId: 'extension:acme.dashboard/panel',
+      workspaceRoot: '/workspace'
+    }, runtimeHeaders())
+    const binding = {
+      sessionId: created.body.sessionId,
+      runtimeSessionId: created.body.sessionId,
+      sessionNonce: created.body.nonce,
+      extensionId: 'acme.dashboard',
+      extensionVersion: '1.0.0',
+      contributionId: 'extension:acme.dashboard/panel',
+      workspaceRoot: '/workspace',
+      senderWebContentsId: 42,
+      senderMainFrameProcessId: 7,
+      senderMainFrameRoutingId: 11
+    }
+    const unauthorized = await dispatchJson(router, 'POST', '/v1/extensions/media/leases/resolve', {
+      binding,
+      handleId: 'media_handle_0000000001'
+    })
+    expect(unauthorized.status).toBe(401)
+    const resolved = await dispatchJson(router, 'POST', '/v1/extensions/media/leases/resolve', {
+      binding,
+      handleId: 'media_handle_0000000001',
+      requestedTtlMs: 60_000
+    }, runtimeHeaders())
+    expect(resolved).toMatchObject({
+      status: 200,
+      body: {
+        handleId: 'media_handle_0000000001',
+        absolutePath: '/private/media/interview.mp4',
+        mimeType: 'video/mp4',
+        fileIdentity: { byteSize: 1234, modifiedAtMs: 1000, device: 2, inode: 3 }
+      }
+    })
+    expect(fixture.mediaHandles.resolve).toHaveBeenCalledWith(
+      expect.objectContaining({
+        extensionId: 'acme.dashboard',
+        viewSessionId: created.body.sessionId,
+        workspaceRoots: ['/workspace']
+      }),
+      'media_handle_0000000001',
+      'read'
+    )
+
+    const artifact = await dispatchJson(router, 'POST', '/v1/extensions/media/artifacts/resolve', {
+      artifactId: 'artifact_1234567890',
+      ownerExtensionId: 'acme.dashboard',
+      ownerExtensionVersion: '1.0.0',
+      workspaceId: fixture.paths.workspaceKey('/workspace'),
+      workspaceRoot: '/workspace'
+    }, runtimeHeaders())
+    expect(artifact).toMatchObject({
+      status: 200,
+      body: {
+        artifactId: 'artifact_1234567890',
+        absolutePath: '/private/media/interview.mp4',
+        displayName: 'interview.mp4',
+        mimeType: 'video/mp4'
+      }
+    })
+    const forgedWorkspace = await dispatchJson(router, 'POST', '/v1/extensions/media/artifacts/resolve', {
+      artifactId: 'artifact_1234567890',
+      ownerExtensionId: 'acme.dashboard',
+      ownerExtensionVersion: '1.0.0',
+      workspaceId: fixture.paths.workspaceKey('/workspace'),
+      workspaceRoot: '/other-workspace'
+    }, runtimeHeaders())
+    expect(forgedWorkspace.status).toBe(404)
+  })
+
   it('delivers host-owned notifications without a View Session and resolves declared actions', async () => {
     const fixture = await createFixture()
     const router = buildExtensionPublicRouter(fixture.runtime)
@@ -956,7 +1167,11 @@ async function createFixture(options: { maxEvents?: number; apiVersion?: string 
     'accounts.use:provider',
     'accounts.manage:provider',
     'accounts.use:ext-provider',
-    'accounts.manage:ext-provider'
+    'accounts.manage:ext-provider',
+    'media.read',
+    'media.export',
+    'workspace.read',
+    'workspace.write'
   ]
   const manifest = parseExtensionManifest({
     publisher: 'acme',
@@ -1148,6 +1363,57 @@ async function createFixture(options: { maxEvents?: number; apiVersion?: string 
       values: { 'extension:acme.dashboard/general': { mode: 'fast' } }
     })
   }
+  const mediaHandles = {
+    register: vi.fn(async (_principal, input: { mode: 'read' | 'write'; displayName: string }) => ({
+      id: input.mode === 'write' ? 'media_export_000000001' : 'media_handle_0000000001',
+      displayName: input.displayName,
+      mode: input.mode,
+      source: 'picker',
+      mimeType: 'video/mp4',
+      ...(input.mode === 'read' ? {
+        byteSize: 1234,
+        modifiedAt: '2026-07-13T00:00:00.000Z',
+        completionIdentity: 'identity_0000000001'
+      } : {}),
+      available: true,
+      createdAt: '2026-07-13T00:00:00.000Z'
+    })),
+    release: vi.fn(async () => true),
+    resolve: vi.fn(async () => ({
+      id: 'media_handle_0000000001',
+      displayName: 'interview.mp4',
+      mode: 'read',
+      source: 'picker',
+      mimeType: 'video/mp4',
+      byteSize: 1234,
+      modifiedAt: '2026-07-13T00:00:00.000Z',
+      completionIdentity: 'identity_0000000001',
+      available: true,
+      createdAt: '2026-07-13T00:00:00.000Z',
+      absolutePath: '/private/media/interview.mp4',
+      workspaceRoot: '/workspace',
+      ownerExtensionId: 'acme.dashboard',
+      ownerExtensionVersion: '1.0.0',
+      identity: { size: 1234, mtimeMs: 1000, device: 2, inode: 3 }
+    }))
+  }
+  const artifacts = {
+    getOwned: vi.fn(async (_principal, artifactId: string) => ({
+      schemaVersion: 1,
+      artifactId,
+      ownerExtensionId: 'acme.dashboard',
+      ownerExtensionVersion: '1.0.0',
+      workspaceId: paths.workspaceKey('/workspace'),
+      mediaHandleId: 'media_handle_0000000001',
+      displayName: 'interview.mp4',
+      mediaKind: 'video',
+      mimeType: 'video/mp4',
+      byteSize: 1234,
+      completionIdentity: 'identity_0000000001',
+      availability: 'available',
+      provenance: { invocationId: 'invocation_1', operation: 'video-render' }
+    }))
+  }
   const platform = {
     paths,
     registry,
@@ -1226,6 +1492,8 @@ async function createFixture(options: { maxEvents?: number; apiVersion?: string 
     },
     secretReveals,
     configuration,
+    mediaHandles,
+    artifacts,
     modelProviders: {
       probe: vi.fn(),
       listModels: vi.fn().mockResolvedValue(manifest.contributes.modelProviders[0]!.models),
@@ -1239,6 +1507,7 @@ async function createFixture(options: { maxEvents?: number; apiVersion?: string 
   } as unknown as ServerRuntime
   return {
     runtime,
+    paths,
     manager,
     agent,
     broker,
@@ -1247,6 +1516,7 @@ async function createFixture(options: { maxEvents?: number; apiVersion?: string 
     canonicalProviderId,
     secretReveals,
     configuration,
+    mediaHandles,
     viewSessions
   }
 }

@@ -173,6 +173,8 @@ const api = {
     ipcRenderer.invoke('file:read-local-pdf-text', options),
   saveWorkspaceFileAs: (payload) =>
     ipcRenderer.invoke('file:save-as', payload),
+  openExtensionArtifact: (payload) =>
+    ipcRenderer.invoke('extension:artifact:open', payload),
   writeWorkspaceFile: (payload) =>
     ipcRenderer.invoke('file:write-workspace', payload),
   createWorkspaceFile: (payload) =>

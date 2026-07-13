@@ -128,8 +128,11 @@ import {
 import { ManagedRuntimeShutdownCoordinator } from './runtime/managed-runtime-shutdown-coordinator'
 import {
   registerKunExtensionProtocol,
-  registerKunExtensionSchemeAsPrivileged
 } from './extensions/extension-resource-protocol'
+import {
+  ExtensionMediaProtocolRegistry,
+  registerKunExtensionPlatformSchemesAsPrivileged
+} from './extensions/extension-media-protocol'
 import { ExtensionDescriptorResolver } from './extensions/extension-descriptor-resolver'
 import { ExtensionViewSessionRegistry } from './extensions/extension-view-sessions'
 import { ExtensionViewProtocolRegistry } from './extensions/extension-view-protocol-registry'
@@ -149,7 +152,7 @@ import {
 } from './ipc/register-extension-ipc-handlers'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
-registerKunExtensionSchemeAsPrivileged(protocol)
+registerKunExtensionPlatformSchemesAsPrivileged(protocol)
 // 品牌升级为 Kun 后仍保留旧 AppUserModelId:它必须和 electron-builder
 // 的 appId 一致才能让 Windows 通知 / 任务栏分组在升级前后连续,而
 // appId 因为 NSIS 升级 GUID 与 macOS 更新签名校验的原因永远不改。
@@ -1488,15 +1491,28 @@ app.whenReady().then(async () => {
   }
   registerExtensionProtocol(protocol)
 
+  const extensionProtocolForPartition = (partition: string) => session.fromPartition(partition).protocol
+  const extensionMediaProtocols = new ExtensionMediaProtocolRegistry({
+    sessions: extensionViewSessions,
+    protocolForPartition: extensionProtocolForPartition,
+    onDenied: ({ extensionId, sessionId, code }) => {
+      logWarn('extension-media-protocol', 'Denied isolated View media request.', {
+        extensionId,
+        sessionId,
+        code
+      })
+    }
+  })
   const extensionViewProtocols = new ExtensionViewProtocolRegistry(
-    (partition) => session.fromPartition(partition).protocol,
+    extensionProtocolForPartition,
     ({ extensionId, code, sessionId }) => {
       logWarn('extension-protocol', 'Denied isolated View resource request.', {
         extensionId,
         code,
         sessionId
       })
-    }
+    },
+    extensionMediaProtocols
   )
 
   traceStartup('install webview guards:start')
@@ -1725,6 +1741,7 @@ app.whenReady().then(async () => {
     descriptors: extensionDescriptors,
     viewSessions: extensionViewSessions,
     viewProtocols: extensionViewProtocols,
+    mediaProtocols: extensionMediaProtocols,
     protectedActions: protectedExtensionActions,
     credentialSurface: protectedCredentialSurface,
     contentScripts: extensionContentScripts,

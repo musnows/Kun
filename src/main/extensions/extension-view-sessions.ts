@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto'
-import type { WebContents } from 'electron'
+import type { WebContents, WebFrameMain } from 'electron'
 import { parseKunExtensionUrl } from './extension-resource-protocol'
 
 export type ExtensionViewSessionRecord = {
@@ -15,6 +15,8 @@ export type ExtensionViewSessionRecord = {
   nonce: string
   parentWebContentsId: number
   guestWebContentsId?: number
+  guestMainFrameProcessId?: number
+  guestMainFrameRoutingId?: number
   state: 'pending' | 'attaching' | 'active' | 'disposed'
   createdAt: number
 }
@@ -32,7 +34,9 @@ export class ExtensionViewSessionRegistry {
   private readonly byGuest = new Map<number, string>()
   private readonly guests = new Map<number, WebContents>()
   private readonly attachingByParent = new Map<number, string[]>()
+  private readonly mainFrameNavigationPending = new Set<string>()
   private readonly disposeListeners = new Set<(record: ExtensionViewSessionRecord) => void>()
+  private readonly mainFrameChangeListeners = new Set<(record: ExtensionViewSessionRecord) => void>()
 
   constructor(private readonly now: () => number = () => Date.now()) {}
 
@@ -104,10 +108,53 @@ export class ExtensionViewSessionRegistry {
     const record = this.records.get(sessionId)
     if (!record || record.state !== 'attaching') return undefined
     record.guestWebContentsId = guest.id
+    record.guestMainFrameProcessId = guest.mainFrame?.processId
+    record.guestMainFrameRoutingId = guest.mainFrame?.routingId
     record.state = 'active'
     this.byGuest.set(guest.id, sessionId)
     this.guests.set(guest.id, guest)
     guest.once('destroyed', () => this.dispose(sessionId))
+    guest.on?.('did-start-navigation', (details, _url, isInPlace, isMainFrame) => {
+      const mainFrameNavigation = typeof details.isMainFrame === 'boolean'
+        ? details.isMainFrame
+        : isMainFrame
+      const sameDocument = typeof details.isSameDocument === 'boolean'
+        ? details.isSameDocument
+        : isInPlace
+      if (mainFrameNavigation && !sameDocument) {
+        this.mainFrameNavigationPending.add(record.sessionId)
+        this.updateGuestMainFrame(record.sessionId, guest, undefined, undefined)
+      }
+    })
+    guest.on?.(
+      'did-frame-navigate',
+      (_event, _url, _httpResponseCode, _httpStatusText, isMainFrame, processId, routingId) => {
+        if (isMainFrame) {
+          this.mainFrameNavigationPending.delete(record.sessionId)
+          this.updateGuestMainFrame(record.sessionId, guest, processId, routingId)
+        }
+      }
+    )
+    guest.on?.('did-finish-load', () => {
+      this.mainFrameNavigationPending.delete(record.sessionId)
+      const mainFrame = guest.mainFrame
+      this.updateGuestMainFrame(
+        record.sessionId,
+        guest,
+        mainFrame?.processId,
+        mainFrame?.routingId
+      )
+    })
+    guest.on?.('did-stop-loading', () => {
+      this.mainFrameNavigationPending.delete(record.sessionId)
+      const mainFrame = guest.mainFrame
+      this.updateGuestMainFrame(
+        record.sessionId,
+        guest,
+        mainFrame?.processId,
+        mainFrame?.routingId
+      )
+    })
     return { ...record }
   }
 
@@ -127,6 +174,44 @@ export class ExtensionViewSessionRegistry {
     ) {
       throw new ExtensionViewSessionError('EXTENSION_VIEW_SENDER_INVALID', 'View sender is not authorized.')
     }
+    return { ...record }
+  }
+
+  /**
+   * Authenticates a privileged request against the bound guest's live main
+   * frame. `did-attach-webview` may still expose the provisional about:blank
+   * frame, so its process/routing IDs are not durable across the first commit.
+   */
+  requireCurrentGuestMainFrame(
+    guestWebContentsId: number,
+    sessionId: string,
+    nonce: string,
+    senderFrame: Pick<WebFrameMain, 'processId' | 'routingId' | 'detached'> | null
+  ): ExtensionViewSessionRecord {
+    this.requireGuest(guestWebContentsId, sessionId, nonce)
+    const record = this.records.get(sessionId)!
+    const guest = this.guests.get(guestWebContentsId)
+    const mainFrame = guest?.mainFrame
+    if (
+      !senderFrame ||
+      senderFrame.detached === true ||
+      !mainFrame ||
+      mainFrame.detached === true ||
+      this.mainFrameNavigationPending.has(sessionId) ||
+      senderFrame.processId !== mainFrame.processId ||
+      senderFrame.routingId !== mainFrame.routingId
+    ) {
+      throw new ExtensionViewSessionError(
+        'EXTENSION_VIEW_SENDER_INVALID',
+        'View sender is not the current guest main frame.'
+      )
+    }
+    this.updateGuestMainFrame(
+      record.sessionId,
+      guest,
+      mainFrame.processId,
+      mainFrame.routingId
+    )
     return { ...record }
   }
 
@@ -167,11 +252,22 @@ export class ExtensionViewSessionRegistry {
     }
   }
 
+  onDidChangeMainFrame(listener: (record: ExtensionViewSessionRecord) => void): () => void {
+    this.mainFrameChangeListeners.add(listener)
+    let disposed = false
+    return () => {
+      if (disposed) return
+      disposed = true
+      this.mainFrameChangeListeners.delete(listener)
+    }
+  }
+
   dispose(sessionId: string): boolean {
     const record = this.records.get(sessionId)
     if (!record) return false
     record.state = 'disposed'
     this.records.delete(sessionId)
+    this.mainFrameNavigationPending.delete(sessionId)
     if (record.guestWebContentsId !== undefined) {
       this.byGuest.delete(record.guestWebContentsId)
       const guest = this.guests.get(record.guestWebContentsId)
@@ -207,5 +303,35 @@ export class ExtensionViewSessionRegistry {
       .map((record) => record.sessionId)
     for (const sessionId of sessionIds) this.dispose(sessionId)
     return sessionIds.length
+  }
+
+  private updateGuestMainFrame(
+    sessionId: string,
+    guest: WebContents,
+    processId: number | undefined,
+    routingId: number | undefined
+  ): void {
+    const record = this.records.get(sessionId)
+    if (
+      !record ||
+      record.state !== 'active' ||
+      record.guestWebContentsId !== guest.id ||
+      this.guests.get(guest.id) !== guest ||
+      (
+        record.guestMainFrameProcessId === processId &&
+        record.guestMainFrameRoutingId === routingId
+      )
+    ) {
+      return
+    }
+    record.guestMainFrameProcessId = processId
+    record.guestMainFrameRoutingId = routingId
+    for (const listener of this.mainFrameChangeListeners) {
+      try {
+        listener({ ...record })
+      } catch {
+        // Frame invalidation must not be blocked by one observer.
+      }
+    }
   }
 }

@@ -2,7 +2,8 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   hardenExtensionWebPreferences,
   installWebviewSecurityGuards,
-  isAllowedExtensionNavigation
+  isAllowedExtensionNavigation,
+  isAllowedExtensionSubresource
 } from './extension-webview-security'
 import { ExtensionViewSessionRegistry } from './extension-view-sessions'
 
@@ -34,6 +35,94 @@ describe('ExtensionViewSessionRegistry', () => {
       /not authorized/
     )
     expect(() => registry.prepareAttach(10, created.sourceUrl)).toThrow(/unavailable/)
+  })
+
+  it('refreshes the protected main-frame identity after the guest document commits', () => {
+    const registry = new ExtensionViewSessionRegistry(() => 1_000)
+    const created = registry.create({
+      sessionId: '1234567890abcdef',
+      extensionId: 'acme.example',
+      extensionVersion: '1.0.0',
+      contributionId: 'issues',
+      entryPath: 'dist/index.html',
+      parentWebContentsId: 10
+    })
+    registry.prepareAttach(10, created.sourceUrl)
+    const guestListeners = new Map<string, (...args: unknown[]) => void>()
+    const guest = {
+      id: 20,
+      mainFrame: { processId: 100, routingId: 200 },
+      once: vi.fn(),
+      on(event: string, listener: (...args: unknown[]) => void) {
+        guestListeners.set(event, listener)
+        return this
+      }
+    }
+    const changed = vi.fn()
+    registry.onDidChangeMainFrame(changed)
+    registry.bindNextGuest(10, guest as never)
+    const attachFrame = guest.mainFrame
+    guest.mainFrame = { processId: 101, routingId: 201 }
+
+    expect(() => registry.requireCurrentGuestMainFrame(
+      20,
+      created.sessionId,
+      created.nonce,
+      attachFrame as never
+    )).toThrow(/current guest main frame/)
+    expect(() => registry.requireCurrentGuestMainFrame(
+      20,
+      created.sessionId,
+      created.nonce,
+      { processId: 101, routingId: 999 } as never
+    )).toThrow(/current guest main frame/)
+    expect(() => registry.requireCurrentGuestMainFrame(
+      21,
+      created.sessionId,
+      created.nonce,
+      guest.mainFrame as never
+    )).toThrow(/not authorized/)
+
+    expect(registry.requireCurrentGuestMainFrame(
+      20,
+      created.sessionId,
+      created.nonce,
+      guest.mainFrame as never
+    )).toMatchObject({
+      guestMainFrameProcessId: 101,
+      guestMainFrameRoutingId: 201
+    })
+    expect(registry.get(created.sessionId)).toMatchObject({
+      guestMainFrameProcessId: 101,
+      guestMainFrameRoutingId: 201
+    })
+    expect(changed).toHaveBeenCalledTimes(1)
+
+    guestListeners.get('did-start-navigation')?.({
+      isMainFrame: true,
+      isSameDocument: false
+    })
+    expect(() => registry.requireCurrentGuestMainFrame(
+      20,
+      created.sessionId,
+      created.nonce,
+      guest.mainFrame as never
+    )).toThrow(/current guest main frame/)
+    expect(registry.get(created.sessionId)).toMatchObject({
+      guestMainFrameProcessId: undefined,
+      guestMainFrameRoutingId: undefined
+    })
+
+    guestListeners.get('did-stop-loading')?.()
+    expect(registry.requireCurrentGuestMainFrame(
+      20,
+      created.sessionId,
+      created.nonce,
+      guest.mainFrame as never
+    )).toMatchObject({
+      guestMainFrameProcessId: 101,
+      guestMainFrameRoutingId: 201
+    })
   })
 
   it('forces the Kun preload, non-persistent partition and sandbox baseline', () => {
@@ -72,6 +161,28 @@ describe('ExtensionViewSessionRegistry', () => {
     expect(isAllowedExtensionNavigation('kun-extension://other.example/dist/app.js', record)).toBe(false)
     expect(isAllowedExtensionNavigation('https://example.com', record)).toBe(false)
     expect(isAllowedExtensionNavigation('file:///tmp/secret', record)).toBe(false)
+  })
+
+  it('allows protected media through the Host filter without opening other network access', () => {
+    const record = { extensionId: 'acme.example' }
+    expect(isAllowedExtensionSubresource(
+      'kun-extension://acme.example/dist/app.js',
+      record
+    )).toBe(true)
+    expect(isAllowedExtensionSubresource(
+      'kun-media://lease/abcdefghijklmnopqrstuvwxyzABCDEFGH123456789',
+      record
+    )).toBe(true)
+    expect(isAllowedExtensionSubresource(
+      'kun-media://other/abcdefghijklmnopqrstuvwxyzABCDEFGH123456789',
+      record
+    )).toBe(false)
+    expect(isAllowedExtensionSubresource(
+      'kun-extension://other.example/dist/app.js',
+      record
+    )).toBe(false)
+    expect(isAllowedExtensionSubresource('https://example.com/media.mp4', record)).toBe(false)
+    expect(isAllowedExtensionSubresource('file:///tmp/secret.mp4', record)).toBe(false)
   })
 
   it('prepares the isolated protocol partition before allowing the first Webview navigation', () => {

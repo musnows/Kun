@@ -1,15 +1,21 @@
 import {
   AccountSessionSchema,
+  ArtifactHostActionRequestSchema,
+  ArtifactHostActionResultSchema,
   ExtensionManifestSchema,
   LocaleSchema,
   PermissionSchema,
   ThemeSchema,
+  MediaOpenViewResourceRequestSchema,
+  MediaReleaseRequestSchema,
+  MediaResourceLeaseSchema,
   type Locale,
   type Theme
 } from '@kun/extension-api'
 import {
   dialog,
   ipcMain,
+  shell,
   webContents,
   type BrowserWindow,
   type IpcMainInvokeEvent,
@@ -17,7 +23,7 @@ import {
 } from 'electron'
 import { createHash, randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import type {
   ExtensionConsentRequest,
   ExtensionNotificationSnapshot,
@@ -79,7 +85,18 @@ import {
 import type { ProtectedCredentialSurfaceController } from '../extensions/protected-credential-surface'
 import type { ExtensionViewSessionRegistry } from '../extensions/extension-view-sessions'
 import type { ExtensionViewProtocolRegistry } from '../extensions/extension-view-protocol-registry'
+import type { ExtensionMediaProtocolRegistry } from '../extensions/extension-media-protocol'
 import { isAllowedExtensionViewMethod } from '../extensions/extension-view-methods'
+import {
+  assertProtectedViewBindingCurrent,
+  pickExtensionMediaFiles,
+  pickExtensionMediaSaveTarget,
+  requireProtectedViewBinding
+} from '../extensions/extension-media-picker'
+import {
+  ExtensionArtifactResolutionSchema,
+  ExtensionMediaLeaseRegistrationSchema
+} from '../../shared/extension-media-ipc'
 
 type RuntimeRequest = (
   path: string,
@@ -94,6 +111,7 @@ export type RegisterExtensionIpcHandlersOptions = {
   descriptors: ExtensionDescriptorResolver
   viewSessions: ExtensionViewSessionRegistry
   viewProtocols: ExtensionViewProtocolRegistry
+  mediaProtocols?: ExtensionMediaProtocolRegistry
   protectedActions: ProtectedExtensionActionService
   credentialSurface: ProtectedCredentialSurfaceController
   contentScripts: ExtensionContentScriptController
@@ -890,6 +908,129 @@ function registerViewIpcHandlers(
       if (request.method === 'ui.getTheme' || request.method === 'ui.getLocale') {
         const environment = await loadWorkbenchEnvironment(options)
         return request.method === 'ui.getTheme' ? environment.theme : environment.locale
+      }
+      if (request.method === 'media.pickFiles') {
+        return pickExtensionMediaFiles({
+          event,
+          record,
+          viewSessions: options.viewSessions,
+          getMainWindow: options.getMainWindow,
+          runtimeRequest: options.runtimeRequest,
+          onCleanupFailure: (detail) => options.logError?.(
+            'extension-media-picker',
+            'Failed to confirm protected media selection rollback.',
+            detail
+          )
+        }, request.params)
+      }
+      if (request.method === 'media.pickSaveTarget') {
+        return pickExtensionMediaSaveTarget({
+          event,
+          record,
+          viewSessions: options.viewSessions,
+          getMainWindow: options.getMainWindow,
+          runtimeRequest: options.runtimeRequest,
+          onCleanupFailure: (detail) => options.logError?.(
+            'extension-media-picker',
+            'Failed to confirm protected media selection rollback.',
+            detail
+          )
+        }, request.params)
+      }
+      if (request.method === 'media.openViewResource') {
+        if (!options.mediaProtocols) throw new Error('Media protocol is unavailable.')
+        const input = MediaOpenViewResourceRequestSchema.parse(request.params)
+        const binding = requireProtectedViewBinding({
+          event,
+          record,
+          viewSessions: options.viewSessions,
+          getMainWindow: options.getMainWindow,
+          runtimeRequest: options.runtimeRequest
+        })
+        const pickerContext = {
+          event,
+          record,
+          viewSessions: options.viewSessions,
+          getMainWindow: options.getMainWindow,
+          runtimeRequest: options.runtimeRequest
+        }
+        const resolved = await options.runtimeRequest(
+          '/v1/extensions/media/leases/resolve',
+          'POST',
+          JSON.stringify({ binding, handleId: input.handleId })
+        )
+        assertProtectedViewBindingCurrent(pickerContext, binding)
+        if (!resolved.ok) throw runtimeResultError(resolved)
+        const registration = ExtensionMediaLeaseRegistrationSchema.parse(safeJsonParse(resolved.body))
+        const lease = MediaResourceLeaseSchema.parse(await options.mediaProtocols.createLease({
+          viewSessionId: record.sessionId,
+          extensionId: record.extensionId,
+          extensionVersion: record.extensionVersion,
+          contributionId: record.contributionId,
+          ...(record.workspaceRoot ? { workspaceRoot: record.workspaceRoot } : {}),
+          handleId: registration.handleId,
+          absolutePath: registration.absolutePath,
+          mimeType: registration.mimeType,
+          fileIdentity: registration.fileIdentity,
+          expiresAt: new Date(registration.expiresAt).getTime()
+        }))
+        try {
+          assertProtectedViewBindingCurrent(pickerContext, binding)
+        } catch (error) {
+          options.mediaProtocols.revokeLease(lease.leaseId, 'released')
+          throw error
+        }
+        return lease
+      }
+      if (request.method === 'media.performArtifactAction') {
+        const input = ArtifactHostActionRequestSchema.parse(request.params)
+        const binding = requireProtectedViewBinding({
+          event,
+          record,
+          viewSessions: options.viewSessions,
+          getMainWindow: options.getMainWindow,
+          runtimeRequest: options.runtimeRequest
+        })
+        const pickerContext = {
+          event,
+          record,
+          viewSessions: options.viewSessions,
+          getMainWindow: options.getMainWindow,
+          runtimeRequest: options.runtimeRequest
+        }
+        if (!binding.workspaceRoot) throw new Error('Generated artifact requires an active workspace.')
+        const workspaceRoot = resolve(binding.workspaceRoot)
+        const resolved = await options.runtimeRequest(
+          '/v1/extensions/media/artifacts/resolve',
+          'POST',
+          JSON.stringify({
+            artifactId: input.artifactId,
+            ownerExtensionId: binding.extensionId,
+            ownerExtensionVersion: binding.extensionVersion,
+            workspaceId: createHash('sha256').update(workspaceRoot).digest('hex'),
+            workspaceRoot
+          })
+        )
+        assertProtectedViewBindingCurrent(pickerContext, binding)
+        if (!resolved.ok) throw runtimeResultError(resolved)
+        const artifact = ExtensionArtifactResolutionSchema.parse(safeJsonParse(resolved.body))
+        if (artifact.artifactId !== input.artifactId) {
+          throw new Error('Generated artifact is unavailable.')
+        }
+        if (input.action === 'reveal') {
+          shell.showItemInFolder(artifact.absolutePath)
+        } else {
+          const error = await shell.openPath(artifact.absolutePath)
+          if (error) throw new Error('The generated artifact could not be opened.')
+        }
+        return ArtifactHostActionResultSchema.parse({ performed: true })
+      }
+      if (request.method === 'media.release') {
+        const input = MediaReleaseRequestSchema.parse(request.params)
+        if (input.resource === 'lease') {
+          if (!options.mediaProtocols) throw new Error('Media protocol is unavailable.')
+          return { released: options.mediaProtocols.revokeLease(input.leaseId, 'released') }
+        }
       }
       const result = await options.runtimeRequest(
         `/v1/extensions/view-sessions/${encodeURIComponent(record.runtimeSessionId)}/requests`,

@@ -25,7 +25,20 @@ const EXTENSION_VIEW_METHODS = new Set([
   'workspace.readFile',
   'workspace.writeFile',
   'workspace.stat',
-  'workspace.list'
+  'workspace.list',
+  'media.pickFiles',
+  'media.pickSaveTarget',
+  'media.stat',
+  'media.release',
+  'media.openViewResource',
+  'media.performArtifactAction',
+  'media.probe',
+  'media.startFfmpegJob',
+  'jobs.get',
+  'jobs.list',
+  'jobs.subscribe',
+  'jobs.unsubscribe',
+  'jobs.cancel'
 ])
 
 export function isAllowedExtensionViewMethod(method: string): boolean {

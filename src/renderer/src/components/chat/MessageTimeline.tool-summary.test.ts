@@ -290,6 +290,28 @@ describe('MessageTimeline Kun runtime metadata smoke', () => {
     expect(html).toContain('ds-media-printer-reveal')
   })
 
+  it('renders revoked generated artifacts as explicitly unavailable', () => {
+    const block: ToolBlock = toolBlock({
+      id: 'tool_revoked_artifact',
+      summary: 'video-render',
+      meta: {
+        generatedFiles: [{
+          id: 'artifact_1234567890',
+          artifactId: 'artifact_1234567890',
+          mediaHandleId: 'media_123456789012',
+          availability: 'unavailable',
+          name: 'final.mp4',
+          mimeType: 'video/mp4'
+        }]
+      }
+    })
+
+    const html = renderToStaticMarkup(createElement(GeneratedFilesPanel, { blocks: [block] }))
+    expect(html).toContain('Preview unavailable')
+    expect(html).toContain('disabled=""')
+    expect(html).not.toContain('src="kun-media:')
+  })
+
   it('deduplicates generated files across tool blocks by path', () => {
     const first: ToolBlock = toolBlock({
       id: 'tool_export_1',
@@ -343,6 +365,36 @@ describe('MessageTimeline Kun runtime metadata smoke', () => {
     }])
     expect(JSON.stringify(sources)).not.toContain('/private/workspace')
     expect(JSON.stringify(sources)).not.toContain('base64')
+  })
+
+  it('projects durable artifact and media references to result preview Views', () => {
+    const sources = resultPreviewSourcesForTurn({
+      user: { kind: 'user', id: 'user_1', text: 'render video' },
+      blocks: [toolBlock({
+        id: 'tool_video',
+        meta: {
+          generatedFiles: [{
+            id: 'artifact_1234567890',
+            artifactId: 'artifact_1234567890',
+            mediaHandleId: 'media_123456789012',
+            availability: 'available',
+            name: 'final.mp4',
+            mimeType: 'video/mp4',
+            byteSize: 4096
+          }]
+        }
+      })]
+    })
+
+    expect(sources).toEqual([{
+      sourceId: 'tool_video:artifact_1234567890',
+      mimeType: 'video/mp4',
+      name: 'final.mp4',
+      artifactId: 'artifact_1234567890',
+      mediaHandleId: 'media_123456789012',
+      availability: 'available',
+      byteSize: 4096
+    }])
   })
 
   it('renders managed Claw prompts as the user-visible message', () => {

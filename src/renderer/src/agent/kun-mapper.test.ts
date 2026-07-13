@@ -628,6 +628,61 @@ describe('create_plan tool mapping', () => {
     }
   })
 
+  it('projects top-level extension generatedArtifacts without paths or ephemeral URLs', () => {
+    const item: CoreTurnItemJson = {
+      id: 'item_artifact_1',
+      turnId: 'turn_1',
+      threadId: 'thr_1',
+      role: 'tool',
+      status: 'completed',
+      createdAt: '2024-01-01T00:00:00.000Z',
+      kind: 'tool_result',
+      toolName: 'video-render',
+      callId: 'call_artifact_1',
+      output: {
+        content: { status: 'completed' },
+        generatedArtifacts: [{
+          schemaVersion: 1,
+          artifactId: 'artifact_1234567890',
+          mediaHandleId: 'media_123456789012',
+          displayName: 'final.mp4',
+          mediaKind: 'video',
+          mimeType: 'video/mp4',
+          byteSize: 4096,
+          durationMicros: 1_500_000,
+          completionIdentity: 'identity_1234567890',
+          availability: 'available',
+          ownerExtensionId: 'kun.video-editor',
+          ownerExtensionVersion: '1.0.0',
+          workspaceId: 'workspace-1',
+          provenance: { jobId: 'job_12345678', operation: 'video-render' }
+        }]
+      }
+    }
+    const block = chatBlockFromItem(item)
+    expect(block).not.toBeNull()
+    if (block && block.kind === 'tool') {
+      expect(block.meta?.generatedFiles).toEqual([{
+        id: 'artifact_1234567890',
+        artifactId: 'artifact_1234567890',
+        mediaHandleId: 'media_123456789012',
+        availability: 'available',
+        name: 'final.mp4',
+        mimeType: 'video/mp4',
+        byteSize: 4096,
+        durationMicros: 1_500_000,
+        mediaKind: 'video',
+        completionIdentity: 'identity_1234567890',
+        ownerExtensionId: 'kun.video-editor',
+        ownerExtensionVersion: '1.0.0',
+        workspaceId: 'workspace-1',
+        provenance: { jobId: 'job_12345678', operation: 'video-render' }
+      }])
+    } else {
+      throw new Error('expected tool block')
+    }
+  })
+
   it('omits meta attachments when tool_result output has none worth showing', () => {
     const item: CoreTurnItemJson = {
       id: 'item_img_2',

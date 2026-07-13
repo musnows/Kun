@@ -29,6 +29,35 @@ import {
 } from './common.js'
 import type { Event, Disposable } from './lifecycle.js'
 import type {
+  ArtifactHostActionRequest,
+  ArtifactHostActionResult
+} from './artifacts.js'
+import type {
+  JobCancelRequest,
+  JobCancellationResult,
+  JobEvent,
+  JobListRequest,
+  JobPage,
+  JobSnapshot,
+  JobSubscribeRequest
+} from './jobs.js'
+import type {
+  MediaMetadata,
+  MediaOpenViewResourceRequest,
+  MediaPickFilesRequest,
+  MediaPickFilesResult,
+  MediaPickSaveTargetRequest,
+  MediaPickSaveTargetResult,
+  MediaProbeRequest,
+  MediaProbeResult,
+  MediaReleaseRequest,
+  MediaReleaseResult,
+  MediaResourceLease,
+  MediaStartFfmpegJobRequest,
+  MediaStartFfmpegJobResult,
+  MediaStatRequest
+} from './media.js'
+import type {
   ModelProviderAdapter,
   ModelProviderDeclarationInput,
   ProviderStatus
@@ -154,6 +183,9 @@ export const ResultPreviewSourceSchema = z.strictObject({
   mimeType: z.string().min(3).max(128).regex(/^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/),
   name: z.string().min(1).max(256).optional(),
   attachmentId: z.string().min(1).max(256).optional(),
+  artifactId: z.string().min(16).max(512).regex(/^[A-Za-z0-9_-]+$/).optional(),
+  mediaHandleId: z.string().min(16).max(512).regex(/^[A-Za-z0-9_-]+$/).optional(),
+  availability: z.enum(['available', 'unavailable']).optional(),
   relativePath: RelativePathSchema.optional(),
   byteSize: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
   width: z.number().int().nonnegative().max(1_000_000).optional(),
@@ -243,6 +275,32 @@ export interface AuthenticationApi {
   deleteAccount(accountId: string): Promise<void>
   authenticatedFetch(request: AuthenticatedFetchRequest): Promise<NetworkResponse>
   revealSecret(request: RevealSecretRequest): Promise<string>
+}
+
+export interface MediaApi {
+  pickFiles(request?: MediaPickFilesRequest): Promise<MediaPickFilesResult>
+  pickSaveTarget(request?: MediaPickSaveTargetRequest): Promise<MediaPickSaveTargetResult>
+  stat(request: MediaStatRequest): Promise<MediaMetadata>
+  release(request: MediaReleaseRequest): Promise<MediaReleaseResult>
+  openViewResource(request: MediaOpenViewResourceRequest): Promise<MediaResourceLease>
+  performArtifactAction(request: ArtifactHostActionRequest): Promise<ArtifactHostActionResult>
+  probe(request: MediaProbeRequest): Promise<MediaProbeResult>
+  startFfmpegJob(request: MediaStartFfmpegJobRequest): Promise<MediaStartFfmpegJobResult>
+}
+
+export interface JobSubscription extends Disposable {
+  readonly snapshot: JobSnapshot
+  readonly replayGap: boolean
+  readonly cursor: string
+  readonly complete: boolean
+  readonly onEvent: Event<JobEvent>
+}
+
+export interface JobsApi {
+  get(jobId: string): Promise<JobSnapshot>
+  list(request?: JobListRequest): Promise<JobPage>
+  subscribe(request: JobSubscribeRequest): Promise<JobSubscription>
+  cancel(request: JobCancelRequest): Promise<JobCancellationResult>
 }
 
 export const WorkspaceFileSchema = z.strictObject({

@@ -171,6 +171,11 @@ module.exports = {
   ],
   extraResources: [
     {
+      from: 'resources/bundled-extensions',
+      to: 'bundled-extensions',
+      filter: ['catalog.json', '*.kunx']
+    },
+    {
       from: 'resources/whisper',
       to: 'whisper',
       filter: ['**/*']

@@ -210,14 +210,23 @@ export function resultPreviewSourcesForTurn(turn: Turn): ExtensionResultPreviewS
         ? file.mimeType.trim().toLowerCase().split(';', 1)[0].slice(0, 128)
         : ''
       if (!mimeType) return
-      const attachmentId = typeof file.id === 'string' && /^[A-Za-z0-9._:-]+$/.test(file.id)
+      const artifactId = typeof file.artifactId === 'string' && /^[A-Za-z0-9_-]{16,512}$/.test(file.artifactId)
+        ? file.artifactId
+        : undefined
+      const mediaHandleId = typeof file.mediaHandleId === 'string' && /^[A-Za-z0-9_-]{16,512}$/.test(file.mediaHandleId)
+        ? file.mediaHandleId
+        : undefined
+      const availability = file.availability === 'available' || file.availability === 'unavailable'
+        ? file.availability
+        : undefined
+      const attachmentId = !artifactId && typeof file.id === 'string' && /^[A-Za-z0-9._:-]+$/.test(file.id)
         ? file.id.slice(0, 256)
         : undefined
       const relativePathResult = RelativePathSchema.safeParse(file.relativePath)
       const relativePath = relativePathResult.success ? relativePathResult.data : undefined
       const boundedName = typeof file.name === 'string' ? boundedPlainText(file.name, 256).trim() : ''
       const name = boundedName || undefined
-      const sourceId = `${block.id}:${attachmentId || relativePath || name || index}`
+      const sourceId = `${block.id}:${artifactId || attachmentId || relativePath || name || index}`
         .replace(/[^A-Za-z0-9._:/+-]/g, '_')
         .slice(0, 512)
       if (seen.has(sourceId)) return
@@ -226,6 +235,9 @@ export function resultPreviewSourcesForTurn(turn: Turn): ExtensionResultPreviewS
         mimeType,
         ...(name ? { name } : {}),
         ...(attachmentId ? { attachmentId } : {}),
+        ...(artifactId ? { artifactId } : {}),
+        ...(mediaHandleId ? { mediaHandleId } : {}),
+        ...(availability ? { availability } : {}),
         ...(relativePath ? { relativePath } : {}),
         ...(typeof file.byteSize === 'number' && Number.isFinite(file.byteSize)
           ? { byteSize: Math.min(Number.MAX_SAFE_INTEGER, Math.max(0, Math.trunc(file.byteSize))) }

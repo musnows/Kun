@@ -7,10 +7,10 @@ export const KUN_EXTENSION_CSP = [
   "default-src 'none'",
   "script-src 'self'",
   "style-src 'self'",
-  "img-src 'self' data:",
+  "img-src 'self' data: kun-media:",
   "font-src 'self'",
   "connect-src 'none'",
-  "media-src 'self'",
+  "media-src 'self' kun-media:",
   "worker-src 'self'",
   "frame-src 'none'",
   "object-src 'none'",
@@ -36,20 +36,20 @@ export type ExtensionResourceDescriptorResolver = (
 type SchemeRegistrar = Pick<Protocol, 'registerSchemesAsPrivileged'>
 type ProtocolHandler = Pick<Protocol, 'handle' | 'unhandle'>
 
+export const KUN_EXTENSION_PRIVILEGED_SCHEME = {
+  scheme: KUN_EXTENSION_SCHEME,
+  privileges: {
+    standard: true,
+    secure: true,
+    supportFetchAPI: true,
+    corsEnabled: false,
+    bypassCSP: false,
+    stream: true
+  }
+} as const
+
 export function registerKunExtensionSchemeAsPrivileged(protocol: SchemeRegistrar): void {
-  protocol.registerSchemesAsPrivileged([
-    {
-      scheme: KUN_EXTENSION_SCHEME,
-      privileges: {
-        standard: true,
-        secure: true,
-        supportFetchAPI: true,
-        corsEnabled: false,
-        bypassCSP: false,
-        stream: true
-      }
-    }
-  ])
+  protocol.registerSchemesAsPrivileged([KUN_EXTENSION_PRIVILEGED_SCHEME])
 }
 
 export function registerKunExtensionProtocol(options: {

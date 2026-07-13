@@ -3,9 +3,11 @@ import { describe, expect, it } from 'vitest'
 import { toJSONSchema } from 'zod'
 import {
   ExtensionManifestSchema,
+  CURRENT_EXTENSION_API_VERSION,
   ModelUsageSchema,
   RESULT_PREVIEW_OPEN_CHANNEL,
   ResultPreviewOpenPayloadSchema,
+  SUPPORTED_EXTENSION_API_VERSIONS,
   negotiateApiVersion,
   parseExtensionManifest,
   permissionMatches
@@ -168,6 +170,32 @@ describe('API major negotiation fixtures', () => {
       expect(result.compatible, testCase.name).toBe(testCase.compatible)
       if (result.compatible) expect(result.adapter, testCase.name).toBe(testCase.adapter)
       else expect(result.code, testCase.name).toBe(testCase.code)
+    }
+  })
+})
+
+describe('API v1.1 minor compatibility fixtures', () => {
+  it('keeps v1.0 manifests compatible while negotiating the current v1.1 Host', async () => {
+    expect(CURRENT_EXTENSION_API_VERSION).toBe('1.1.0')
+    expect(SUPPORTED_EXTENSION_API_VERSIONS).toEqual(['1.1.0', '1.0.0'])
+    expect(parseExtensionManifest(manifest).apiVersion).toBe('1.0.0')
+
+    const fixture = JSON.parse(
+      await readFile(new URL('../fixtures/api-minor-negotiation.json', import.meta.url), 'utf8')
+    )
+    for (const testCase of fixture.cases) {
+      const result = negotiateApiVersion({
+        declaredApiVersion: testCase.declaredApiVersion,
+        supportedApiVersions: fixture.host.supportedApiVersions,
+        requiredCapabilities: testCase.requiredCapabilities,
+        capabilitiesByVersion: fixture.host.capabilitiesByVersion
+      })
+      expect(result.compatible, testCase.name).toBe(testCase.compatible)
+      if (result.compatible) {
+        expect(result.negotiatedApiVersion, testCase.name).toBe(testCase.negotiatedApiVersion)
+      } else {
+        expect(result.code, testCase.name).toBe(testCase.code)
+      }
     }
   })
 })

@@ -1,11 +1,13 @@
 #!/usr/bin/env node
 
 const { execFileSync, spawnSync } = require('node:child_process')
+const { createHash } = require('node:crypto')
 const { createServer } = require('node:net')
 const nodeFs = require('node:fs')
 const {
   existsSync,
   lstatSync,
+  readFileSync,
   realpathSync
 } = nodeFs
 // Electron patches `node:fs` so an ASAR path behaves like a directory. The
@@ -33,6 +35,7 @@ const { pathToFileURL } = require('node:url')
 const { KUN_RUNTIME_REQUIRED_PATHS } = require('./after-pack.cjs')
 
 const EXTENSION_ID = 'kun-smoke.packaged'
+const DEFAULT_EXTENSION_ID = 'kun-examples.kun-video-editor'
 const RUNTIME_TOKEN = 'kun-packaged-extension-smoke-token'
 const PACKAGED_EXTENSION_SMOKE_SUCCESS_MARKER = 'Packaged Extension smoke OK ('
 
@@ -91,6 +94,7 @@ async function main() {
       '--host', '127.0.0.1',
       '--port', String(port),
       '--data-dir', profile,
+      '--bundled-extensions-dir', join(resourcesDir, 'bundled-extensions'),
       '--runtime-token', RUNTIME_TOKEN,
       '--api-key', 'packaged-smoke-placeholder',
       '--base-url', 'https://invalid.example',
@@ -125,8 +129,25 @@ async function main() {
     const listed = JSON.parse(runKun(runtimeEntry, [
       'extension', 'list', '--data-dir', profile, '--json'
     ]))
-    if (!Array.isArray(listed.extensions) || listed.extensions.length !== 0) {
-      throw new Error('Packaged extension uninstall left a registry entry')
+    if (
+      !Array.isArray(listed.extensions) ||
+      listed.extensions.length !== 1 ||
+      listed.extensions[0]?.id !== DEFAULT_EXTENSION_ID ||
+      listed.extensions[0]?.globallyEnabled !== true
+    ) {
+      throw new Error('Packaged default extension was not seeded through the normal registry')
+    }
+    runKun(runtimeEntry, [
+      'extension', 'uninstall', DEFAULT_EXTENSION_ID, '--data-dir', profile, '--json'
+    ])
+    server = await startKunServe(options)
+    await server.close()
+    server = undefined
+    const afterRemoval = JSON.parse(runKun(runtimeEntry, [
+      'extension', 'list', '--data-dir', profile, '--json'
+    ]))
+    if (!Array.isArray(afterRemoval.extensions) || afterRemoval.extensions.length !== 0) {
+      throw new Error('Packaged default extension was resurrected after explicit uninstall')
     }
 
   } catch (error) {
@@ -156,7 +177,7 @@ async function main() {
   }
   if (cleanupFailed) throw cleanupError
   process.stdout.write(
-    `${PACKAGED_EXTENSION_SMOKE_SUCCESS_MARKER}${process.platform}): resources, .kunx lifecycle, Webview session, headless tool, Agent/tool round-trip, custom Provider/account stream, diagnostics, and uninstall.\n`
+    `${PACKAGED_EXTENSION_SMOKE_SUCCESS_MARKER}${process.platform}): resources, bundled-default seed/removal, .kunx lifecycle, Webview session, headless tool, Agent/tool round-trip, custom Provider/account stream, diagnostics, and uninstall.\n`
   )
 }
 
@@ -256,6 +277,7 @@ function validatePackagedResources(resourcesDir, unpackedRoot) {
   for (const relativePath of KUN_RUNTIME_REQUIRED_PATHS) {
     assertConfinedPackagedPath(unpackedRoot, relativePath)
   }
+  validateBundledDefaultExtension(resourcesDir)
   for (const relativePath of [
     'kun/node_modules/@kun/extension-api',
     'kun/node_modules/create-kun-extension'
@@ -273,6 +295,42 @@ function validatePackagedResources(resourcesDir, unpackedRoot) {
     if (!hasAsarEntry(asarHeader, preload)) {
       throw new Error(`Packaged app.asar does not contain ${preload}`)
     }
+  }
+}
+
+function validateBundledDefaultExtension(resourcesDir) {
+  const root = join(resourcesDir, 'bundled-extensions')
+  const catalogPath = join(root, 'catalog.json')
+  assertExists(catalogPath, 'bundled extension catalog')
+  const catalogDetails = lstatSync(catalogPath)
+  if (!catalogDetails.isFile() || catalogDetails.isSymbolicLink()) {
+    throw new Error('Packaged bundled extension catalog is not a regular file')
+  }
+  const catalog = JSON.parse(readFileSync(catalogPath, 'utf8'))
+  const matches = Array.isArray(catalog?.extensions)
+    ? catalog.extensions.filter((entry) => entry?.id === DEFAULT_EXTENSION_ID)
+    : []
+  if (catalog?.schemaVersion !== 1 || matches.length !== 1) {
+    throw new Error('Packaged bundled extension catalog omits the default video editor')
+  }
+  const entry = matches[0]
+  if (
+    typeof entry.archive !== 'string' ||
+    !/^[0-9A-Za-z][0-9A-Za-z._-]*\.kunx$/u.test(entry.archive) ||
+    typeof entry.sha256 !== 'string' ||
+    !/^[a-f0-9]{64}$/u.test(entry.sha256)
+  ) {
+    throw new Error('Packaged bundled video editor catalog entry is invalid')
+  }
+  const archivePath = join(root, entry.archive)
+  assertExists(archivePath, 'bundled video editor archive')
+  const archiveDetails = lstatSync(archivePath)
+  if (!archiveDetails.isFile() || archiveDetails.isSymbolicLink() || archiveDetails.size <= 0) {
+    throw new Error('Packaged bundled video editor archive is not a regular file')
+  }
+  const digest = createHash('sha256').update(readFileSync(archivePath)).digest('hex')
+  if (digest !== entry.sha256) {
+    throw new Error('Packaged bundled video editor archive digest does not match its catalog')
   }
 }
 
@@ -345,7 +403,7 @@ async function createSmokeExtension(root, { webviewConnectUrls = [] } = {}) {
   await mkdir(join(root, 'dist', 'webview'), { recursive: true })
   await writeFile(join(root, 'kun-extension.json'), `${JSON.stringify({
     manifestVersion: 1,
-    apiVersion: '1.0.0',
+    apiVersion: '1.1.0',
     publisher: 'kun-smoke',
     name: 'packaged',
     version: '1.0.0',
@@ -409,6 +467,8 @@ async function createSmokeExtension(root, { webviewConnectUrls = [] } = {}) {
       'providers.register',
       'agent.run',
       'agent.threads.readOwn',
+      'workspace.read',
+      'media.read',
       'accounts.read',
       'accounts.manage:echo',
       'accounts.use:echo'
@@ -557,6 +617,8 @@ function smokeWebviewCsp(webviewConnectUrls = []) {
   return [
     "default-src 'none'",
     "style-src 'self'",
+    "img-src 'self' data: kun-media:",
+    "media-src 'self' kun-media:",
     `connect-src ${connectSources.length > 0 ? connectSources.join(' ') : "'none'"}`
   ].join('; ')
 }

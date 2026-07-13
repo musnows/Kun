@@ -1295,7 +1295,11 @@
             "storage.global",
             "storage.workspace",
             "workspace.read",
-            "workspace.write"
+            "workspace.write",
+            "media.read",
+            "media.process",
+            "media.export",
+            "jobs.manage"
           ]
         },
         {

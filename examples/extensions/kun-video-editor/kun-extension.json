@@ -1,0 +1,343 @@
+{
+  "$schema": "https://kun.dev/schemas/extensions/manifest/v1.json",
+  "manifestVersion": 1,
+  "apiVersion": "1.1.0",
+  "name": "kun-video-editor",
+  "publisher": "kun-examples",
+  "version": "0.1.0",
+  "displayName": "Kun Video Editor",
+  "description": "Local transcript-oriented editing for talking-head, interview, and podcast media.",
+  "license": "MIT",
+  "engines": { "kun": ">=0.1.0" },
+  "main": "dist/host/extension.js",
+  "browser": "dist/webview/index.html",
+  "activationEvents": [
+    "onView:editor",
+    "onView:render-preview",
+    "onCommand:open-editor",
+    "onCommand:editor-request",
+    "onAgentProfile:video-editor",
+    "onTool:video-project",
+    "onTool:video-probe",
+    "onTool:video-transcribe",
+    "onTool:video-read-script",
+    "onTool:video-apply-script",
+    "onTool:video-update-timeline",
+    "onTool:video-render",
+    "onTool:video-render-status"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "id": "open-editor",
+        "title": "Open Kun Video Editor",
+        "category": "Video",
+        "description": "Open the local transcript-first video editing workbench."
+      },
+      {
+        "id": "editor-request",
+        "title": "Video Editor Request",
+        "category": "Video",
+        "description": "Private bounded RPC used by the Kun Video Editor View.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "action": {
+              "type": "string",
+              "enum": [
+                "project.list",
+                "project.get",
+                "project.create",
+                "project.update",
+                "project.undo",
+                "project.redo",
+                "script.read",
+                "script.apply",
+                "media.import",
+                "transcript.import",
+                "render.start",
+                "render.status"
+              ]
+            },
+            "payload": { "type": "object" }
+          },
+          "required": ["action", "payload"],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "type": "object",
+          "properties": {
+            "content": {},
+            "summary": { "type": "string" },
+            "metadata": { "type": "object" },
+            "generatedArtifacts": { "type": "array" }
+          },
+          "required": ["content"],
+          "additionalProperties": false
+        }
+      }
+    ],
+    "views.fullPage": [
+      {
+        "id": "editor",
+        "title": "Kun Video Editor",
+        "entry": "dist/webview/index.html",
+        "localResourceRoots": ["dist/webview"]
+      }
+    ],
+    "actions.composer": [
+      {
+        "id": "open-editor",
+        "command": "open-editor",
+        "title": "Edit Video",
+        "group": "media",
+        "order": 40
+      }
+    ],
+    "message.resultPreviews": [
+      {
+        "id": "render-preview",
+        "title": "Video render",
+        "entry": "dist/webview/index.html",
+        "mimeTypes": ["video/mp4", "audio/mp4", "image/png", "application/x-subrip", "text/vtt"],
+        "localResourceRoots": ["dist/webview"]
+      }
+    ],
+    "settings": [
+      {
+        "id": "video-editor",
+        "title": "Kun Video Editor",
+        "scope": "workspace",
+        "properties": {
+          "defaultRenderPreset": {
+            "type": "string",
+            "enum": ["proof-frame", "preview", "h264-mp4", "audio-aac"],
+            "default": "preview",
+            "description": "Default render kind."
+          },
+          "defaultCaptionMode": {
+            "type": "string",
+            "enum": ["none", "burned", "sidecar", "both"],
+            "default": "none",
+            "description": "Default caption behavior for brokered media renders."
+          },
+          "localTranscriber": {
+            "type": "string",
+            "enum": ["disabled", "whisper-cli"],
+            "default": "disabled",
+            "description": "Local-only ASR preference. API v1.1 imports timed transcripts and reports unavailable when no supported local broker exists."
+          }
+        }
+      }
+    ],
+    "agentProfiles": [
+      {
+        "id": "video-editor",
+        "title": "Video Editor",
+        "description": "Private local transcript-first editing Agent for talking-head, interview, and podcast projects.",
+        "instructions": "You are the private Kun Video Editor Agent for local transcript-oriented editing of talking-head, interview, and podcast projects.\n\nBefore writing, ask for or confirm the creative goal, audience, target duration, aspect ratio, caption preference, and whether the user wants a review checkpoint or an export.\n\nAlways call video-project and video-read-script to read the current project revision before a mutation. Treat revision conflicts as a request to refresh; never guess a merge.\n\nEdit structure first: remove only explicitly identified timed ranges, order the story, and keep source media immutable. Add captions, composition, or decoration only when requested.\n\nDo not introduce unrequested music, B-roll, stock media, generative video or images, motion graphics, face tracking, or subject-aware reframing.\n\nThis MVP has transcript and timing evidence, not arbitrary visual-scene understanding. Never infer unseen actions or claim visual inspection from transcript text or a successful command.\n\nUse proof-frame or preview renders to create an inspectable review artifact. Distinguish FFmpeg/ffprobe technical validation from actual visual review, and report stale proof when the project revision changed.\n\nStop at an editable review checkpoint unless export was requested. For export, pin the current revision and preset, observe the durable job with video-render-status, and surface cancellation or invalid artifacts honestly.\n\nProtected media import and save-target selection require a Kun desktop interaction unless the caller already supplies valid opaque handles. In headless mode, return interaction-required instead of choosing a path or fabricating approval.",
+        "allowedTools": [
+          "video-project",
+          "video-probe",
+          "video-transcribe",
+          "video-read-script",
+          "video-apply-script",
+          "video-update-timeline",
+          "video-render",
+          "video-render-status"
+        ],
+        "budget": {
+          "maxTokens": 32768,
+          "maxElapsedMs": 1800000,
+          "maxModelRequests": 48,
+          "maxToolInvocations": 96,
+          "maxEvents": 4000
+        },
+        "visibility": "private"
+      }
+    ],
+    "tools": [
+      {
+        "id": "video-project",
+        "description": "List, create, or read a bounded revision-aware Kun video project projection. Read the current revision before any edit.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "action": { "type": "string", "enum": ["list", "get", "create"] },
+            "projectId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]{0,127}$" },
+            "name": { "type": "string", "minLength": 1, "maxLength": 160 },
+            "fps": { "type": "object" },
+            "canvasPreset": { "type": "string", "enum": ["16:9", "9:16", "1:1"] },
+            "expectedRevision": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 }
+          },
+          "required": ["action"],
+          "additionalProperties": false
+        },
+        "outputSchema": { "type": "object", "properties": { "outcome": { "type": "string", "minLength": 1, "maxLength": 64 } }, "required": ["outcome"], "additionalProperties": true },
+        "sideEffects": "write",
+        "idempotent": false,
+        "maxOutputBytes": 262144
+      },
+      {
+        "id": "video-probe",
+        "description": "Import or probe one Host-granted media handle, persist normalized asset metadata, and optionally request thumbnail or waveform jobs. Never accepts paths.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "projectId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]{0,127}$" },
+            "expectedRevision": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+            "mediaHandleId": { "type": "string", "minLength": 16, "maxLength": 512, "pattern": "^[A-Za-z0-9_-]+$" },
+            "assetId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]{0,127}$" },
+            "addToTimeline": { "type": "boolean" },
+            "thumbnailOutputHandleId": { "type": "string", "minLength": 16, "maxLength": 512, "pattern": "^[A-Za-z0-9_-]+$" },
+            "waveformOutputHandleId": { "type": "string", "minLength": 16, "maxLength": 512, "pattern": "^[A-Za-z0-9_-]+$" }
+          },
+          "required": ["projectId", "expectedRevision"],
+          "additionalProperties": false
+        },
+        "outputSchema": { "type": "object", "properties": { "outcome": { "type": "string", "minLength": 1, "maxLength": 64 } }, "required": ["outcome"], "additionalProperties": true },
+        "sideEffects": "write",
+        "idempotent": false,
+        "maxOutputBytes": 131072
+      },
+      {
+        "id": "video-transcribe",
+        "description": "Import a bounded timed transcript into an asset, or report local-ASR capability as unavailable without inventing text or uploading media.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "projectId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]{0,127}$" },
+            "expectedRevision": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+            "assetId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]{0,127}$" },
+            "transcriptId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]{0,127}$" },
+            "mode": { "type": "string", "enum": ["import", "local-asr"] },
+            "format": { "type": "string", "enum": ["srt", "vtt", "json"] },
+            "language": { "type": "string", "minLength": 1, "maxLength": 32 },
+            "source": { "type": "string", "minLength": 1, "maxLength": 524288 },
+            "segments": { "type": "array", "minItems": 1, "maxItems": 20000, "items": { "type": "object" } }
+          },
+          "required": ["projectId", "expectedRevision", "assetId", "transcriptId", "mode"],
+          "additionalProperties": false
+        },
+        "outputSchema": { "type": "object", "properties": { "outcome": { "type": "string", "minLength": 1, "maxLength": 64 } }, "required": ["outcome"], "additionalProperties": true },
+        "sideEffects": "write",
+        "idempotent": false,
+        "maxOutputBytes": 131072
+      },
+      {
+        "id": "video-read-script",
+        "description": "Read the deterministic revision-bound timeline.md projection for transcript-first review.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "projectId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]{0,127}$" },
+            "expectedRevision": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 }
+          },
+          "required": ["projectId"],
+          "additionalProperties": false
+        },
+        "outputSchema": { "type": "object", "properties": { "outcome": { "type": "string", "minLength": 1, "maxLength": 64 } }, "required": ["outcome"], "additionalProperties": true },
+        "sideEffects": "read",
+        "idempotent": true,
+        "maxOutputBytes": 262144
+      },
+      {
+        "id": "video-apply-script",
+        "description": "Apply explicit timed source ranges from an unchanged revision-bound timeline.md projection as one transactional Agent edit.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "projectId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]{0,127}$" },
+            "expectedRevision": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+            "timelineMarkdown": { "type": "string", "minLength": 1, "maxLength": 262144 },
+            "ranges": { "type": "array", "minItems": 1, "maxItems": 2000, "items": { "type": "object" } },
+            "summary": { "type": "string", "minLength": 1, "maxLength": 512 }
+          },
+          "required": ["projectId", "expectedRevision", "timelineMarkdown", "ranges"],
+          "additionalProperties": false
+        },
+        "outputSchema": { "type": "object", "properties": { "outcome": { "type": "string", "minLength": 1, "maxLength": 64 } }, "required": ["outcome"], "additionalProperties": true },
+        "sideEffects": "destructive",
+        "idempotent": false,
+        "maxOutputBytes": 131072
+      },
+      {
+        "id": "video-update-timeline",
+        "description": "Apply bounded typed timeline, caption, transform, track-placement, or canvas operations at an expected revision.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "projectId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]{0,127}$" },
+            "expectedRevision": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+            "operations": { "type": "array", "minItems": 1, "maxItems": 200, "items": { "type": "object" } },
+            "summary": { "type": "string", "minLength": 1, "maxLength": 512 }
+          },
+          "required": ["projectId", "expectedRevision", "operations"],
+          "additionalProperties": false
+        },
+        "outputSchema": { "type": "object", "properties": { "outcome": { "type": "string", "minLength": 1, "maxLength": 64 } }, "required": ["outcome"], "additionalProperties": true },
+        "sideEffects": "write",
+        "idempotent": false,
+        "maxOutputBytes": 131072
+      },
+      {
+        "id": "video-render",
+        "description": "Start a durable brokered proof, preview, audio, or H.264 export job, optionally with burned and SRT/VTT sidecar captions, pinned to a project revision and opaque output grants.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "projectId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]{0,127}$" },
+            "expectedRevision": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+            "kind": { "type": "string", "enum": ["proof-frame", "preview", "h264-mp4", "audio-aac"] },
+            "outputHandleId": { "type": "string", "minLength": 16, "maxLength": 512, "pattern": "^[A-Za-z0-9_-]+$" },
+            "proofFrame": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+            "captionMode": { "type": "string", "enum": ["none", "burned", "sidecar", "both"] },
+            "subtitleOutputHandleId": { "type": "string", "minLength": 16, "maxLength": 512, "pattern": "^[A-Za-z0-9_-]+$" },
+            "subtitleFormat": { "type": "string", "enum": ["srt", "vtt"] },
+            "idempotencyKey": { "type": "string", "minLength": 1, "maxLength": 256 }
+          },
+          "required": ["projectId", "expectedRevision", "kind"],
+          "additionalProperties": false
+        },
+        "outputSchema": { "type": "object", "properties": { "outcome": { "type": "string", "minLength": 1, "maxLength": 64 } }, "required": ["outcome"], "additionalProperties": true },
+        "sideEffects": "write",
+        "idempotent": false,
+        "maxOutputBytes": 131072
+      },
+      {
+        "id": "video-render-status",
+        "description": "Inspect or cancel one owned durable render job and return only technically validated generated artifacts.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "jobId": { "type": "string", "minLength": 8, "maxLength": 512 },
+            "action": { "type": "string", "enum": ["get", "cancel"] },
+            "reason": { "type": "string", "minLength": 1, "maxLength": 512 }
+          },
+          "required": ["jobId", "action"],
+          "additionalProperties": false
+        },
+        "outputSchema": { "type": "object", "properties": { "outcome": { "type": "string", "minLength": 1, "maxLength": 64 } }, "required": ["outcome"], "additionalProperties": true },
+        "sideEffects": "destructive",
+        "idempotent": false,
+        "maxOutputBytes": 131072
+      }
+    ]
+  },
+  "permissions": [
+    "commands.register",
+    "ui.views",
+    "ui.actions",
+    "webview",
+    "agent.run",
+    "tools.register",
+    "storage.workspace",
+    "workspace.read",
+    "workspace.write",
+    "media.read",
+    "media.process",
+    "media.export",
+    "jobs.manage"
+  ],
+  "stateSchemaVersion": 1
+}
