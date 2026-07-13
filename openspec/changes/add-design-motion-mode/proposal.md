@@ -8,6 +8,7 @@ Design mode can create and arrange static native shapes, HTML artifacts, SVG art
 - Add per-frame timelines with property tracks, typed keyframes, easing, playback modes, presets, auto-key, play/pause/reset, and deterministic scrubbing.
 - Preview motion non-destructively over the current canvas document without writing shape state on every animation frame.
 - Support native canvas shapes and artifact/running-app frame containers in the first release; retain existing SVG document playback and Prototype navigation as separate compatible capabilities.
+- When a selected standalone SVG contains its own SMIL/CSS animation, surface that inner playback state and preview controls inside the Motion dock while clearly separating it from editable outer container tracks.
 - Add a bounded motion summary to the Kun turn context and structured Kun mutation tools so agent-authored and manually-authored motion share the same canonical data.
 - Persist motion as validated versioned JSON, include it in canvas snapshots/handoff, and respect reduced-motion preferences.
 

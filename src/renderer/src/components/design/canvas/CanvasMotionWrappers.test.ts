@@ -14,6 +14,11 @@ import { createRunningAppFrameShape } from '../../../design/canvas/running-app-f
 import { useCanvasViewportStore } from '../../../design/canvas/canvas-viewport-store'
 import { useDesignWorkspaceStore } from '../../../design/design-workspace-store'
 import type { DesignArtifact } from '../../../design/design-types'
+import { useCanvasMotionStore } from '../../../design/motion/canvas-motion-store'
+import {
+  resetSvgAnimationPreviewStore,
+  useSvgAnimationPreviewStore
+} from '../../../design/svg/svg-animation-preview-store'
 import { RunningAppFrameOverlay } from './RunningAppFrameOverlay'
 import { SvgFrameOverlay } from './SvgFrameOverlay'
 import { ScreenOverlay } from './html-frame/HtmlFrameScreenOverlay'
@@ -52,6 +57,8 @@ beforeEach(() => {
     parallelPageStates: {},
     pagesRun: null
   })
+  useCanvasMotionStore.getState().reset()
+  resetSvgAnimationPreviewStore()
 })
 
 describe('canvas motion preview wrappers', () => {
@@ -153,6 +160,13 @@ describe('canvas motion preview wrappers', () => {
       children: [shape.id]
     }
     useCanvasShapeStore.getState().loadDocument(document)
+    useCanvasSelectionStore.setState({ selectedIds: new Set([shape.id]) })
+    useCanvasMotionStore.setState({ open: true, activeFrameId: document.rootId })
+    useCanvasViewportStore.setState({
+      vbox: { x: 10_000, y: 10_000, width: 120_000, height: 80_000 },
+      containerWidth: 1_200,
+      containerHeight: 800
+    })
     useDesignWorkspaceStore.setState({ artifacts: [svg], activeArtifactId: svg.id })
 
     let renderer!: ReactTestRenderer
@@ -165,6 +179,48 @@ describe('canvas motion preview wrappers', () => {
     expect(target.props['data-canvas-motion-kind']).toBe('portal')
     expect(target.props['data-svg-artifact-id']).toBe('logo-loop')
     expect(target.props.style).toMatchObject({ opacity: 0.65, transform: 'rotate(5deg)' })
+    expect(useSvgAnimationPreviewStore.getState().previews[shape.id]).toMatchObject({
+      shapeId: shape.id,
+      artifactId: svg.id,
+      title: svg.title,
+      status: 'loading',
+      animationCount: 0
+    })
+    await act(async () => useCanvasMotionStore.getState().setOpen(false))
+    expect(useSvgAnimationPreviewStore.getState().previews[shape.id]).toBeUndefined()
+    await act(async () => useCanvasMotionStore.getState().setOpen(true))
+    expect(useSvgAnimationPreviewStore.getState().previews[shape.id]).toMatchObject({
+      artifactId: svg.id,
+      status: 'loading'
+    })
+    await act(async () => renderer.unmount())
+    expect(useSvgAnimationPreviewStore.getState().previews[shape.id]).toBeUndefined()
+  })
+
+  it('reports missing SVG artifact metadata instead of leaving Motion inspection pending', async () => {
+    const shape = createSvgFrameShape('Missing loop', 50, 60, 'missing-svg', 320, 240)
+    shape.id = 'missing-svg-frame'
+    shape.parentId = '__root__'
+    const document = createEmptyDocument()
+    document.objects[shape.id] = shape
+    document.objects[document.rootId] = {
+      ...document.objects[document.rootId],
+      children: [shape.id]
+    }
+    useCanvasShapeStore.getState().loadDocument(document)
+    useCanvasSelectionStore.setState({ selectedIds: new Set([shape.id]) })
+    useCanvasMotionStore.setState({ open: true, activeFrameId: shape.id })
+
+    let renderer!: ReactTestRenderer
+    await act(async () => {
+      renderer = createRenderer(createElement(SvgFrameOverlay, { workspaceRoot: '/workspace' }))
+    })
+
+    expect(useSvgAnimationPreviewStore.getState().previews[shape.id]).toMatchObject({
+      artifactId: 'missing-svg',
+      title: 'Missing loop',
+      status: 'missing'
+    })
     await act(async () => renderer.unmount())
   })
 })

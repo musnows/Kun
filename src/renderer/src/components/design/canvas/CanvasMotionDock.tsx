@@ -12,7 +12,11 @@ import { useTranslation } from 'react-i18next'
 import { useCanvasSelectionStore } from '../../../design/canvas/canvas-selection-store'
 import { filterEditableShapeIds } from '../../../design/canvas/canvas-editability'
 import { useCanvasShapeStore } from '../../../design/canvas/canvas-shape-store'
-import type { CanvasShape } from '../../../design/canvas/canvas-types'
+import {
+  embeddedArtifactOf,
+  isSvgFrame,
+  type CanvasShape
+} from '../../../design/canvas/canvas-types'
 import {
   advanceMotionPlayback,
   evaluateMotionTrack,
@@ -33,22 +37,35 @@ import {
   type CanvasMotionPreset
 } from '../../../design/motion/canvas-motion-mutations'
 import { useCanvasMotionStore } from '../../../design/motion/canvas-motion-store'
+import {
+  useSvgAnimationPreviewStore,
+  type SvgAnimationPreviewState
+} from '../../../design/svg/svg-animation-preview-store'
 import { CanvasMotionKeyframeInspector } from './CanvasMotionKeyframeInspector'
+import { CanvasMotionSvgPreview } from './CanvasMotionSvgPreview'
 
-const PROPERTY_LABELS: Array<{ property: CanvasMotionProperty; label: string }> = [
-  { property: 'x', label: 'X' },
-  { property: 'y', label: 'Y' },
-  { property: 'rotation', label: 'Rotate' },
-  { property: 'scaleX', label: 'Scale X' },
-  { property: 'scaleY', label: 'Scale Y' },
-  { property: 'opacity', label: 'Opacity' }
+const PROPERTY_LABELS: Array<{
+  property: CanvasMotionProperty
+  labelKey: string
+  fallback: string
+}> = [
+  { property: 'x', labelKey: 'canvasMotionPropertyX', fallback: 'X' },
+  { property: 'y', labelKey: 'canvasMotionPropertyY', fallback: 'Y' },
+  { property: 'rotation', labelKey: 'canvasMotionPropertyRotate', fallback: 'Rotate' },
+  { property: 'scaleX', labelKey: 'canvasMotionPropertyScaleX', fallback: 'Scale X' },
+  { property: 'scaleY', labelKey: 'canvasMotionPropertyScaleY', fallback: 'Scale Y' },
+  { property: 'opacity', labelKey: 'canvasMotionPropertyOpacity', fallback: 'Opacity' }
 ]
 
-const PRESETS: Array<{ preset: CanvasMotionPreset; label: string }> = [
-  { preset: 'fade', label: 'Fade' },
-  { preset: 'move', label: 'Move' },
-  { preset: 'scale', label: 'Scale' },
-  { preset: 'rotate', label: 'Rotate' }
+const PRESETS: Array<{
+  preset: CanvasMotionPreset
+  labelKey: string
+  fallback: string
+}> = [
+  { preset: 'fade', labelKey: 'canvasMotionPresetFade', fallback: 'Fade' },
+  { preset: 'move', labelKey: 'canvasMotionPresetMove', fallback: 'Move' },
+  { preset: 'scale', labelKey: 'canvasMotionPresetScale', fallback: 'Scale' },
+  { preset: 'rotate', labelKey: 'canvasMotionPresetRotate', fallback: 'Rotate' }
 ]
 
 type DragState = {
@@ -121,6 +138,15 @@ export function CanvasMotionDock(): ReactElement | null {
   const timelineZoom = useCanvasMotionStore((state) => state.timelineZoom)
   const selectedTrackId = useCanvasMotionStore((state) => state.selectedTrackId)
   const selectedKeyframeId = useCanvasMotionStore((state) => state.selectedKeyframeId)
+  const selectedSvgShapeId = useMemo(() => {
+    if (selectedIds.size !== 1) return null
+    const shapeId = selectedIds.values().next().value as string | undefined
+    const shape = shapeId ? document.objects[shapeId] : undefined
+    return shapeId && shape && isSvgFrame(shape) ? shapeId : null
+  }, [document.objects, selectedIds])
+  const liveSvgPreview = useSvgAnimationPreviewStore((state) =>
+    open && selectedSvgShapeId ? state.previews[selectedSvgShapeId] : undefined
+  )
   const reducedMotion = usePrefersReducedMotion()
   const [drag, setDrag] = useState<DragState | null>(null)
   const dragRef = useRef<DragState | null>(null)
@@ -136,6 +162,24 @@ export function CanvasMotionDock(): ReactElement | null {
   )
   const selectedTrack = timeline?.tracks.find((track) => track.id === selectedTrackId)
   const selectedKeyframe = selectedTrack?.keyframes.find((keyframe) => keyframe.id === selectedKeyframeId)
+  const svgPreview = useMemo<SvgAnimationPreviewState | undefined>(() => {
+    if (!selectedSvgShapeId) return undefined
+    if (liveSvgPreview) return liveSvgPreview
+    const shape = document.objects[selectedSvgShapeId]
+    const reference = shape ? embeddedArtifactOf(shape) : null
+    return {
+      shapeId: selectedSvgShapeId,
+      artifactId: reference?.id ?? '',
+      title: shapeLabel(shape, selectedSvgShapeId),
+      status: 'loading',
+      animationCount: 0,
+      durationMs: 1_000,
+      loopsIndefinitely: false,
+      currentTimeMs: 0,
+      playing: false,
+      rate: 1
+    }
+  }, [document.objects, liveSvgPreview, selectedSvgShapeId])
   const frameName = frameId === document.rootId
     ? t('canvasMotionCanvasTimeline', 'Canvas timeline')
     : shapeLabel(document.objects[frameId], t('canvasMotionFrameTimeline', 'Frame timeline'))
@@ -345,7 +389,7 @@ export function CanvasMotionDock(): ReactElement | null {
       className="ds-no-drag pointer-events-auto absolute inset-x-3 bottom-3 z-50 flex h-[246px] min-h-0 flex-col overflow-hidden rounded-[18px] border border-ds-border bg-white/94 text-ds-ink shadow-[0_18px_52px_rgba(15,23,42,0.18)] backdrop-blur-2xl dark:bg-ds-card/94"
       onKeyDown={(event) => {
         const target = event.target as HTMLElement
-        const editing = target.matches('input, textarea, select, [contenteditable="true"]')
+        const editing = target.matches('input, textarea, select, button, [contenteditable="true"]')
         if (event.key === ' ' && !editing) {
           event.preventDefault()
           event.stopPropagation()
@@ -370,6 +414,9 @@ export function CanvasMotionDock(): ReactElement | null {
       tabIndex={-1}
     >
       <header className="flex h-11 shrink-0 items-center gap-2 border-b border-ds-border-muted px-3">
+        <span className="hidden shrink-0 rounded-full bg-ds-hover/60 px-2 py-1 text-[9.5px] font-semibold uppercase tracking-[0.06em] text-ds-muted min-[1180px]:inline-flex">
+          {t('canvasMotionContainer', 'Container Motion')}
+        </span>
         <button
           type="button"
           className="grid h-7 w-7 place-items-center rounded-[8px] text-ds-muted hover:bg-ds-hover hover:text-ds-ink disabled:opacity-40"
@@ -410,7 +457,7 @@ export function CanvasMotionDock(): ReactElement | null {
           aria-label={t('canvasMotionPlayhead', 'Motion playhead')}
         />
         <label className="flex items-center gap-1 text-[10px] text-ds-faint">
-          <span>Duration</span>
+          <span>{t('canvasMotionDuration', 'Duration')}</span>
           <input
             key={durationMs}
             type="number"
@@ -427,9 +474,9 @@ export function CanvasMotionDock(): ReactElement | null {
           className="h-7 rounded-[7px] bg-ds-hover/50 px-2 text-[10.5px] text-ds-muted outline-none"
           aria-label={t('canvasMotionPlaybackMode', 'Playback mode')}
         >
-          <option value="once">Once</option>
-          <option value="loop">Loop</option>
-          <option value="ping-pong">Ping-pong</option>
+          <option value="once">{t('canvasMotionOnce', 'Once')}</option>
+          <option value="loop">{t('canvasMotionLoop', 'Loop')}</option>
+          <option value="ping-pong">{t('canvasMotionPingPong', 'Ping-pong')}</option>
         </select>
         <select
           value={rate}
@@ -442,7 +489,7 @@ export function CanvasMotionDock(): ReactElement | null {
           <option value={2}>2×</option>
         </select>
         <label className="flex items-center gap-1 text-[10px] text-ds-faint">
-          <span>Zoom</span>
+          <span>{t('canvasMotionZoom', 'Zoom')}</span>
           <input
             type="range"
             min={0.5}
@@ -462,7 +509,7 @@ export function CanvasMotionDock(): ReactElement | null {
           onClick={() => useCanvasMotionStore.getState().setAutoKey(!autoKey)}
           aria-pressed={autoKey}
         >
-          Auto-key
+          {t('canvasMotionAutoKey', 'Auto-key')}
         </button>
         <button
           type="button"
@@ -485,8 +532,11 @@ export function CanvasMotionDock(): ReactElement | null {
         <aside className="flex w-[176px] shrink-0 flex-col border-r border-ds-border-muted">
           <div className="border-b border-ds-border-muted px-3 py-2">
             <div className="truncate text-[11px] font-medium text-ds-ink">{frameName}</div>
+            <div className="mt-0.5 text-[9.5px] text-ds-faint">
+              {t('canvasMotionContainerHint', 'Animate the selected layer as one canvas object')}
+            </div>
             <div className="mt-1 flex flex-wrap gap-1">
-              {PRESETS.map(({ preset, label }) => (
+              {PRESETS.map(({ preset, labelKey, fallback }) => (
                 <button
                   key={preset}
                   type="button"
@@ -495,15 +545,17 @@ export function CanvasMotionDock(): ReactElement | null {
                   className="inline-flex h-6 items-center gap-1 rounded-[7px] bg-accent-soft px-1.5 text-[9.5px] font-medium text-accent hover:opacity-85 disabled:cursor-not-allowed disabled:opacity-35"
                 >
                   <Sparkles className="h-2.5 w-2.5" />
-                  {label}
+                  {t(labelKey, fallback)}
                 </button>
               ))}
             </div>
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto px-2 py-1.5">
-            <div className="mb-1 text-[9.5px] uppercase tracking-[0.08em] text-ds-faint">Add property</div>
+            <div className="mb-1 text-[9.5px] uppercase tracking-[0.08em] text-ds-faint">
+              {t('canvasMotionAddProperty', 'Add property')}
+            </div>
             <div className="grid grid-cols-2 gap-1">
-              {PROPERTY_LABELS.map(({ property, label }) => (
+              {PROPERTY_LABELS.map(({ property, labelKey, fallback }) => (
                 <button
                   key={property}
                   type="button"
@@ -511,7 +563,7 @@ export function CanvasMotionDock(): ReactElement | null {
                   onClick={() => addTracks(property)}
                   className="flex h-6 items-center gap-1 rounded-[6px] px-1.5 text-left text-[9.5px] text-ds-muted hover:bg-ds-hover hover:text-ds-ink disabled:opacity-35"
                 >
-                  <Plus className="h-2.5 w-2.5" /> {label}
+                  <Plus className="h-2.5 w-2.5" /> {t(labelKey, fallback)}
                 </button>
               ))}
             </div>
@@ -535,6 +587,9 @@ export function CanvasMotionDock(): ReactElement | null {
                 style={{ left: `${durationMs > 0 ? currentTimeMs / durationMs * 100 : 0}%` }}
               />
             </div>
+            {svgPreview ? (
+              <CanvasMotionSvgPreview preview={svgPreview} reducedMotion={reducedMotion} />
+            ) : null}
             {timeline?.tracks.length ? timeline.tracks.map((track, trackIndex) => {
               const selected = selectedTrackId === track.id
               const startsLayer = trackIndex === 0 || timeline.tracks[trackIndex - 1]?.targetShapeId !== track.targetShapeId
@@ -604,7 +659,7 @@ export function CanvasMotionDock(): ReactElement | null {
                   </div>
                 </div>
               )
-            }) : (
+            }) : svgPreview ? null : (
               <div className="grid h-[118px] place-items-center px-6 text-center text-[11px] leading-5 text-ds-faint">
                 {selectedShapeIds.length > 0
                   ? t('canvasMotionEmptySelected', 'Apply a preset or add a property to start animating the selected layer.')

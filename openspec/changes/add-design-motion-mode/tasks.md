@@ -21,6 +21,7 @@
 - [x] 3.3 Implement RAF playback/scrub application, canvas-to-screen portal conversion, reset behavior, and once/loop/ping-pong transport.
 - [x] 3.4 Disable conflicting canvas editing while playing and keep paused/scrubbed selection projection aligned.
 - [x] 3.5 Coordinate outer Design Motion preview with the existing standalone SVG inner player.
+- [x] 3.6 Publish bounded standalone SVG player state and commands through a transient shape-keyed bridge.
 
 ## 4. Motion Authoring UI
 
@@ -31,6 +32,7 @@
 - [x] 4.5 Add Fade, Move, Scale, and Rotate preset controls with deterministic multi-selection stagger.
 - [x] 4.6 Add inspector keyframe indicators and route supported inspector/canvas edits through Auto-key.
 - [x] 4.7 Isolate timeline Delete, Space, and selection shortcuts from existing canvas shortcuts and validate dock accessibility labels.
+- [x] 4.8 Show selected SVG internal animation as a separately labelled read-only preview lane with dedicated transport and clear container-Motion guidance.
 
 ## 5. Kun Motion Tools and Context
 
@@ -54,3 +56,4 @@
 - [x] 7.4 Add Kun tool advertisement/schema/budget tests plus renderer replay, protocol, snapshot, prompt, and journal tests.
 - [x] 7.5 Run focused Vitest suites, `npm run typecheck`, `npm run build:kun`, and `npm run build`; separate any baseline failures.
 - [ ] 7.6 Run the Electron Design-mode smoke flow for authoring, scrubbing, playback modes, persistence, undo/redo, native/portal targets, UI scaling, and regressions.
+- [x] 7.7 Add SVG player bridge and Motion dock regression tests, then rerun focused typecheck/lint/build validation.

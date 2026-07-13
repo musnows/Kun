@@ -13,6 +13,11 @@ import { useCanvasMotionStore } from '../../../design/motion/canvas-motion-store
 import { useCanvasMotionPortalStyle } from '../../../design/motion/canvas-motion-preview'
 import { useSvgArtifactPreview } from '../../../design/svg/use-svg-artifact-preview'
 import {
+  publishSvgAnimationPreview,
+  registerSvgAnimationPreviewController,
+  type SvgAnimationPreviewController
+} from '../../../design/svg/svg-animation-preview-store'
+import {
   htmlFrameCanvasRectToScreenRect,
   htmlFrameCanvasScreenTransform
 } from './HtmlFrameOverlay'
@@ -146,6 +151,7 @@ function SvgArtifactFrame({
   const tickRef = useRef<number | null>(null)
   const lastTickRef = useRef<number | null>(null)
   const lastUiTickRef = useRef(0)
+  const controllerRef = useRef<SvgAnimationPreviewController | null>(null)
   const preview = useSvgArtifactPreview(workspaceRoot, artifact?.relativePath ?? '', background)
   const hasAnimations = preview.animationCount + cssTimeline.animationCount > 0
   const durationMs = hasAnimations
@@ -160,6 +166,87 @@ function SvgArtifactFrame({
     setCurrentMs(bounded)
     controlTimeline(iframeRef.current, bounded, rate)
   }, [durationMs, rate])
+
+  controllerRef.current = {
+    play: () => {
+      if (!hasAnimations) return
+      if (designMotionOpen) resumeAfterDesignMotionRef.current = true
+      if (currentMsRef.current >= durationMs) seek(0)
+      setPlaying(true)
+    },
+    pause: () => {
+      if (designMotionOpen) resumeAfterDesignMotionRef.current = false
+      setPlaying(false)
+    },
+    restart: () => {
+      if (designMotionOpen) resumeAfterDesignMotionRef.current = true
+      seek(0)
+      setPlaying(true)
+    },
+    seek: (timeMs) => {
+      if (designMotionOpen) resumeAfterDesignMotionRef.current = false
+      setPlaying(false)
+      seek(timeMs)
+    },
+    setRate: (nextRate) => setRate(Math.max(0.1, Math.min(4, nextRate)))
+  }
+
+  useEffect(() => {
+    if (!designMotionOpen || !selected) return
+    return registerSvgAnimationPreviewController(shape.id, {
+      play: () => controllerRef.current?.play(),
+      pause: () => controllerRef.current?.pause(),
+      restart: () => controllerRef.current?.restart(),
+      seek: (timeMs) => controllerRef.current?.seek(timeMs),
+      setRate: (nextRate) => controllerRef.current?.setRate(nextRate)
+    })
+  }, [designMotionOpen, selected, shape.id])
+
+  useEffect(() => {
+    if (!designMotionOpen || !selected) return
+    if (!artifact) {
+      publishSvgAnimationPreview({
+        shapeId: shape.id,
+        artifactId: reference?.id ?? '',
+        title: shape.name?.trim() || 'SVG',
+        status: 'missing',
+        animationCount: 0,
+        durationMs: 1_000,
+        loopsIndefinitely: false,
+        currentTimeMs: 0,
+        playing: false,
+        rate
+      })
+      return
+    }
+    publishSvgAnimationPreview({
+      shapeId: shape.id,
+      artifactId: artifact.id,
+      title: artifact.title,
+      status: preview.status,
+      animationCount: preview.animationCount + cssTimeline.animationCount,
+      durationMs,
+      loopsIndefinitely,
+      currentTimeMs: currentMs,
+      playing,
+      rate
+    })
+  }, [
+    artifact,
+    cssTimeline.animationCount,
+    currentMs,
+    designMotionOpen,
+    durationMs,
+    loopsIndefinitely,
+    playing,
+    preview.animationCount,
+    preview.status,
+    rate,
+    reference?.id,
+    selected,
+    shape.name,
+    shape.id
+  ])
 
   useEffect(() => {
     if (!playing || preview.status !== 'ready' || !hasAnimations) {
@@ -236,7 +323,6 @@ function SvgArtifactFrame({
   }, [artifact, preview.status, preview.visualElementCount])
 
   if (!artifact || !reference) return null
-  if (screenWidth < 8 || screenHeight < 8) return null
   const diagnostics = preview.diagnostics.length
   const label = preview.status === 'invalid'
     ? preview.diagnostics[0]?.message ?? 'Invalid SVG'
@@ -399,10 +485,11 @@ export function SvgFrameOverlay({ workspaceRoot }: { workspaceRoot: string }): R
     )
     const priorityIds = new Set(selectedIds)
     const candidates = svgFramesInCanvasPaintOrder(document).filter((shape) => {
+      const selected = selectedIds.has(shape.id)
       const motionRelevant = motionOpen && hasMotionTargetAncestor(document, shape.id, motionTargets)
       if (motionRelevant) priorityIds.add(shape.id)
-      return shape.width * zoom >= 8 && shape.height * zoom >= 8 &&
-        (motionRelevant || frameIntersectsViewport(shape, vbox))
+      if (selected || motionRelevant) return true
+      return shape.width * zoom >= 8 && shape.height * zoom >= 8 && frameIntersectsViewport(shape, vbox)
     })
     return selectSvgFramesForOverlay(candidates, priorityIds)
   }, [document, motionFrameId, motionOpen, selectedIds, vbox, zoom])

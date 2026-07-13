@@ -82,6 +82,21 @@ The system SHALL provide play, pause, reset, direct scrub, duration, playback-ra
 - **WHEN** motion targets a native canvas shape, HTML/SVG artifact frame container, or running-app frame container
 - **THEN** the canvas previews the container's supported transform and opacity while preserving portal interaction and clipping behavior
 
+### Requirement: Standalone SVG animation is visible but remains a separate clock
+When a selected SVG artifact contains SMIL or CSS animation, Motion mode SHALL expose a bounded read-only summary and dedicated preview transport for that inner animation. The UI SHALL distinguish inner SVG playback from editable outer container Motion and SHALL NOT imply that generated SVG internals are canonical Canvas Motion tracks.
+
+#### Scenario: Select an animated SVG artifact in Motion mode
+- **WHEN** the selected SVG artifact reports one or more inner animations
+- **THEN** the Motion dock identifies the animation count, duration, looping state, current time, rate, and offers play, pause, restart, and scrub controls
+
+#### Scenario: Author outer Motion around an animated SVG
+- **WHEN** an animated SVG artifact is selected and the user applies a Motion preset or adds a supported property
+- **THEN** the resulting editable tracks target the whole SVG container while the inner animation remains visible as a separately labelled preview lane
+
+#### Scenario: Inner SVG metadata is loading or unavailable
+- **WHEN** the selected SVG preview has not finished inspection or contains no detectable animation
+- **THEN** the dock shows an accurate inspecting or no-inner-animation state instead of presenting an unexplained empty timeline
+
 ### Requirement: Motion changes participate in persistence and undo
 Timeline mutations SHALL use the canvas persistence coordinator and SHALL participate in the existing grouped undo/redo history together with shape mutations and selection restoration.
 

@@ -115,6 +115,14 @@ The dock provides transport, duration/rate/playback mode, Auto-key, presets, lay
 
 Operating-system reduced-motion disables automatic playback by default and allows immediate scrub/end-state inspection. It never deletes or rewrites motion data. Snapshot/handoff output includes bounded timeline summaries and explicitly carries reduced-motion guidance.
 
+### 12. Bridge standalone SVG playback into the dock without importing its timeline
+
+The SVG artifact overlay remains the owner of its SMIL/CSS player because it has the live iframe, sanitized source metadata, and Web Animations handles. It publishes a transient, bounded playback descriptor keyed by canvas shape ID and registers imperative play, pause, restart, seek, and rate commands. The Motion dock consumes that descriptor only for the currently selected SVG artifact.
+
+The dock labels its editable area as `Container Motion` and renders the SVG descriptor as a separate `SVG internal animation` preview lane. This makes the two clocks visible together without copying generated animation elements into `CanvasDocument.motion`, inventing keyframes from CSS, or weakening the first-release source-of-truth boundary. The bridge is transient and is removed when the SVG portal unmounts; it never enters persistence, undo, snapshots, or Kun motion tools.
+
+Alternative considered: automatically converting SMIL/CSS animation into Canvas Motion tracks. This would lose unsupported attribute/path/filter semantics, produce unstable target IDs, and misrepresent generated source as editable canonical data, so it remains out of scope.
+
 ## Risks / Trade-offs
 
 - **[Mixed SVG and portal coordinate systems]** → Use equivalent wrapper contracts and centralized canvas-to-screen conversion; test zoom, resize, rotation, opacity, clipping, and nested frames.
@@ -124,6 +132,7 @@ Operating-system reduced-motion disables automatic playback by default and allow
 - **[Late persistence load overwrites new motion]** → Extend the existing three-way merge and cover the race with a regression test.
 - **[Agent output duplicates effects on replay]** → Use deterministic semantic IDs/upserts plus the existing renderer replay guard.
 - **[Standalone SVG has an independent clock]** → Treat Design Motion as an outer container transform and pause or leave inner SVG playback independent; never merge its SMIL into the canvas timeline implicitly.
+- **[Animated SVG looks like an empty Motion timeline]** → Publish bounded inner-player state to a clearly labelled read-only lane with dedicated controls and explain that presets animate the whole container.
 - **[Bottom dock crowds small windows]** → Use a collapsible bounded-height dock and one shared bottom inset; validate dark mode and UI scaling.
 
 ## Migration Plan

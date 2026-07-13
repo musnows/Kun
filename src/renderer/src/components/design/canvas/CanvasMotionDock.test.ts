@@ -6,11 +6,35 @@ import { useCanvasShapeStore } from '../../../design/canvas/canvas-shape-store'
 import {
   createDefaultShape,
   createEmptyDocument,
+  createSvgFrameShape,
   type CanvasDocument
 } from '../../../design/canvas/canvas-types'
 import { addPropertyTracks } from '../../../design/motion/canvas-motion-mutations'
 import { useCanvasMotionStore } from '../../../design/motion/canvas-motion-store'
+import {
+  publishSvgAnimationPreview,
+  registerSvgAnimationPreviewController,
+  resetSvgAnimationPreviewStore
+} from '../../../design/svg/svg-animation-preview-store'
 import { CanvasMotionDock } from './CanvasMotionDock'
+
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (
+      key: string,
+      fallback?: string | { defaultValue?: string },
+      options?: Record<string, unknown>
+    ): string => {
+      const template = typeof fallback === 'string' ? fallback : fallback?.defaultValue ?? key
+      const values: Record<string, unknown> | undefined = typeof fallback === 'object'
+        ? { ...fallback }
+        : options
+      return template.replace(/\{\{(\w+)\}\}/g, (match, name: string) =>
+        values?.[name] === undefined ? match : String(values[name])
+      )
+    }
+  })
+}))
 
 let reducedMotion = false
 
@@ -68,10 +92,12 @@ beforeEach(() => {
   useCanvasShapeStore.getState().loadDocument(createEmptyDocument(), 'motion-dock-empty')
   useCanvasSelectionStore.setState({ selectedIds: new Set() })
   useCanvasMotionStore.getState().reset()
+  resetSvgAnimationPreviewStore()
 })
 
 afterEach(() => {
   useCanvasMotionStore.getState().reset()
+  resetSvgAnimationPreviewStore()
   vi.unstubAllGlobals()
 })
 
@@ -194,6 +220,117 @@ describe('CanvasMotionDock', () => {
     expect(renderer.root.findByProps({ 'aria-label': 'Motion playhead' }).props.disabled).not.toBe(true)
     expect(useCanvasMotionStore.getState().playing).toBe(false)
 
+    await act(async () => renderer.unmount())
+  })
+
+  it('separates selected SVG content animation from editable container Motion', async () => {
+    const document = createEmptyDocument()
+    const svgFrame = createSvgFrameShape('Whale spray', 20, 30, 'whale-spray', 640, 480)
+    svgFrame.id = 'whale-svg-frame'
+    svgFrame.parentId = document.rootId
+    document.objects[document.rootId] = {
+      ...document.objects[document.rootId],
+      children: [svgFrame.id]
+    }
+    document.objects[svgFrame.id] = svgFrame
+    useCanvasShapeStore.getState().loadDocument(document, 'motion-svg-dock-test')
+    useCanvasSelectionStore.setState({ selectedIds: new Set([svgFrame.id]) })
+    useCanvasMotionStore.setState({ open: true, activeFrameId: svgFrame.id })
+
+    const controller = {
+      play: vi.fn(),
+      pause: vi.fn(),
+      restart: vi.fn(),
+      seek: vi.fn(),
+      setRate: vi.fn()
+    }
+    const unregister = registerSvgAnimationPreviewController(svgFrame.id, controller)
+
+    let renderer!: ReactTestRenderer
+    await act(async () => {
+      renderer = create(createElement(CanvasMotionDock))
+    })
+    await act(async () => {
+      publishSvgAnimationPreview({
+        shapeId: svgFrame.id,
+        artifactId: 'whale-spray',
+        title: 'Whale spray',
+        status: 'ready',
+        animationCount: 24,
+        durationMs: 5_000,
+        loopsIndefinitely: true,
+        currentTimeMs: 1_250,
+        playing: false,
+        rate: 1
+      })
+    })
+
+    const json = JSON.stringify(renderer.toJSON())
+    expect(json).toContain('Container Motion')
+    expect(json).toContain('SVG internal animation')
+    expect(json).toContain('24 animations')
+    expect(json).toContain('Looping')
+    expect(json).toMatch(/(?:5000ms|5\.0s) representative cycle/)
+    expect(json).not.toContain('Apply a preset or add a property to start animating the selected layer.')
+    expect(json).not.toContain('Select a layer or frame, then add a Motion preset.')
+    expect(renderer.root.findByProps({ 'aria-label': 'Play' }).props.disabled).toBe(true)
+    const fadePreset = renderer.root.findAllByType('button').find((button) => button.children.includes('Fade'))
+    expect(fadePreset?.props.disabled).toBe(false)
+
+    await act(async () => fadePreset?.props.onClick())
+    useCanvasMotionStore.getState().setPlaying(false)
+    const spacePrevented = vi.fn()
+    const spaceStopped = vi.fn()
+    await act(async () => {
+      renderer.root.findByProps({ 'data-motion-timeline': true }).props.onKeyDown({
+        key: ' ',
+        metaKey: false,
+        ctrlKey: false,
+        target: { matches: (selector: string) => selector.includes('button') },
+        currentTarget: {},
+        preventDefault: spacePrevented,
+        stopPropagation: spaceStopped
+      })
+    })
+    expect(spacePrevented).not.toHaveBeenCalled()
+    expect(spaceStopped).not.toHaveBeenCalled()
+    expect(useCanvasMotionStore.getState().playing).toBe(false)
+
+    await act(async () => {
+      renderer.root.findByProps({ 'aria-label': 'Play SVG internal animation' }).props.onClick()
+    })
+    expect(controller.play).toHaveBeenCalledOnce()
+
+    await act(async () => {
+      renderer.root.findByProps({ 'aria-label': 'SVG internal animation playhead' }).props.onChange({
+        target: { value: '2500' }
+      })
+    })
+    expect(controller.seek).toHaveBeenCalledWith(2_500)
+
+    await act(async () => {
+      renderer.root.findByProps({ 'aria-label': 'SVG internal animation rate' }).props.onChange({
+        target: { value: '2' }
+      })
+    })
+    expect(controller.setRate).toHaveBeenCalledWith(2)
+
+    await act(async () => renderer.unmount())
+    unregister()
+  })
+
+  it('tolerates a transient selection whose shape was already removed', async () => {
+    const document = createEmptyDocument()
+    useCanvasShapeStore.getState().loadDocument(document, 'motion-stale-selection-test')
+    useCanvasSelectionStore.setState({ selectedIds: new Set(['already-removed']) })
+    useCanvasMotionStore.setState({ open: true, activeFrameId: document.rootId })
+
+    let renderer!: ReactTestRenderer
+    await act(async () => {
+      renderer = create(createElement(CanvasMotionDock))
+    })
+
+    expect(JSON.stringify(renderer.toJSON())).not.toContain('SVG internal animation')
     await act(async () => renderer.unmount())
   })
 })
