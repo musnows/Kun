@@ -15,6 +15,7 @@ import type {
   WriteSelectionAnchorRect,
   WriteSelectionPageRect
 } from './WriteMarkdownEditor'
+import { viewportRectToPageLocalRect } from './write-pdf-selection-geometry'
 import { applyPdfTextLayerScale } from './write-pdf-text-layer'
 
 GlobalWorkerOptions.workerSrc = pdfWorkerUrl
@@ -193,11 +194,19 @@ function mergeRectsIntoLineBars(rects: DOMRect[]): ViewportRect[] {
 }
 
 function pageRectsFromViewportRects(root: HTMLElement, rects: ViewportRect[]): WriteSelectionPageRect[] {
-  const pages = Array.from(root.querySelectorAll<HTMLElement>('[data-write-pdf-page]')).map((element) => ({
-    element,
-    page: Number(element.dataset.writePdfPage ?? ''),
-    rect: element.getBoundingClientRect()
-  })).filter((page) => Number.isFinite(page.page) && page.page > 0)
+  const pages = Array.from(root.querySelectorAll<HTMLElement>('[data-write-pdf-page]')).map((element) => {
+    const rect = element.getBoundingClientRect()
+    const styleWidth = Number.parseFloat(element.style.width)
+    const styleHeight = Number.parseFloat(element.style.height)
+    return {
+      page: Number(element.dataset.writePdfPage ?? ''),
+      rect,
+      localSize: {
+        width: styleWidth > 0 ? styleWidth : element.offsetWidth || rect.width,
+        height: styleHeight > 0 ? styleHeight : element.offsetHeight || rect.height
+      }
+    }
+  }).filter((page) => Number.isFinite(page.page) && page.page > 0)
   const out: WriteSelectionPageRect[] = []
 
   for (const rect of rects) {
@@ -208,12 +217,14 @@ function pageRectsFromViewportRects(root: HTMLElement, rects: ViewportRect[]): W
     const top = Math.max(rect.top, page.rect.top)
     const bottom = Math.min(rect.bottom, page.rect.bottom)
     if (right <= left || bottom <= top) continue
+    const localRect = viewportRectToPageLocalRect(
+      { left, right, top, bottom },
+      page.rect,
+      page.localSize
+    )
     out.push({
       page: page.page,
-      x: left - page.rect.left,
-      y: top - page.rect.top,
-      width: right - left,
-      height: bottom - top
+      ...localRect
     })
   }
   return out
