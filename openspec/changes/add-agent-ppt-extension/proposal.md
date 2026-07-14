@@ -12,6 +12,7 @@ Kun can generate native PPTX files through the managed PPT Master workflow, but 
 - Surface completed Agent-generated presentation artifacts below the final reply and open them through the operating system's default application association, with a safe file-manager fallback.
 - Render only the structured presentation model inside the Webview. Agent-authored arbitrary HTML or scripts never execute in the bridge-bearing extension page.
 - Document the extension and add it to the repository extension-example validation gate.
+- Package Presentation Studio in the product-owned bundled extension catalog so clean and existing profiles receive it through the normal default-extension seeder.
 
 ## Capabilities
 

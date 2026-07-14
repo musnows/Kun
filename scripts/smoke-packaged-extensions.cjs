@@ -35,7 +35,10 @@ const { pathToFileURL } = require('node:url')
 const { KUN_RUNTIME_REQUIRED_PATHS } = require('./after-pack.cjs')
 
 const EXTENSION_ID = 'kun-smoke.packaged'
-const DEFAULT_EXTENSION_ID = 'kun-examples.kun-video-editor'
+const DEFAULT_EXTENSION_IDS = [
+  'kun-examples.kun-video-editor',
+  'kun-examples.presentation-studio'
+]
 const RUNTIME_TOKEN = 'kun-packaged-extension-smoke-token'
 const PACKAGED_EXTENSION_SMOKE_SUCCESS_MARKER = 'Packaged Extension smoke OK ('
 
@@ -129,17 +132,18 @@ async function main() {
     const listed = JSON.parse(runKun(runtimeEntry, [
       'extension', 'list', '--data-dir', profile, '--json'
     ]))
-    if (
-      !Array.isArray(listed.extensions) ||
-      listed.extensions.length !== 1 ||
-      listed.extensions[0]?.id !== DEFAULT_EXTENSION_ID ||
-      listed.extensions[0]?.globallyEnabled !== true
-    ) {
-      throw new Error('Packaged default extension was not seeded through the normal registry')
+    if (!Array.isArray(listed.extensions) || listed.extensions.length !== DEFAULT_EXTENSION_IDS.length) {
+      throw new Error('Packaged default extensions were not seeded through the normal registry')
     }
-    runKun(runtimeEntry, [
-      'extension', 'uninstall', DEFAULT_EXTENSION_ID, '--data-dir', profile, '--json'
-    ])
+    for (const id of DEFAULT_EXTENSION_IDS) {
+      const installed = listed.extensions.find((extension) => extension?.id === id)
+      if (installed?.globallyEnabled !== true) {
+        throw new Error(`Packaged default extension was not enabled through the registry: ${id}`)
+      }
+      runKun(runtimeEntry, [
+        'extension', 'uninstall', id, '--data-dir', profile, '--json'
+      ])
+    }
     server = await startKunServe(options)
     await server.close()
     server = undefined
@@ -307,30 +311,33 @@ function validateBundledDefaultExtension(resourcesDir) {
     throw new Error('Packaged bundled extension catalog is not a regular file')
   }
   const catalog = JSON.parse(readFileSync(catalogPath, 'utf8'))
-  const matches = Array.isArray(catalog?.extensions)
-    ? catalog.extensions.filter((entry) => entry?.id === DEFAULT_EXTENSION_ID)
-    : []
-  if (catalog?.schemaVersion !== 1 || matches.length !== 1) {
-    throw new Error('Packaged bundled extension catalog omits the default video editor')
+  if (catalog?.schemaVersion !== 1 || !Array.isArray(catalog.extensions)) {
+    throw new Error('Packaged bundled extension catalog is invalid')
   }
-  const entry = matches[0]
-  if (
-    typeof entry.archive !== 'string' ||
-    !/^[0-9A-Za-z][0-9A-Za-z._-]*\.kunx$/u.test(entry.archive) ||
-    typeof entry.sha256 !== 'string' ||
-    !/^[a-f0-9]{64}$/u.test(entry.sha256)
-  ) {
-    throw new Error('Packaged bundled video editor catalog entry is invalid')
-  }
-  const archivePath = join(root, entry.archive)
-  assertExists(archivePath, 'bundled video editor archive')
-  const archiveDetails = lstatSync(archivePath)
-  if (!archiveDetails.isFile() || archiveDetails.isSymbolicLink() || archiveDetails.size <= 0) {
-    throw new Error('Packaged bundled video editor archive is not a regular file')
-  }
-  const digest = createHash('sha256').update(readFileSync(archivePath)).digest('hex')
-  if (digest !== entry.sha256) {
-    throw new Error('Packaged bundled video editor archive digest does not match its catalog')
+  for (const id of DEFAULT_EXTENSION_IDS) {
+    const matches = catalog.extensions.filter((entry) => entry?.id === id)
+    if (matches.length !== 1) {
+      throw new Error(`Packaged bundled extension catalog omits a default extension: ${id}`)
+    }
+    const entry = matches[0]
+    if (
+      typeof entry.archive !== 'string' ||
+      !/^[0-9A-Za-z][0-9A-Za-z._-]*\.kunx$/u.test(entry.archive) ||
+      typeof entry.sha256 !== 'string' ||
+      !/^[a-f0-9]{64}$/u.test(entry.sha256)
+    ) {
+      throw new Error(`Packaged bundled extension catalog entry is invalid: ${id}`)
+    }
+    const archivePath = join(root, entry.archive)
+    assertExists(archivePath, `bundled extension archive ${id}`)
+    const archiveDetails = lstatSync(archivePath)
+    if (!archiveDetails.isFile() || archiveDetails.isSymbolicLink() || archiveDetails.size <= 0) {
+      throw new Error(`Packaged bundled extension archive is not a regular file: ${id}`)
+    }
+    const digest = createHash('sha256').update(readFileSync(archivePath)).digest('hex')
+    if (digest !== entry.sha256) {
+      throw new Error(`Packaged bundled extension archive digest does not match its catalog: ${id}`)
+    }
   }
 }
 

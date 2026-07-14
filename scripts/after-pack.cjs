@@ -53,7 +53,10 @@ const LINUX_SANDBOX_LAUNCHER_FLAG = '--disable-setuid-sandbox'
 const LINUX_REAL_EXECUTABLE_SUFFIX = '.electron-bin'
 const BUNDLED_EXTENSIONS_DIR = 'bundled-extensions'
 const BUNDLED_EXTENSION_CATALOG_FILE = 'catalog.json'
-const REQUIRED_BUNDLED_EXTENSION_IDS = ['kun-examples.kun-video-editor']
+const REQUIRED_BUNDLED_EXTENSION_IDS = [
+  'kun-examples.kun-video-editor',
+  'kun-examples.presentation-studio'
+]
 
 function normalizePlatform(platform) {
   return platform === 'win' ? 'win32' : platform

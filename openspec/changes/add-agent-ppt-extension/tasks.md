@@ -20,6 +20,7 @@
 
 - [x] 4.1 Add the Manifest, package scripts, TypeScript/Vite configuration, README, license, and clean-room reference notes.
 - [x] 4.2 Add Presentation Studio to the extension examples index and validation enumeration.
+- [x] 4.3 Add Presentation Studio to the product-owned bundled extension catalog, packaged-resource validation, and default-seeding smoke coverage.
 
 ## 5. Verification
 

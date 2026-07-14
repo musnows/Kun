@@ -73,7 +73,7 @@ The primary card action calls the existing `editor:open-path` bridge with `edito
 
 ## Migration Plan
 
-No persisted Kun data migration is required. Install the example as a development extension, create a new `.kun-ppt.html` deck, and edit it through the contributed full-page View or tools. Future schema versions must add explicit model migration before accepting older files. Removing the extension leaves standalone presentation files intact.
+No persisted Kun data migration is required. Development and production builds package the example into the product-owned bundled extension catalog, and the existing normal registry seeder installs it for clean profiles and profiles that have not explicitly removed it. Create a new `.kun-ppt.html` deck and edit it through the contributed full-page View or tools. Future schema versions must add explicit model migration before accepting older files. Explicitly uninstalling the extension remains durable, and removing the extension leaves standalone presentation files intact.
 
 ## Open Questions
 

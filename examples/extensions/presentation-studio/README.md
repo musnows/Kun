@@ -84,6 +84,11 @@ node examples/extensions/validate-manifest.mjs \
 `npm run check:extension-examples` additionally validates and packs every
 example with the repository's Kun CLI.
 
+`npm run dev` and production builds also package Presentation Studio into the
+product-owned bundled extension catalog. On startup, Kun seeds it through the
+normal extension registry beside Kun Video Editor. A user who explicitly
+uninstalls it remains in control; later launches do not silently reinstall it.
+
 ## Clean-room reference note
 
 The interaction vocabulary was informed by the separately inspected

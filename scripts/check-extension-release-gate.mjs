@@ -683,6 +683,15 @@ check(
     ),
   'afterPack does not validate bundled .kunx catalog bytes before release artifacts are created'
 )
+for (const id of [
+  'kun-examples.kun-video-editor',
+  'kun-examples.presentation-studio'
+]) {
+  check(
+    afterPack.REQUIRED_BUNDLED_EXTENSION_IDS.includes(id),
+    `afterPack does not require bundled default extension: ${id}`
+  )
+}
 for (const pattern of [
   'packages/extension-api/package.json',
   'packages/extension-api/dist/**/*',
@@ -1004,24 +1013,33 @@ const manualReleaseVerifierSource = await text('scripts/verify-manual-extension-
 const nativeMediaSmokeSource = await text('scripts/run-extension-native-media-smoke.cjs')
 const packagedVideoNativeSource = await text('scripts/smoke-packaged-video-editor-native.cjs')
 const videoEditorPackSource = await text('scripts/pack-kun-video-editor.mjs')
+const bundledExtensionsPackSource = await text('scripts/pack-bundled-extensions.mjs')
 check(
   rootPackage.scripts?.['build:bundled-extensions'] ===
-    'node ./scripts/pack-kun-video-editor.mjs --output ./resources/bundled-extensions --catalog' &&
+    'node ./scripts/pack-bundled-extensions.mjs --output ./resources/bundled-extensions' &&
     rootPackage.scripts?.build?.includes('npm run build:bundled-extensions') &&
     rootPackage.scripts?.dev?.includes('npm run build:bundled-extensions'),
   'Kun build and dev must generate the canonical default extension catalog before launch'
 )
 for (const marker of [
-  'videoEditorBundledCatalog',
+  'BUNDLED_EXTENSION_DEFINITIONS',
   'BUNDLED_EXTENSION_CATALOG_FILE',
-  'catalog: process.argv.includes',
-  'removeStaleVideoEditorArchives'
+  'kun-examples.kun-video-editor',
+  'kun-examples.presentation-studio',
+  'bundledExtensionCatalog',
+  'removeStaleBundledArchives'
 ]) {
   check(
-    videoEditorPackSource.includes(marker),
-    `Kun Video Editor packer omits bundled default invariant: ${marker}`
+    bundledExtensionsPackSource.includes(marker),
+    `Bundled Extension packer omits default invariant: ${marker}`
   )
 }
+check(
+  rootPackage.scripts?.['check:extension-release-gate']?.includes(
+    './scripts/pack-bundled-extensions.test.mjs'
+  ),
+  'Extension release gate must execute bundled extension catalog tests'
+)
 check(
   rootPackage.scripts?.['smoke:extension-native-media'] ===
     'node ./scripts/run-extension-native-media-smoke.cjs',

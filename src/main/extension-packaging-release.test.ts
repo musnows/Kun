@@ -31,18 +31,35 @@ function packContext(root: string, platform: 'darwin' | 'win32' | 'linux') {
 
 function writeBundledExtensionResources(context: ReturnType<typeof packContext>): void {
   const root = join(afterPack._internals.packedResourcesDir(context), 'bundled-extensions')
-  const archive = Buffer.from('deterministic bundled extension archive')
-  const sha256 = createHash('sha256').update(archive).digest('hex')
+  const extensions = [
+    {
+      id: 'kun-examples.kun-video-editor',
+      archive: 'kun-video-editor-0.1.0.kunx'
+    },
+    {
+      id: 'kun-examples.presentation-studio',
+      archive: 'presentation-studio-0.1.0.kunx'
+    }
+  ].map((entry) => {
+    const bytes = Buffer.from(`deterministic bundled extension archive: ${entry.id}`)
+    return {
+      ...entry,
+      bytes,
+      sha256: createHash('sha256').update(bytes).digest('hex')
+    }
+  })
   mkdirSync(root, { recursive: true })
-  writeFileSync(join(root, 'kun-video-editor-0.1.0.kunx'), archive)
+  for (const extension of extensions) {
+    writeFileSync(join(root, extension.archive), extension.bytes)
+  }
   writeFileSync(join(root, 'catalog.json'), `${JSON.stringify({
     schemaVersion: 1,
-    extensions: [{
-      id: 'kun-examples.kun-video-editor',
+    extensions: extensions.map((extension) => ({
+      id: extension.id,
       version: '0.1.0',
-      archive: 'kun-video-editor-0.1.0.kunx',
-      sha256
-    }]
+      archive: extension.archive,
+      sha256: extension.sha256
+    }))
   }, null, 2)}\n`)
 }
 
@@ -82,6 +99,9 @@ describe('Extension Platform packaged release resources', () => {
     }]))
     expect(afterPack.REQUIRED_BUNDLED_EXTENSION_IDS).toContain(
       'kun-examples.kun-video-editor'
+    )
+    expect(afterPack.REQUIRED_BUNDLED_EXTENSION_IDS).toContain(
+      'kun-examples.presentation-studio'
     )
   })
 

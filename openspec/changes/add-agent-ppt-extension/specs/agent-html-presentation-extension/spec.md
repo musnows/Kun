@@ -100,3 +100,14 @@ The implementation SHALL use only public Extension API v1 surfaces, minimum Mani
 #### Scenario: Validate and pack the extension
 - **WHEN** repository extension checks build, validate, and pack all examples
 - **THEN** Presentation Studio passes without unresolved browser imports, undeclared resources, private Kun imports, or tool declaration drift
+
+### Requirement: Presentation Studio is bundled as a default extension
+Development and production builds SHALL include Presentation Studio in the product-owned bundled extension catalog beside Kun Video Editor, and Kun SHALL seed it through the normal extension registry without overriding an explicit user uninstall.
+
+#### Scenario: Start with a clean profile
+- **WHEN** Kun starts with a clean profile and the generated bundled extension catalog
+- **THEN** both Presentation Studio and Kun Video Editor are installed and globally enabled through the normal registry
+
+#### Scenario: Start after explicitly uninstalling Presentation Studio
+- **WHEN** a user uninstalls the seeded Presentation Studio extension and restarts Kun
+- **THEN** the bundled-extension seeder preserves that removal instead of resurrecting the extension
