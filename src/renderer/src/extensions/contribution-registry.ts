@@ -484,6 +484,10 @@ export function extensionResourceUrl(extensionId: string, relativePath: string):
   return `kun-extension://${safeId}/${segments.join('/')}`
 }
 
+export function extensionHostIconUrl(extensionId: string, relativePath: string): string {
+  return `${extensionResourceUrl(extensionId, relativePath)}?kunHostResource=icon`
+}
+
 export function resolveContributionCommand(
   contribution: RegisteredContribution,
   command: string

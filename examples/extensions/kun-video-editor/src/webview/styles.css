@@ -23,7 +23,7 @@
 }
 
 * { box-sizing: border-box; }
-html, body, #root { min-width: 320px; min-height: 100%; margin: 0; }
+html, body, #root { min-width: 0; min-height: 100%; margin: 0; }
 body { min-height: 100vh; overflow-x: hidden; background: var(--bg); color: var(--text); }
 button, input, select, textarea { font: inherit; }
 button, select, input, textarea { color: inherit; }
@@ -229,6 +229,16 @@ ul, ol { padding-inline-start: 0; }
 .revision-list small { grid-column: 2; }
 
 .run-state { color: var(--green); }.run-waiting-approval, .run-waiting-user-input { color: var(--warning); }
+.agent-sync-callout { display: grid; gap: 0.3rem; padding: 0.7rem; border: 1px solid color-mix(in srgb, var(--accent) 42%, var(--border)); border-radius: 9px; background: color-mix(in srgb, var(--accent) 9%, var(--surface)); }
+.agent-sync-callout strong { color: var(--text); font-size: 0.82rem; }
+.agent-sync-callout p { color: var(--muted); font-size: 0.72rem; line-height: 1.5; }
+.agent-sync-grid { display: grid; gap: 0.35rem; margin: 0; }
+.agent-sync-grid > div { display: grid; grid-template-columns: minmax(90px, 0.75fr) minmax(0, 1.25fr); gap: 0.55rem; padding: 0.35rem 0; border-bottom: 1px solid var(--border); }
+.agent-sync-grid dt { color: var(--muted); font-size: 0.68rem; }
+.agent-sync-grid dd { min-width: 0; margin: 0; overflow-wrap: anywhere; font-size: 0.72rem; }
+.agent-sync-grid code { color: var(--blue); font-size: 0.66rem; }
+.agent-sync-status { display: flex; align-items: flex-start; gap: 0.5rem; color: var(--muted); font-size: 0.7rem; line-height: 1.45; }
+.agent-sync-dot { flex: 0 0 auto; width: 8px; height: 8px; margin-top: 0.22rem; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 3px color-mix(in srgb, var(--green) 17%, transparent); }
 .status-notice { padding: 0.5rem 0.6rem; border: 1px solid var(--border); border-radius: 7px; font-size: 0.7rem; }
 .status-warning { border-color: color-mix(in srgb, var(--warning) 45%, var(--border)); color: var(--warning); }
 .status-error { border-color: color-mix(in srgb, var(--danger) 45%, var(--border)); color: var(--danger); }

@@ -11,6 +11,7 @@ import { WORKSPACE_FILE_PREVIEW_EVENT, type WorkspaceFilePreviewDetail } from '.
 import { CODE_CANVAS_OPEN_REQUEST_EVENT } from '../lib/code-canvas-panel-event'
 import {
   BUILTIN_RIGHT_PANEL_IDS,
+  isExtensionContributionId,
   isRightPanelContributionId,
   normalizeStoredRightPanelId,
   type RightPanelMode
@@ -335,7 +336,10 @@ export function useWorkbenchLayout({
     const willOpen = rightPanelMode !== nextMode
     setRightPanelMode((current) => (current === nextMode ? null : nextMode))
     // The canvas wants room — bump the panel to the wider preview width on open.
-    if (willOpen && nextMode === BUILTIN_RIGHT_PANEL_IDS.canvas) {
+    if (
+      willOpen &&
+      (nextMode === BUILTIN_RIGHT_PANEL_IDS.canvas || isExtensionContributionId(nextMode))
+    ) {
       setRightSidebarWidth((width) => Math.max(width, CODE_PANEL_PREFERRED))
     }
   }

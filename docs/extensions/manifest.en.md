@@ -152,6 +152,8 @@ v1 supports:
 | `authentication` | Authentication Providers | id, authentication kind, and protected-flow metadata |
 | `hostContentScripts` | Direct DOM | static scripts/styles, allowed host surfaces, activation conditions; high risk and unstable |
 
+`views.rightSidebar` is the canonical discoverable UI for new extensions. Its packaged icon becomes an independent entry in Kun's right rail and opens beside the main conversation. Other `views.*` locations remain Extension API v1 parse- and command-routing compatible, but the Host does not generate an aggregate extension picker for them.
+
 ### Implied contribution permissions
 
 The validator derives and enforces these minimum permissions from entries/contributions. A missing permission makes the Manifest invalid:

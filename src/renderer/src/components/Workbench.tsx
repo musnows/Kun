@@ -33,7 +33,7 @@ import { useSddDraftStore } from '../sdd/sdd-draft-store'
 import {
   releaseSddAssistantThread,
 } from '../sdd/sdd-thread-registry'
-import { useWorkbenchLayout } from './workbench-layout'
+import { CODE_PANEL_PREFERRED, useWorkbenchLayout } from './workbench-layout'
 import { useWorkbenchPlanController } from './workbench-plan-controller'
 import { normalizeWorkspaceRoot } from '../lib/workspace-path'
 import {
@@ -311,13 +311,22 @@ export function Workbench(): ReactElement {
   const openExtensionSurface = useCallback((view: ExtensionWorkbenchView): void => {
     if (view.point === 'views.rightSidebar') {
       selectExtensionSurface(null)
-      if (isExtensionContributionId(view.id)) setRightPanelMode(view.id)
+      if (isExtensionContributionId(view.id)) {
+        setRightSidebarWidth((width) => Math.max(width, CODE_PANEL_PREFERRED))
+        setRightPanelMode(view.id)
+      }
       return
     }
     if (view.point === 'views.leftSidebar' && leftSidebarCollapsed) toggleLeftSidebar()
     setRightPanelMode(null)
     selectExtensionSurface(view.id)
-  }, [leftSidebarCollapsed, selectExtensionSurface, setRightPanelMode, toggleLeftSidebar])
+  }, [
+    leftSidebarCollapsed,
+    selectExtensionSurface,
+    setRightPanelMode,
+    setRightSidebarWidth,
+    toggleLeftSidebar
+  ])
 
   const openManagedExtensionView = useCallback(async (contributionId: string): Promise<void> => {
     let contribution = workbenchContributionRegistry.get(contributionId, contributionContext)
@@ -980,13 +989,7 @@ export function Workbench(): ReactElement {
             planPanelEnabled: Boolean(activeGuiPlan),
             onToggleFileTree: toggleFileTreeSidePanel,
             extensionItems: extensionRightPanelItems,
-            extensionContainers: extensionRightContainerTargets,
-            extensionViewLauncher: {
-              containers: extensionViewContainers,
-              groups: extensionViewGroups,
-              activeId: activeExtensionSurfaceId ?? rightPanelMode,
-              onOpen: openExtensionSurface
-            }
+            extensionContainers: extensionRightContainerTargets
           }
         }}
         imageAnnotationHost={imageAnnotationHost}

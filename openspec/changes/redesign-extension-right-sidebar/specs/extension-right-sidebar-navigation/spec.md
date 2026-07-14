@@ -1,0 +1,45 @@
+## ADDED Requirements
+
+### Requirement: Extensions self-register direct right-rail entries
+Kun SHALL render every visible `views.rightSidebar` contribution as a direct, independently selectable entry in the existing right-side workbench rail. The entry MUST use the extension-declared packaged icon when valid, MUST use a Host-owned fallback when absent, and MUST retain the fully qualified contribution identity for selection and accessibility.
+
+#### Scenario: Extension declares an icon and right-sidebar View
+- **WHEN** an enabled, compatible, trusted extension declares `views.rightSidebar` View `editor` with a valid packaged icon
+- **THEN** Kun SHALL display that icon directly in the right rail and clicking it SHALL open `extension:<extension-id>/editor` in the right panel
+
+#### Scenario: Extension omits its icon
+- **WHEN** a visible right-sidebar View has no icon
+- **THEN** Kun SHALL render an accessible Host-owned fallback icon without executing extension code
+
+#### Scenario: Host requests an extension icon resource
+- **WHEN** Kun renders a declared right-rail icon in the main workbench
+- **THEN** the resource protocol SHALL serve only an exact manifest-declared icon path as an image and SHALL retain existing isolation for scripts, Views, and undeclared package files
+
+### Requirement: Extension UI navigation has no aggregate launcher
+Kun SHALL NOT require users to open a generic extension picker before selecting a right-sidebar extension. The workbench SHALL NOT render a separate left activity bar or aggregate puzzle popover for extension Views.
+
+#### Scenario: Multiple extensions register right-sidebar Views
+- **WHEN** two enabled extensions each contribute one visible right-sidebar View
+- **THEN** the right rail SHALL show two directly selectable extension entries in deterministic order
+
+#### Scenario: Only a legacy full-page View is installed
+- **WHEN** an Extension API v1 manifest contributes a permitted `views.fullPage` View but no right-sidebar View
+- **THEN** the manifest SHALL remain compatible but Kun SHALL NOT create a generic rail launcher for that View
+
+### Requirement: Host owns extension panel placement and lifecycle
+An opened extension right-sidebar View SHALL use the existing Host-owned resizable right panel, focus, collapse, persistence, trust, permission, and View Session lifecycle. Extension code MUST NOT select absolute coordinates, replace the rail, overlay protected UI, or receive private renderer access.
+
+#### Scenario: User opens a docked extension panel
+- **WHEN** the user selects a direct extension rail entry
+- **THEN** Kun SHALL open its isolated View beside the main conversation at a useful Host-clamped width while preserving user resize and collapse controls
+
+#### Scenario: Permission is revoked while open
+- **WHEN** a permission required by the selected right-sidebar View is revoked
+- **THEN** Kun SHALL remove the rail entry, dispose the View Session, and retain unrelated built-in and extension panel state
+
+### Requirement: Legacy View contracts remain parse-compatible
+Extension API v1 schemas and runtime routing SHALL continue to accept documented non-right View contribution points. New Kun guidance and bundled examples SHALL identify `views.rightSidebar` as the canonical discoverable extension UI.
+
+#### Scenario: Existing extension is validated after the redesign
+- **WHEN** an existing compatible manifest declares a documented non-right View contribution
+- **THEN** validation SHALL continue to accept it subject to its existing permissions and constraints

@@ -10,13 +10,6 @@ export async function activate(context: ExtensionContext): Promise<void> {
   const tools = new VideoEditorTools(context)
   await tools.register()
   context.subscriptions.add(
-    await context.commands.registerCommand('open-editor', async (args) => ({
-      action: 'open-view',
-      viewId: 'editor',
-      ...(args === undefined ? {} : { args })
-    }))
-  )
-  context.subscriptions.add(
     await context.commands.registerCommand('editor-request', async (args) =>
       tools.editorRequest(args ?? { action: 'project.list', payload: {} })
     )

@@ -10,7 +10,7 @@ import {
 } from '@kun/extension-api'
 import type { ExtensionWorkbenchNotification } from '@shared/extension-ipc'
 import {
-  extensionResourceUrl,
+  extensionHostIconUrl,
   resolveContributionCommand,
   type RegisteredContribution
 } from './contribution-registry'
@@ -36,7 +36,7 @@ function ContributionIcon({ contribution }: { contribution: RegisteredContributi
   if (icon && contribution.owner.kind === 'extension') {
     return (
       <img
-        src={extensionResourceUrl(contribution.owner.extensionId, icon)}
+        src={extensionHostIconUrl(contribution.owner.extensionId, icon)}
         alt=""
         aria-hidden="true"
         className="h-4 w-4 shrink-0 object-contain"

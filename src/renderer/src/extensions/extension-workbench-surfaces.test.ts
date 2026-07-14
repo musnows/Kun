@@ -1,13 +1,10 @@
 import { ExtensionContributionsSchema } from '@kun/extension-api'
-import { createElement } from 'react'
-import { renderToStaticMarkup } from 'react-dom/server'
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import {
   ContributionRegistry,
   ExtensionWorkbenchSnapshotSchema
 } from './contribution-registry'
 import {
-  ExtensionViewRailLauncher,
   firstViewForContainer,
   readStoredExtensionSurfaceId,
   resolveCommandOpenView,
@@ -74,20 +71,6 @@ describe('Extension workbench surface consumers', () => {
     expect(firstViewForContainer(inspect, groups)?.id).toBe('extension:acme.workbench/details')
     expect(firstViewForContainer(activity, groups)?.id).toBe('extension:acme.workbench/logs')
     expect(viewBelongsToContainer(project, groups.rightSidebar[0])).toBe(false)
-  })
-
-  it('renders host-owned activity controls without mounting extension React code', () => {
-    const { registry, groups } = fixture()
-    const html = renderToStaticMarkup(createElement(ExtensionViewRailLauncher, {
-      containers: registry.list('views.containers'),
-      groups,
-      activeId: 'extension:acme.workbench/tree',
-      onOpen: vi.fn()
-    }))
-    expect(html).toContain('aria-label="Extension activity"')
-    expect(html).toContain('data-contribution-id="extension:acme.workbench/project"')
-    expect(html).toContain('aria-label="Open extension Views"')
-    expect(html).not.toContain('dangerouslySetInnerHTML')
   })
 
   it('persists only qualified extension surface IDs per workspace', () => {

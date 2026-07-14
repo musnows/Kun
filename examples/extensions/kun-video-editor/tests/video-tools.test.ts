@@ -41,24 +41,27 @@ describe('video editor manifest and Agent catalog', () => {
   it('declares one private profile, eight stable tools, complete activation, and least privilege', async () => {
     const manifest = await loadManifest()
     expect(manifest.apiVersion).toBe('1.1.0')
-    expect(manifest.contributes['views.fullPage']).toEqual([
-      expect.objectContaining({ id: 'editor', entry: 'dist/webview/index.html' })
+    expect(manifest.version).toBe('0.2.0')
+    expect(manifest.contributes['views.rightSidebar']).toEqual([
+      expect.objectContaining({
+        id: 'editor',
+        entry: 'dist/webview/index.html',
+        icon: 'assets/video-editor.svg'
+      })
     ])
-    expect(manifest.contributes['actions.composer']).toEqual([
-      expect.objectContaining({ id: 'open-editor', command: 'open-editor' })
-    ])
+    expect(manifest.contributes['views.fullPage']).toEqual([])
+    expect(manifest.contributes['actions.composer']).toEqual([])
     expect(manifest.contributes.agentProfiles).toHaveLength(1)
     const profile = manifest.contributes.agentProfiles[0]!
     expect(profile).toMatchObject({ id: 'video-editor', visibility: 'private' })
     expect(profile.allowedTools).toEqual(VIDEO_TOOL_IDS)
-    expect(profile.instructions).toContain('Always call video-project and video-read-script')
+    expect(profile.instructions).toContain('video-project with action active')
     expect(profile.instructions).toContain('not arbitrary visual-scene understanding')
     expect(profile.instructions).toContain('interaction-required')
     expect(manifest.contributes.tools).toEqual(VIDEO_TOOL_DECLARATIONS)
     expect(manifest.activationEvents).toEqual(expect.arrayContaining([
       'onView:editor',
       'onView:render-preview',
-      'onCommand:open-editor',
       'onCommand:editor-request',
       'onAgentProfile:video-editor',
       ...VIDEO_TOOL_IDS.map((id) => `onTool:${id}`)
@@ -92,7 +95,7 @@ describe('video editor manifest and Agent catalog', () => {
       .filter(({ method }) => method === 'commands.register')
       .map(({ params }) => String((params as JsonObject).id))
       .sort()
-    expect(declared).toEqual(['editor-request', 'open-editor'])
+    expect(declared).toEqual(['editor-request'])
     expect(registered).toEqual(declared)
     expect(registered).not.toContain('reveal-artifact')
     await harness.dispose()
@@ -109,6 +112,11 @@ describe('video editor Agent tools', () => {
       outcome: 'created',
       project: { id: 'agent-demo', currentRevision: 0 },
       truncated: false
+    })
+    const active = await invoke(harness, 'video-project', { action: 'active' })
+    expect(active.content).toMatchObject({
+      outcome: 'active',
+      project: { id: 'agent-demo', currentRevision: 0 }
     })
 
     const sourceHandle = 'fake_media_source_0001'
@@ -141,6 +149,24 @@ describe('video editor Agent tools', () => {
       outcome: 'loaded',
       project: { counts: { assets: 1, items: 1 }, currentRevision: 1 }
     })
+    await harness.dispose()
+  })
+
+  it('returns explicit empty and stale active-project outcomes without guessing', async () => {
+    const harness = await activatedHarness()
+    const empty = await invoke(harness, 'video-project', { action: 'active' })
+    expect(empty.content).toMatchObject({ outcome: 'no-active-project' })
+
+    harness.storage.workspace.set('active-project', {
+      schemaVersion: 1,
+      projectId: 'missing-project'
+    })
+    const stale = await invoke(harness, 'video-project', { action: 'active' })
+    expect(stale.content).toMatchObject({
+      outcome: 'stale-active-project',
+      projectId: 'missing-project'
+    })
+    expect(harness.storage.workspace.has('active-project')).toBe(false)
     await harness.dispose()
   })
 

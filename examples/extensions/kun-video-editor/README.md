@@ -2,7 +2,8 @@
 
 Kun Video Editor is a local-first, transcript-oriented editor for talking-head,
 interview, and podcast projects. It is also the reference Extension API v1.1
-example for protected media handles, durable jobs, and generated artifacts. Kun
+example for a self-registering right-sidebar View, main-Agent tool coordination,
+protected media handles, durable jobs, and generated artifacts. Kun
 desktop ships the exact same deterministic `.kunx` as its default local
 extension; there is no private built-in implementation behind the example.
 
@@ -66,19 +67,19 @@ given commit and manifest version. This keeps every capability demonstrated here
 available to third-party authors through documented Extension API surfaces.
 
 Each stable and daily Kun GitHub Release publishes the platform-independent
-`kun-video-editor-0.1.1.kunx` asset beside the desktop installers and the three
+`kun-video-editor-0.2.0.kunx` asset beside the desktop installers and the three
 native evidence JSON files. Download the `.kunx` from the same release as the
 Kun build you are running; do not copy an archive from an untrusted mirror.
 
 Validate and install the downloaded package with the Kun Extension CLI:
 
 ```bash
-kun extension validate ./kun-video-editor-0.1.1.kunx
-kun extension install ./kun-video-editor-0.1.1.kunx
+kun extension validate ./kun-video-editor-0.2.0.kunx
+kun extension install ./kun-video-editor-0.2.0.kunx
 ```
 
 Review and accept the declared permissions, enable the extension in a trusted
-workspace, and open **Edit Video**. Installation validates the archive's
+workspace, then click the **Kun Video Editor** icon in the right rail. Installation validates the archive's
 integrity manifest; it does not install FFmpeg, enable cloud ASR, or grant media
 paths. Media import and export still require protected Host pickers.
 
@@ -130,7 +131,8 @@ invoke a generative service.
 ## Desktop workflow
 
 1. Use the default installed extension, or build and install the `.kunx` with the
-   Kun Extension CLI. Grant it in a trusted workspace, then open **Edit Video**.
+   Kun Extension CLI. Grant it in a trusted workspace, then click its video icon
+   in Kun's right rail. The editor opens beside the main conversation.
 2. Create a project. Select the target frame rate and one of the supported canvas
    presets.
 3. Use the protected import action. Kun owns the native picker and returns an
@@ -139,8 +141,10 @@ invoke a generative service.
    media is rejected without changing the source.
 5. Import the deterministic fixture SRT/VTT/JSON or another timed transcript.
    Untimed prose is not enough for automatic destructive cuts.
-6. Edit manually, or ask the private Agent to read `video-project` and
-   `video-read-script`, then propose structured changes at the current revision.
+6. Edit manually, or ask the main Kun Agent to resolve `video-project` with
+   `action: "active"`, read `video-read-script`, and apply structured changes at
+   the current revision. The open panel refreshes through the extension's bounded
+   project-change event.
 7. Review the updated timeline and generate a proof frame or preview. A stale
    proof is not evidence for a newer revision.
 8. Select a protected save target and start an export. The durable job continues

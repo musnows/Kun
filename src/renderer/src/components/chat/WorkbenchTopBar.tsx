@@ -25,14 +25,11 @@ import {
 import { useTranslation } from 'react-i18next'
 import { readPreferredEditorId, writePreferredEditorId } from '../../lib/editor-preferences'
 import {
-  extensionResourceUrl,
+  extensionHostIconUrl,
   type RegisteredContribution
 } from '../../extensions/contribution-registry'
 import {
-  ExtensionViewRailLauncher,
-  type ExtensionRightContainerTarget,
-  type ExtensionWorkbenchView,
-  type ExtensionWorkbenchViewGroups
+  type ExtensionRightContainerTarget
 } from '../../extensions/ExtensionWorkbenchSurfaces'
 import {
   BUILTIN_RIGHT_PANEL_IDS,
@@ -57,12 +54,6 @@ type Props = {
   onOpenSideChat?: () => void
   extensionItems?: readonly RegisteredContribution<'views.rightSidebar'>[]
   extensionContainers?: readonly ExtensionRightContainerTarget[]
-  extensionViewLauncher?: {
-    containers: readonly RegisteredContribution<'views.containers'>[]
-    groups: ExtensionWorkbenchViewGroups
-    activeId?: string | null
-    onOpen: (view: ExtensionWorkbenchView) => void
-  }
 }
 
 type WorkbenchTopActionsProps = {
@@ -382,8 +373,7 @@ export function WorkbenchSideRail({
   onToggleFileTree,
   onOpenSideChat,
   extensionItems = [],
-  extensionContainers = [],
-  extensionViewLauncher
+  extensionContainers = []
 }: Props): ReactElement {
   const { t } = useTranslation(['common', 'settings'])
   const items = [
@@ -455,7 +445,7 @@ export function WorkbenchSideRail({
           >
             {icon ? (
               <img
-                src={extensionResourceUrl(container.owner.extensionId, icon)}
+                src={extensionHostIconUrl(container.owner.extensionId, icon)}
                 alt=""
                 aria-hidden="true"
                 className={TOPBAR_ICON_CLASS}
@@ -469,6 +459,7 @@ export function WorkbenchSideRail({
 
       {extensionItems.map((item) => {
         if (item.owner.kind !== 'extension') return null
+        if (extensionContainers.some(({ target }) => target.id === item.id)) return null
         const active = rightPanelMode === item.id
         const icon = item.payload.icon
         const label = boundedPlainText(item.payload.title, 128)
@@ -485,7 +476,7 @@ export function WorkbenchSideRail({
           >
             {icon ? (
               <img
-                src={extensionResourceUrl(item.owner.extensionId, icon)}
+                src={extensionHostIconUrl(item.owner.extensionId, icon)}
                 alt=""
                 aria-hidden="true"
                 className={TOPBAR_ICON_CLASS}
@@ -511,12 +502,6 @@ export function WorkbenchSideRail({
         </button>
       ) : null}
 
-      {extensionViewLauncher ? (
-        <ExtensionViewRailLauncher
-          {...extensionViewLauncher}
-          buttonClassName={sideRailButtonClass}
-        />
-      ) : null}
     </div>
   )
 }

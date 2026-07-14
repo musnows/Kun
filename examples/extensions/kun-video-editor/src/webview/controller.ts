@@ -154,6 +154,9 @@ export function useEditorController(client: ExtensionHostClient): EditorControll
         await refreshJobs()
         if (persisted?.projectId && projects.some(({ id }) => id === persisted.projectId)) {
           await loadProject(persisted.projectId)
+        } else {
+          const active = await execute('project.active')
+          if (isRecord(active.project)) dispatch({ type: 'project', value: projectFrom(active) })
         }
         await restoreRun(persisted?.activeRunId)
       } catch (error) {
@@ -164,7 +167,7 @@ export function useEditorController(client: ExtensionHostClient): EditorControll
       }
     })()
     return () => { disposed = true }
-  }, [client, loadProject, loadProjects, pushNotice, refreshJobs, restoreRun])
+  }, [client, execute, loadProject, loadProjects, pushNotice, refreshJobs, restoreRun])
 
   useEffect(() => {
     const themeSubscription = client.ui.onDidChangeTheme((value) => dispatch({ type: 'theme', value }))
@@ -177,6 +180,7 @@ export function useEditorController(client: ExtensionHostClient): EditorControll
       }
       if (message.channel === 'kun-video-editor.project-changed') {
         const change = projectChange(message.payload)
+        if (change) dispatch({ type: 'project-change', value: change })
         if (change && change.projectId === stateRef.current.project?.id) void loadProject(change.projectId)
         return
       }

@@ -213,6 +213,7 @@ export type EditorState = {
   jobEvents: Record<string, JobEvent[]>
   renderTickets: RenderTicket[]
   notices: EditorNotice[]
+  lastProjectChange?: ProjectChange
   conflict?: { expectedRevision: number; currentRevision?: number }
   transcriptWindowStart: number
   timelineWindowStart: number
@@ -264,6 +265,7 @@ export type EditorAction =
   | { type: 'job-event'; value: JobEvent }
   | { type: 'render-ticket'; value: RenderTicket }
   | { type: 'notice'; value: EditorNotice }
+  | { type: 'project-change'; value: ProjectChange }
   | { type: 'dismiss-notice'; id: string }
   | { type: 'conflict'; expectedRevision: number; currentRevision?: number }
   | { type: 'clear-conflict' }
@@ -393,6 +395,7 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
       ...state,
       notices: dedupeByKey([...state.notices, action.value], 'id').slice(-VIEW_LIMITS.notices)
     }
+    case 'project-change': return { ...state, lastProjectChange: action.value }
     case 'dismiss-notice': return { ...state, notices: state.notices.filter(({ id }) => id !== action.id) }
     case 'conflict': return {
       ...state,

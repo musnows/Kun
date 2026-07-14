@@ -1,0 +1,85 @@
+## Context
+
+Kun already has a typed `views.rightSidebar` contribution, isolated View Sessions, direct right-rail rendering for right-sidebar Views, extension tools in the Agent catalog, and workspace-scoped extension storage. The recently added aggregate extension launcher duplicates the native rail and encourages full-page/editor placement; the bundled video editor currently follows that older full-page model and also embeds a second private Agent UI inside its Webview.
+
+The desired model is closer to an IDE tool window: an extension declares one right-sidebar View with its own icon, Kun renders that icon beside built-in tools, and the main conversation remains visible while the extension panel opens. The main Agent and panel coordinate through the extension's public tools, workspace state, and bounded events. They do not share React components, DOM, runtime tokens, or private Electron IPC.
+
+## Goals / Non-Goals
+
+**Goals:**
+
+- Give every enabled `views.rightSidebar` contribution a direct, independently selectable right-rail icon.
+- Make right-sidebar Views the canonical extension UI shown by the host, with deterministic ordering and normal right-panel resize/collapse behavior.
+- Keep the negotiated Extension API v1 manifest compatible for existing non-right View keys while removing the aggregate launcher that advertises them.
+- Keep the main Agent visible and able to operate on the same workspace-scoped extension project as the open panel.
+- Turn Kun Video Editor into a responsive, docked reference extension with a real packaged icon and no duplicate in-Webview chat surface.
+
+**Non-Goals:**
+
+- Removing non-right View schemas from Extension API v1 or breaking already installed manifests.
+- Allowing extension code to mount React into Kun, position arbitrary DOM, control rail geometry, or read main-conversation content.
+- Turning MCP, Skills, or appearance plugins into `.kunx` extensions.
+- Adding a generic cross-extension state bus or letting one extension invoke another extension's private commands.
+- Replacing the existing media, jobs, Agent, tool, trust, permission, or Webview isolation contracts.
+
+## Decisions
+
+### 1. `views.rightSidebar` is the self-registration contract
+
+The workbench will render each visible right-sidebar View (or a right-sidebar container's first owned View) as a direct button in the existing `WorkbenchSideRail`. The button uses the manifest icon when valid and a host fallback otherwise; clicking it selects the fully qualified View ID as `rightPanelMode` and opens the isolated View in `WorkbenchRightPanel`.
+
+The aggregate `ExtensionViewRailLauncher` and its popover will be removed. This avoids a second navigation hierarchy and makes ownership obvious. `views.leftSidebar`, `views.auxiliaryPanel`, `views.editorTab`, and `views.fullPage` remain parseable and invokable for API v1 compatibility, but Kun documentation and bundled examples will no longer present them as the standard extension UI path.
+
+Host-rendered icons use an explicit host-image resource request. The resource protocol accepts that request only when the exact path is declared as an icon in the selected manifest, returns a cross-origin image response for that bounded case, and keeps normal View resources under the existing same-origin policy. The main renderer CSP permits `kun-extension:` only in `img-src`; it does not grant script, frame, or network authority.
+
+Alternative considered: retain one puzzle menu and place it at the bottom of the right rail. Rejected because it still makes users choose an extension twice and prevents an extension's own icon from becoming a stable muscle-memory target.
+
+### 2. The Host continues to own panel geometry
+
+Opening an extension right-sidebar View will expand the existing resizable right panel to at least the host's code-panel preferred width when space allows. The user can resize it within existing constraints and the Host persists the width. Extensions cannot request arbitrary width, overlay the conversation, or force order ahead of protected built-ins.
+
+Alternative considered: add `preferredWidth` to the public manifest. Deferred because it would expand the stable API for a value the Host must clamp anyway; the first reference editor can use the common responsive panel contract.
+
+### 3. Main Agent coordination uses tools plus a workspace active-project pointer
+
+The video extension's existing eight registered tools remain the only Agent mutation/read surface. `video-project` gains an `active` action. Opening or creating a project records a bounded active-project ID in extension workspace storage; `active` resolves that pointer and returns the current project projection or a clear empty outcome. The Agent profile instructs callers to resolve the active project first, then read its revision and script before editing.
+
+Both manual Webview operations and Agent tool operations use `ProjectService`, optimistic revisions, and the existing `kun-video-editor.project-changed` host message. An open panel refreshes when the main Agent changes its active project. The Webview does not receive main-thread messages or tool calls directly, and the Agent does not receive arbitrary View state.
+
+Alternative considered: expose a renderer context-provider API that injects panel state into every prompt. Rejected because it would increase stable prompt surface, cache churn, and cross-layer authority. The explicit tool call is auditable and revision-safe.
+
+### 4. The video editor becomes one docked, responsive workbench
+
+The manifest moves `editor` from `views.fullPage` to `views.rightSidebar`, adds a packaged local SVG icon, and removes the redundant `open-editor` command and Composer action. `editor-request` remains the authenticated View-to-Host command. The package version advances so the bundled seeder installs a distinct archive rather than replacing bytes under an existing version.
+
+At sidebar widths the Webview uses a single vertical workflow: project controls, player, timeline, media/transcript, inspector, captions/history, preview/export. The embedded private Agent prompt panel is replaced by a compact Agent-sync status panel explaining that the main Kun conversation can use the video tools and showing the active project/revision plus bounded external-change status. The private Agent capability remains available through the public Agent API for compatibility, but it is not the primary visible chat surface.
+
+### 5. Compatibility is behavioral, not a second UI
+
+Existing non-right contributions remain in schemas, registry, commands, View Session routing, and stored-layout cleanup. The Host stops adding a general-purpose launcher for them. A legacy declared command can still open its owned View if the contribution is visible and permitted, but new docs and examples use direct right-sidebar registration exclusively.
+
+This is not marked as an Extension API breaking change because no manifest field or runtime method is removed. It is a workbench navigation and recommendation change.
+
+## Risks / Trade-offs
+
+- [A complex editor is cramped in a docked panel] → Open extension panels at a useful Host-owned width, keep resizing, and provide a deliberate single-column responsive layout with bounded scroll regions.
+- [Removing the aggregate launcher makes legacy non-right Views less discoverable] → Preserve command-based opening and compatibility, document the migration to `views.rightSidebar`, and keep management diagnostics visible.
+- [Agent and panel can race on project revisions] → Keep optimistic `expectedRevision`, active-project lookup, project-change events, and refresh-on-conflict behavior.
+- [An active-project pointer can become stale after project deletion or workspace change] → Scope it to extension workspace storage, validate the ID against `ProjectService`, and return an explicit empty/stale outcome without guessing.
+- [Multiple extension icons can crowd the rail] → Keep deterministic host ordering, bounded icon metadata, tooltips, and normal overflow policy; do not allow extensions to inject arbitrary rail content.
+- [A declared icon path becomes a general Host resource escape] → Mark Host icon requests explicitly, require an exact manifest icon match, and allow the custom scheme only in the main renderer's image CSP.
+- [Bundled upgrade revokes workspace trust] → Preserve the existing security rule that a new code version requires workspace review; do not silently carry trust across changed bytes.
+
+## Migration Plan
+
+1. Remove the aggregate launcher from renderer composition while retaining registry and View Session support for all negotiated v1 contribution points.
+2. Route direct right-sidebar extension buttons through the existing right-panel selection and widen-on-open behavior.
+3. Migrate the video manifest, icon, Host command catalog, active-project tool contract, Agent instructions, and Webview layout; bump and regenerate the deterministic bundled package.
+4. Update Chinese/English extension guidance and release/version fixtures.
+5. Validate old non-right manifests still parse and command-open, while the bundled video editor appears as a direct right-rail icon and shares revisions with Agent tools.
+
+Rollback is a normal code revert plus selecting the prior installed video-editor version. Registry data and project revisions remain compatible because the project schema does not change.
+
+## Open Questions
+
+None for this change. A future API revision may add explicit rail grouping or panel size hints after multiple third-party extensions provide evidence that Host ordering and responsive layout are insufficient.

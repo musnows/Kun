@@ -27,6 +27,7 @@ export type ExtensionResourceDescriptor = {
   packageRoot: string
   exactFiles: string[]
   localResourceRoots: string[]
+  hostIconFiles?: string[]
 }
 
 export type ExtensionResourceDescriptorResolver = (
@@ -69,7 +70,7 @@ export function registerKunExtensionProtocol(options: {
       if (bytes.byteLength > MAX_RESOURCE_BYTES) throw new ExtensionResourceError('RESOURCE_TOO_LARGE')
       return new Response(new Uint8Array(bytes), {
         status: 200,
-        headers: extensionResourceHeaders(resource.relativePath)
+        headers: extensionResourceHeaders(resource.relativePath, resource.hostResource === 'icon')
       })
     } catch (error) {
       const extensionId = safeExtensionIdFromUrl(request.url)
@@ -93,7 +94,12 @@ export function registerKunExtensionProtocol(options: {
 export async function resolveKunExtensionResource(
   rawUrl: string,
   resolveDescriptor: ExtensionResourceDescriptorResolver
-): Promise<{ path: string; relativePath: string; descriptor: ExtensionResourceDescriptor }> {
+): Promise<{
+  path: string
+  relativePath: string
+  descriptor: ExtensionResourceDescriptor
+  hostResource?: 'icon'
+}> {
   const parsed = parseKunExtensionUrl(rawUrl)
   const descriptor = await resolveDescriptor(parsed.extensionId)
   if (!descriptor || descriptor.extensionId !== parsed.extensionId) {
@@ -101,6 +107,12 @@ export async function resolveKunExtensionResource(
   }
   if (!isDeclaredResource(parsed.relativePath, descriptor)) {
     throw new ExtensionResourceError('RESOURCE_NOT_DECLARED')
+  }
+  if (
+    parsed.hostResource === 'icon' &&
+    !descriptor.hostIconFiles?.includes(parsed.relativePath)
+  ) {
+    throw new ExtensionResourceError('HOST_ICON_NOT_DECLARED')
   }
 
   const packageRoot = await realpath(descriptor.packageRoot)
@@ -127,13 +139,19 @@ export async function resolveKunExtensionResource(
       throw new ExtensionResourceError('RESOURCE_ROOT_ESCAPE')
     }
   }
-  return { path: candidateRealPath, relativePath: parsed.relativePath, descriptor }
+  return {
+    path: candidateRealPath,
+    relativePath: parsed.relativePath,
+    descriptor,
+    hostResource: parsed.hostResource
+  }
 }
 
 export function parseKunExtensionUrl(rawUrl: string): {
   extensionId: string
   relativePath: string
   viewSessionId?: string
+  hostResource?: 'icon'
 } {
   let url: URL
   try {
@@ -182,21 +200,38 @@ export function parseKunExtensionUrl(rawUrl: string): {
     throw new ExtensionResourceError('PATH_INVALID')
   }
   const viewSessionId = url.searchParams.get('kunViewSession') ?? undefined
+  const hostResource = url.searchParams.get('kunHostResource') ?? undefined
   for (const key of url.searchParams.keys()) {
-    if (key !== 'kunViewSession') throw new ExtensionResourceError('QUERY_INVALID')
+    if (key !== 'kunViewSession' && key !== 'kunHostResource') {
+      throw new ExtensionResourceError('QUERY_INVALID')
+    }
   }
   if (viewSessionId !== undefined && (viewSessionId.length < 16 || viewSessionId.length > 256)) {
     throw new ExtensionResourceError('QUERY_INVALID')
   }
-  return { extensionId: url.hostname, relativePath: normalized, viewSessionId }
+  if (hostResource !== undefined && hostResource !== 'icon') {
+    throw new ExtensionResourceError('QUERY_INVALID')
+  }
+  if (viewSessionId !== undefined && hostResource !== undefined) {
+    throw new ExtensionResourceError('QUERY_INVALID')
+  }
+  return {
+    extensionId: url.hostname,
+    relativePath: normalized,
+    viewSessionId,
+    hostResource
+  }
 }
 
-export function extensionResourceHeaders(relativePath: string): Record<string, string> {
+export function extensionResourceHeaders(
+  relativePath: string,
+  allowHostImageEmbedding = false
+): Record<string, string> {
   return {
     'Content-Type': safeContentType(relativePath),
     'Content-Security-Policy': KUN_EXTENSION_CSP,
     'Cache-Control': 'no-store',
-    'Cross-Origin-Resource-Policy': 'same-origin',
+    'Cross-Origin-Resource-Policy': allowHostImageEmbedding ? 'cross-origin' : 'same-origin',
     'Referrer-Policy': 'no-referrer',
     'X-Content-Type-Options': 'nosniff',
     'X-Frame-Options': 'DENY'

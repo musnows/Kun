@@ -152,6 +152,8 @@ v1 支持：
 | `authentication` | 认证 Provider | id、认证类型和受保护流程元数据 |
 | `hostContentScripts` | Direct DOM | 静态脚本/样式、允许宿主 surface、激活条件；高风险且不稳定 |
 
+`views.rightSidebar` 是新扩展的规范可发现 UI：View 的包内 icon 会直接成为 Kun 右侧栏中的独立入口，并在主会话旁打开。其它 `views.*` 位置继续保留 Extension API v1 解析和命令路由兼容，但宿主不会为它们生成聚合扩展选择器。
+
 ### Contribution 隐含权限
 
 Validator 从入口/贡献自动推导并强制以下最小权限；缺少时 Manifest 无效：

@@ -58,7 +58,6 @@ export type WorkbenchConversationStageProps = {
     onToggleFileTree: () => void
     extensionItems?: Parameters<typeof WorkbenchSideRail>[0]['extensionItems']
     extensionContainers?: Parameters<typeof WorkbenchSideRail>[0]['extensionContainers']
-    extensionViewLauncher?: Parameters<typeof WorkbenchSideRail>[0]['extensionViewLauncher']
   }
 }
 
@@ -122,7 +121,6 @@ export function WorkbenchConversationStage({
             onOpenSideChat={sideChat.onOpen}
             extensionItems={sideRail.extensionItems}
             extensionContainers={sideRail.extensionContainers}
-            extensionViewLauncher={sideRail.extensionViewLauncher}
           />
         ) : null}
       </div>

@@ -44,6 +44,7 @@ const MAX_CAPTIONS = 500
 const MAX_TRANSCRIPTS = 100
 const MAX_TRANSCRIPT_SEGMENTS = 500
 const MAX_SCRIPT_BYTES = 240 * 1024
+const ACTIVE_PROJECT_KEY = 'active-project'
 const RENDER_RECORD_PREFIX = 'render-job:'
 const RENDER_TRACKING_CANCELLATION_WAIT_MS = 12_000
 
@@ -153,6 +154,7 @@ export class VideoEditorTools {
     exactKeys(request, ['action', 'payload'])
     const action = enumValue(request.action, [
       'project.list',
+      'project.active',
       'project.get',
       'project.create',
       'project.update',
@@ -171,6 +173,9 @@ export class VideoEditorTools {
     switch (action) {
       case 'project.list':
         response = await this.videoProject({ ...payload, action: 'list' })
+        break
+      case 'project.active':
+        response = await this.videoProject({ ...payload, action: 'active' })
         break
       case 'project.get':
         response = await this.videoProject({ ...payload, action: 'get' })
@@ -209,8 +214,9 @@ export class VideoEditorTools {
 
   private async videoProject(input: ToolInput): Promise<ToolResult> {
     exactKeys(input, ['action', 'projectId', 'name', 'fps', 'canvasPreset', 'expectedRevision'])
-    const action = enumValue(input.action, ['list', 'get', 'create'] as const, 'action')
+    const action = enumValue(input.action, ['active', 'list', 'get', 'create'] as const, 'action')
     const service = this.service()
+    if (action === 'active') return this.activeProject(service)
     if (action === 'list') {
       const projects = await service.listProjects()
       const bounded = projects.slice(0, MAX_PROJECTS)
@@ -230,6 +236,7 @@ export class VideoEditorTools {
         ? undefined
         : enumValue(input.canvasPreset, ['16:9', '9:16', '1:1'] as const, 'canvasPreset')
       const project = await service.createProject({ id: projectId, name, fps, canvasPreset })
+      await this.setActiveProject(project.id)
       await this.publishProjectChange(project, 'project-created', ['project'])
       return result({
         outcome: 'created',
@@ -243,12 +250,67 @@ export class VideoEditorTools {
     if (input.expectedRevision !== undefined) {
       assertExpectedRevision(project, nonNegativeInteger(input.expectedRevision, 'expectedRevision'))
     }
+    await this.setActiveProject(project.id)
     return result({
       outcome: 'loaded',
       workspaceId: this.workspaceId(),
       project: projectProjection(project),
       truncated: projectProjectionIsTruncated(project)
     }, `Loaded video project ${project.id} revision ${project.currentRevision}`)
+  }
+
+  private async activeProject(service: ProjectService): Promise<ToolResult> {
+    const value = await this.context.storage.workspace.get<JsonValue>(ACTIVE_PROJECT_KEY)
+    if (value === undefined) {
+      return result({
+        outcome: 'no-active-project',
+        workspaceId: this.workspaceId()
+      }, 'No video project is active in this workspace')
+    }
+
+    const stored = value !== null && typeof value === 'object' && !Array.isArray(value)
+      ? value as ToolInput
+      : undefined
+    let projectId: string | undefined
+    try {
+      if (stored?.schemaVersion === 1) projectId = stableId(stored.projectId, 'active projectId')
+    } catch {
+      projectId = undefined
+    }
+    if (!projectId) {
+      await this.context.storage.workspace.delete(ACTIVE_PROJECT_KEY)
+      return result({
+        outcome: 'stale-active-project',
+        workspaceId: this.workspaceId()
+      }, 'The stored active video project was invalid and has been cleared')
+    }
+
+    let project: VideoProject
+    try {
+      project = await service.loadProject(projectId)
+    } catch (error) {
+      if (!(error instanceof VideoEngineError) || error.code !== 'project_not_found') throw error
+      await this.context.storage.workspace.delete(ACTIVE_PROJECT_KEY)
+      return result({
+        outcome: 'stale-active-project',
+        workspaceId: this.workspaceId(),
+        projectId
+      }, `The active video project ${projectId} no longer exists`)
+    }
+
+    return result({
+      outcome: 'active',
+      workspaceId: this.workspaceId(),
+      project: projectProjection(project),
+      truncated: projectProjectionIsTruncated(project)
+    }, `Resolved active video project ${project.id} revision ${project.currentRevision}`)
+  }
+
+  private async setActiveProject(projectId: string): Promise<void> {
+    await this.context.storage.workspace.set(ACTIVE_PROJECT_KEY, {
+      schemaVersion: 1,
+      projectId
+    })
   }
 
   private async videoReadScript(input: ToolInput): Promise<ToolResult> {

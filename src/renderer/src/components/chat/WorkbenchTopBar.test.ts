@@ -53,7 +53,14 @@ describe('WorkbenchSideRail', () => {
           'views.rightSidebar': [{
             id: 'issues',
             title: 'Issues',
-            entry: 'dist/index.html'
+            entry: 'dist/index.html',
+            icon: 'assets/issues.svg',
+            order: 20
+          }, {
+            id: 'summary',
+            title: 'Summary',
+            entry: 'dist/summary.html',
+            order: 10
           }],
           'views.fullPage': [{
             id: 'dashboard',
@@ -65,7 +72,7 @@ describe('WorkbenchSideRail', () => {
     }))
     const html = renderToStaticMarkup(
       createElement(WorkbenchSideRail, {
-        rightPanelMode: null,
+        rightPanelMode: 'extension:acme.issues/issues',
         onToggleRightPanelMode: vi.fn(),
         planPanelEnabled: true,
         canvasEnabled: true,
@@ -77,19 +84,7 @@ describe('WorkbenchSideRail', () => {
         fileTreeEnabled: true,
         onToggleFileTree: vi.fn(),
         onOpenSideChat: vi.fn(),
-        extensionItems: registry.list('views.rightSidebar').filter((item) => item.owner.kind === 'extension'),
-        extensionViewLauncher: {
-          containers: registry.list('views.containers'),
-          groups: {
-            leftSidebar: registry.list('views.leftSidebar'),
-            rightSidebar: registry.list('views.rightSidebar').filter((item) => item.owner.kind === 'extension'),
-            auxiliaryPanel: registry.list('views.auxiliaryPanel'),
-            editorTab: registry.list('views.editorTab'),
-            fullPage: registry.list('views.fullPage')
-          },
-          activeId: null,
-          onOpen: vi.fn()
-        }
+        extensionItems: registry.list('views.rightSidebar').filter((item) => item.owner.kind === 'extension')
       })
     )
 
@@ -110,8 +105,17 @@ describe('WorkbenchSideRail', () => {
 
     expect(html).toContain('data-tooltip="Issues"')
     expect(html).toContain('data-contribution-id="extension:acme.issues/issues"')
-    expect(html).toContain('data-tooltip="Extension Views"')
-    expect(html).toContain('aria-label="Open extension Views"')
+    expect(html).toContain(
+      'src="kun-extension://acme.issues/assets/issues.svg?kunHostResource=icon"'
+    )
+    expect(html).toContain('data-tooltip="Summary"')
+    expect(html).toContain('data-contribution-id="extension:acme.issues/summary"')
+    expect(html.indexOf('data-contribution-id="extension:acme.issues/summary"')).toBeLessThan(
+      html.indexOf('data-contribution-id="extension:acme.issues/issues"')
+    )
+    expect(html).not.toContain('data-tooltip="Extension Views"')
+    expect(html).not.toContain('aria-label="Open extension Views"')
+    expect(html).not.toContain('data-contribution-id="extension:acme.issues/dashboard"')
 
     expect(html).not.toContain(`data-tooltip="Choose default editor"`)
     expect(html).not.toContain(`data-tooltip="Terminal"`)

@@ -109,6 +109,39 @@ describe('bundled extension seeding', () => {
     })
   })
 
+  it('upgrades a historical bundle whose Action reused its command ID', async () => {
+    const harness = await createHarness()
+    const permissions = ['commands.register', 'ui.actions']
+    await writeBundle(harness, '1.0.0', permissions)
+    await seedBundledExtensions(seedOptions(harness))
+
+    const registry = JSON.parse(await readFile(harness.paths.registryFile, 'utf8'))
+    const manifest = registry.extensions['acme.demo'].versions['1.0.0'].manifest
+    manifest.contributes.commands = [{ id: 'open-editor', title: 'Open editor' }]
+    manifest.contributes['actions.composer'] = [{
+      id: 'open-editor',
+      command: 'open-editor',
+      title: 'Edit video'
+    }]
+    await writeFile(harness.paths.registryFile, `${JSON.stringify(registry, null, 2)}\n`)
+
+    expect((await harness.registry.get('acme.demo'))?.versions['1.0.0']
+      ?.manifest.contributes['actions.composer']).toEqual([
+      expect.objectContaining({ id: 'open-editor-action', command: 'open-editor' })
+    ])
+
+    await writeBundle(harness, '2.0.0', permissions)
+    expect(await seedBundledExtensions(seedOptions(harness))).toEqual([{
+      extensionId: 'acme.demo',
+      version: '2.0.0',
+      outcome: 'updated-selected'
+    }])
+    expect(await harness.registry.get('acme.demo')).toMatchObject({
+      selectedVersion: '2.0.0',
+      previousSelectedVersion: '1.0.0'
+    })
+  })
+
   it('installs an update without overriding a selected development source or rollback', async () => {
     const development = await createHarness()
     await writeBundle(development, '1.0.0', [])

@@ -5,7 +5,7 @@ import type { EditorController } from '../src/webview/controller.js'
 import { INITIAL_EDITOR_STATE, editorReducer, type EditorState } from '../src/webview/model.js'
 import { makeArtifact, makeJob, makeSubtitleArtifact, makeViewProject } from './webview-fixtures.js'
 
-describe('video editor full-page workbench', () => {
+describe('video editor docked workbench', () => {
   it('renders every editing region with accessible landmarks and supported boundaries', () => {
     const project = makeViewProject()
     const job = {
@@ -20,7 +20,7 @@ describe('video editor full-page workbench', () => {
       { type: 'project', value: project }
     )
     const html = renderToStaticMarkup(<VideoEditorWorkbench controller={stubController({ ...state, jobs: [job] })} />)
-    for (const label of ['Media library', 'Player', 'Transcript', 'Timeline', 'Inspector', 'Captions', 'Revisions', 'Preview and proof', 'Video Agent', 'Export jobs']) {
+    for (const label of ['Media library', 'Player', 'Transcript', 'Timeline', 'Inspector', 'Captions', 'Revisions', 'Preview and proof', 'Agent sync', 'Export jobs']) {
       expect(html).toContain(label)
     }
     expect(html).toContain('href="#video-editor-main"')
@@ -35,9 +35,12 @@ describe('video editor full-page workbench', () => {
     expect(html).toContain('Open with system app')
     expect(html).toContain('Show in folder')
     expect(html).toContain('local path stays hidden from the extension View')
+    expect(html).toContain('Edit with the main Kun Agent')
+    expect(html).toContain('video-project · active')
+    expect(html).not.toContain('Creative brief and review checkpoint')
   })
 
-  it('renders explicit empty, interaction-required, reconnect and approval states', () => {
+  it('renders explicit empty, interaction-required, reconnect and legacy-run states', () => {
     let state: EditorState = editorReducer(INITIAL_EDITOR_STATE, { type: 'initialized' })
     state = {
       ...state,
@@ -66,8 +69,9 @@ describe('video editor full-page workbench', () => {
       }
     }
     const waitingHtml = renderToStaticMarkup(<VideoEditorWorkbench controller={stubController(waitingState)} />)
-    expect(waitingHtml).toContain('waiting for approval')
-    expect(waitingHtml).toContain('Editable guidance')
+    expect(waitingHtml).toContain('Existing private run')
+    expect(waitingHtml).toContain('waiting-approval')
+    expect(waitingHtml).toContain('Ready for main-Agent edits')
     expect(waitingHtml).toContain('Cancel job')
   })
 })

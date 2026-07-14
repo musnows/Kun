@@ -4,7 +4,7 @@
   "apiVersion": "1.1.0",
   "name": "kun-video-editor",
   "publisher": "kun-examples",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "displayName": "Kun Video Editor",
   "description": "Local transcript-oriented editing for talking-head, interview, and podcast media.",
   "license": "MIT",
@@ -14,7 +14,6 @@
   "activationEvents": [
     "onView:editor",
     "onView:render-preview",
-    "onCommand:open-editor",
     "onCommand:editor-request",
     "onAgentProfile:video-editor",
     "onTool:video-project",
@@ -29,12 +28,6 @@
   "contributes": {
     "commands": [
       {
-        "id": "open-editor",
-        "title": "Open Kun Video Editor",
-        "category": "Video",
-        "description": "Open the local transcript-first video editing workbench."
-      },
-      {
         "id": "editor-request",
         "title": "Video Editor Request",
         "category": "Video",
@@ -46,6 +39,7 @@
               "type": "string",
               "enum": [
                 "project.list",
+                "project.active",
                 "project.get",
                 "project.create",
                 "project.update",
@@ -77,21 +71,13 @@
         }
       }
     ],
-    "views.fullPage": [
+    "views.rightSidebar": [
       {
         "id": "editor",
         "title": "Kun Video Editor",
         "entry": "dist/webview/index.html",
+        "icon": "assets/video-editor.svg",
         "localResourceRoots": ["dist/webview"]
-      }
-    ],
-    "actions.composer": [
-      {
-        "id": "open-editor-action",
-        "command": "open-editor",
-        "title": "Edit Video",
-        "group": "media",
-        "order": 40
       }
     ],
     "message.resultPreviews": [
@@ -135,7 +121,7 @@
         "id": "video-editor",
         "title": "Video Editor",
         "description": "Private local transcript-first editing Agent for talking-head, interview, and podcast projects.",
-        "instructions": "You are the private Kun Video Editor Agent for local transcript-oriented editing of talking-head, interview, and podcast projects.\n\nBefore writing, ask for or confirm the creative goal, audience, target duration, aspect ratio, caption preference, and whether the user wants a review checkpoint or an export.\n\nAlways call video-project and video-read-script to read the current project revision before a mutation. Treat revision conflicts as a request to refresh; never guess a merge.\n\nEdit structure first: remove only explicitly identified timed ranges, order the story, and keep source media immutable. Add captions, composition, or decoration only when requested.\n\nDo not introduce unrequested music, B-roll, stock media, generative video or images, motion graphics, face tracking, or subject-aware reframing.\n\nThis MVP has transcript and timing evidence, not arbitrary visual-scene understanding. Never infer unseen actions or claim visual inspection from transcript text or a successful command.\n\nUse proof-frame or preview renders to create an inspectable review artifact. Distinguish FFmpeg/ffprobe technical validation from actual visual review, and report stale proof when the project revision changed.\n\nStop at an editable review checkpoint unless export was requested. For export, pin the current revision and preset, observe the durable job with video-render-status, and surface cancellation or invalid artifacts honestly.\n\nProtected media import and save-target selection require a Kun desktop interaction unless the caller already supplies valid opaque handles. In headless mode, return interaction-required instead of choosing a path or fabricating approval.",
+        "instructions": "You are the private Kun Video Editor Agent for local transcript-oriented editing of talking-head, interview, and podcast projects.\n\nBefore writing, ask for or confirm the creative goal, audience, target duration, aspect ratio, caption preference, and whether the user wants a review checkpoint or an export.\n\nFirst call video-project with action active to resolve the project currently selected in the right-sidebar editor. If there is no active project, ask the user to select or create one. Then call video-project with action get and video-read-script to read the current revision before a mutation. Treat revision conflicts as a request to refresh; never guess a merge.\n\nEdit structure first: remove only explicitly identified timed ranges, order the story, and keep source media immutable. Add captions, composition, or decoration only when requested.\n\nDo not introduce unrequested music, B-roll, stock media, generative video or images, motion graphics, face tracking, or subject-aware reframing.\n\nThis MVP has transcript and timing evidence, not arbitrary visual-scene understanding. Never infer unseen actions or claim visual inspection from transcript text or a successful command.\n\nUse proof-frame or preview renders to create an inspectable review artifact. Distinguish FFmpeg/ffprobe technical validation from actual visual review, and report stale proof when the project revision changed.\n\nStop at an editable review checkpoint unless export was requested. For export, pin the current revision and preset, observe the durable job with video-render-status, and surface cancellation or invalid artifacts honestly.\n\nProtected media import and save-target selection require a Kun desktop interaction unless the caller already supplies valid opaque handles. In headless mode, return interaction-required instead of choosing a path or fabricating approval.",
         "allowedTools": [
           "video-project",
           "video-probe",
@@ -159,11 +145,11 @@
     "tools": [
       {
         "id": "video-project",
-        "description": "List, create, or read a bounded revision-aware Kun video project projection. Read the current revision before any edit.",
+        "description": "Resolve the active project, or list, create, or read a bounded revision-aware Kun video project projection. Read the current revision before any edit.",
         "inputSchema": {
           "type": "object",
           "properties": {
-            "action": { "type": "string", "enum": ["list", "get", "create"] },
+            "action": { "type": "string", "enum": ["active", "list", "get", "create"] },
             "projectId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]{0,127}$" },
             "name": { "type": "string", "minLength": 1, "maxLength": 160 },
             "fps": { "type": "object" },

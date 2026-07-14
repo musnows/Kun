@@ -31,11 +31,11 @@ const boundedOutput = {
 export const VIDEO_TOOL_DECLARATIONS = [
   {
     id: 'video-project',
-    description: 'List, create, or read a bounded revision-aware Kun video project projection. Read the current revision before any edit.',
+    description: 'Resolve the active project, or list, create, or read a bounded revision-aware Kun video project projection. Read the current revision before any edit.',
     inputSchema: {
       type: 'object',
       properties: {
-        action: { type: 'string', enum: ['list', 'get', 'create'] },
+        action: { type: 'string', enum: ['active', 'list', 'get', 'create'] },
         projectId: stableId,
         name: { type: 'string', minLength: 1, maxLength: 160 },
         fps: { type: 'object' },

@@ -1,4 +1,4 @@
-import type { AgentRunEvent, GeneratedArtifact, JobSnapshot } from '@kun/extension-api'
+import type { GeneratedArtifact, JobSnapshot } from '@kun/extension-api'
 import {
   useEffect,
   useMemo,
@@ -127,9 +127,9 @@ export function VideoEditorWorkbench({ controller }: VideoEditorWorkbenchProps):
             <TimelinePanel controller={controller} messages={messages} />
           </section>
 
-          <aside className="right-column" aria-label="Inspector and Agent">
+          <aside className="right-column" aria-label="Inspector and Agent coordination">
             <InspectorPanel controller={controller} item={selectedItem} caption={selectedCaption} messages={messages} />
-            <AgentPanel controller={controller} messages={messages} />
+            <AgentSyncPanel controller={controller} messages={messages} />
           </aside>
 
           <section className="bottom-strip" aria-label="Project output and history">
@@ -507,26 +507,27 @@ function RevisionPanel({ controller, messages }: { controller: EditorController;
   )
 }
 
-function AgentPanel({ controller, messages }: { controller: EditorController; messages: Messages }): React.JSX.Element {
-  const run = controller.state.agentRun
-  const [prompt, setPrompt] = useState('Review the current transcript and timeline. Confirm the intended audience, target duration, aspect ratio, and caption preference before proposing reversible structural edits. Stop at an editable review checkpoint.')
-  const [guidance, setGuidance] = useState('')
-  const terminal = !run || ['completed', 'failed', 'cancelled', 'budget-exhausted'].includes(run.state)
-  const create = (event: FormEvent): void => { event.preventDefault(); void controller.startAgent(prompt) }
-  const steer = (event: FormEvent): void => { event.preventDefault(); if (guidance.trim()) { void controller.steerAgent(guidance); setGuidance('') } }
+function AgentSyncPanel({ controller, messages }: { controller: EditorController; messages: Messages }): React.JSX.Element {
+  const { project, lastProjectChange, agentRun } = controller.state
   return (
-    <Panel title={messages.agent} actions={run && <span className={`run-state run-${run.state}`}>{run.state}</span>}>
+    <Panel title={messages.agent} actions={<span className="revision-badge">r{project?.currentRevision ?? 0}</span>}>
+      <div className="agent-sync-callout">
+        <strong>{messages.mainAgent}</strong>
+        <p>{messages.mainAgentHelp}</p>
+      </div>
+      <dl className="agent-sync-grid">
+        <div><dt>{messages.activeProject}</dt><dd>{project?.name ?? messages.noProject}</dd></div>
+        <div><dt>{messages.activeRevision}</dt><dd>{project ? `r${project.currentRevision}` : '—'}</dd></div>
+        <div><dt>{messages.agentTool}</dt><dd><code>video-project · active</code></dd></div>
+      </dl>
+      <div className="agent-sync-status" role="status" aria-live="polite">
+        <span className="agent-sync-dot" aria-hidden="true" />
+        <span>{lastProjectChange && lastProjectChange.projectId === project?.id
+          ? `${messages.lastSync}: ${lastProjectChange.reason} · r${lastProjectChange.revision}`
+          : messages.agentReady}</span>
+      </div>
+      {agentRun ? <p className="subtle">{messages.legacyRun}: {agentRun.state}</p> : null}
       <p className="boundary-note">{messages.unsupported}</p>
-      {!run || terminal ? (
-        <form className="field-stack" onSubmit={create}><label><span>Creative brief and review checkpoint</span><textarea rows={6} value={prompt} maxLength={12_000} onChange={(event) => setPrompt(event.target.value)} required /></label><button type="submit" disabled={controller.state.busy}>{messages.startAgent}</button></form>
-      ) : (
-        <>
-          {run.state === 'waiting-approval' && <StatusNotice severity="warning">{messages.approval}</StatusNotice>}
-          {run.state === 'waiting-user-input' && <StatusNotice severity="warning">{messages.userInput}</StatusNotice>}
-          <ol className="agent-events" aria-label="Recent bounded Agent events">{controller.state.agentEvents.slice(-12).map((event) => <li key={event.sequence}><small>#{event.sequence} {event.type}</small><span>{describeAgentEvent(event)}</span></li>)}</ol>
-          <form className="field-stack" onSubmit={steer}><label><span>Editable guidance</span><textarea rows={3} value={guidance} maxLength={4_000} onChange={(event) => setGuidance(event.target.value)} /></label><div className="button-row"><button type="submit">{messages.steerAgent}</button><button type="button" className="danger-button" onClick={() => void controller.cancelAgent()}>{messages.cancelAgent}</button></div></form>
-        </>
-      )}
     </Panel>
   )
 }
@@ -606,15 +607,6 @@ function segmentTimelineFrame(project: ProjectProjection, assetId: string, start
   const frameDelta = sourceDelta * project.fps.numerator * item.speed.denominator /
     (1_000_000 * project.fps.denominator * item.speed.numerator)
   return item.timelineStartFrame + Math.round(frameDelta)
-}
-
-function describeAgentEvent(event: AgentRunEvent): string {
-  if (event.type === 'state' || event.type === 'terminal') return event.state
-  if (event.type === 'progress') return event.message
-  if (event.type === 'steering-accepted') return `Guidance accepted (${event.steeringId})`
-  if (event.type === 'usage') return 'Usage updated'
-  const serialized = JSON.stringify(event.content)
-  return serialized.length > 400 ? `${serialized.slice(0, 397)}…` : serialized
 }
 
 function ticketForArtifact(tickets: RenderTicket[], artifact: GeneratedArtifact): RenderTicket | undefined {

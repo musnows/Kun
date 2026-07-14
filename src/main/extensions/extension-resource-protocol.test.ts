@@ -18,12 +18,14 @@ async function fixture(): Promise<ExtensionResourceDescriptor> {
   await mkdir(join(root, 'dist', 'assets'), { recursive: true })
   await writeFile(join(root, 'dist', 'index.html'), '<!doctype html>')
   await writeFile(join(root, 'dist', 'assets', 'app.js'), 'export {}')
+  await writeFile(join(root, 'dist', 'icon.svg'), '<svg xmlns="http://www.w3.org/2000/svg"/>')
   return {
     extensionId: 'acme.example',
     extensionVersion: '1.0.0',
     packageRoot: root,
-    exactFiles: ['dist/index.html'],
-    localResourceRoots: ['dist/assets']
+    exactFiles: ['dist/index.html', 'dist/icon.svg'],
+    localResourceRoots: ['dist/assets'],
+    hostIconFiles: ['dist/icon.svg']
   }
 }
 
@@ -58,6 +60,25 @@ describe('kun-extension protocol confinement', () => {
       'kun-extension://acme.example/kun-extension.json',
       resolveDescriptor
     )).rejects.toThrow(/RESOURCE_NOT_DECLARED/)
+  })
+
+  it('allows cross-origin host embedding only for declared icon files', async () => {
+    const descriptor = await fixture()
+    await expect(resolveKunExtensionResource(
+      'kun-extension://acme.example/dist/icon.svg?kunHostResource=icon',
+      async () => descriptor
+    )).resolves.toMatchObject({ relativePath: 'dist/icon.svg', hostResource: 'icon' })
+    await expect(resolveKunExtensionResource(
+      'kun-extension://acme.example/dist/index.html?kunHostResource=icon',
+      async () => descriptor
+    )).rejects.toThrow(/HOST_ICON_NOT_DECLARED/)
+    expect(extensionResourceHeaders('dist/icon.svg', true)).toMatchObject({
+      'Content-Type': 'image/svg+xml',
+      'Cross-Origin-Resource-Policy': 'cross-origin'
+    })
+    expect(extensionResourceHeaders('dist/icon.svg')).toMatchObject({
+      'Cross-Origin-Resource-Policy': 'same-origin'
+    })
   })
 
   it('rejects traversal, cross-extension descriptors and symlink escape', async () => {
