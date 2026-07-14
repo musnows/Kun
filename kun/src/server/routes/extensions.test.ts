@@ -57,6 +57,40 @@ describe('extension management routes', () => {
     expect(oversized.status).toBe(413)
   })
 
+  it('projects launchable view metadata before workspace trust is granted', async () => {
+    const runtime = await createRuntime()
+    const router = buildExtensionManagementRouter(runtime)
+    const source = join(cleanupRoots.at(-1)!, 'view-source')
+    const archive = join(cleanupRoots.at(-1)!, 'view-demo.kunx')
+    const permissions = ['ui.views', 'webview']
+    await writeExtensionSource(source, '1.0.0', permissions, true)
+    await packKunx(source, archive, { compatibility })
+    await dispatch(router, 'POST', '/v1/extensions/install', {
+      source: 'archive',
+      path: archive,
+      grantedPermissions: permissions
+    }, true)
+    const workspace = join(cleanupRoots.at(-1)!, 'view-workspace')
+    await mkdir(workspace)
+
+    const listed = await dispatch(
+      router,
+      'GET',
+      `/v1/extensions?workspace_root=${encodeURIComponent(workspace)}`,
+      undefined,
+      true
+    )
+
+    expect(listed.status).toBe(200)
+    expect(listed.body.extensions[0]).toMatchObject({
+      id: 'acme.demo',
+      workspaceTrusted: false,
+      versions: [{
+        views: [{ id: 'editor', title: 'Demo editor', point: 'views.fullPage' }]
+      }]
+    })
+  })
+
   it('installs, scopes permissions and enablement, rolls back, diagnoses, and uninstalls', async () => {
     const runtime = await createRuntime()
     const beforePermissionChange = vi.fn(async () => undefined)
@@ -211,7 +245,12 @@ async function dispatch(
   return { status: response.status, body: JSON.parse(response.body) as Record<string, any> }
 }
 
-async function writeExtensionSource(root: string, version: string, permissions: string[]): Promise<void> {
+async function writeExtensionSource(
+  root: string,
+  version: string,
+  permissions: string[],
+  withView = false
+): Promise<void> {
   await mkdir(join(root, 'dist'), { recursive: true })
   await writeFile(join(root, 'kun-extension.json'), `${JSON.stringify({
     publisher: 'acme',
@@ -222,14 +261,24 @@ async function writeExtensionSource(root: string, version: string, permissions: 
     apiVersion: '1.0.0',
     engines: { kun: '*' },
     main: 'dist/main.mjs',
-    activationEvents: ['onStartup'],
-    contributes: {},
+    activationEvents: withView ? ['onView:editor'] : ['onStartup'],
+    contributes: withView
+      ? {
+          'views.fullPage': [{
+            id: 'editor',
+            title: 'Demo editor',
+            entry: 'dist/index.html',
+            localResourceRoots: ['dist']
+          }]
+        }
+      : {},
     permissions,
     stateSchemaVersion: 0
   }, null, 2)}\n`)
   await writeFile(join(root, 'README.md'), '# Demo\n')
   await writeFile(join(root, 'LICENSE'), 'MIT\n')
   await writeFile(join(root, 'dist/main.mjs'), 'export async function activate() {}\n')
+  if (withView) await writeFile(join(root, 'dist/index.html'), '<!doctype html><title>Demo</title>\n')
 }
 
 async function makeWritable(root: string): Promise<void> {

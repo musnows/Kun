@@ -6,6 +6,7 @@ import {
   FileArchive,
   FolderCode,
   Globe2,
+  PanelTop,
   Puzzle,
   RefreshCw,
   RotateCcw,
@@ -49,12 +50,14 @@ export function ExtensionManagementCenter({
   leftSidebarCollapsed,
   workspaceRoot,
   onToggleLeftSidebar,
-  onOpenIntegrations
+  onOpenIntegrations,
+  onOpenView
 }: {
   leftSidebarCollapsed: boolean
   workspaceRoot: string
   onToggleLeftSidebar: () => void
   onOpenIntegrations: () => void
+  onOpenView: (contributionId: string) => void
 }): ReactElement {
   const { i18n } = useTranslation()
   const zh = i18n.language.toLowerCase().startsWith('zh')
@@ -293,6 +296,29 @@ export function ExtensionManagementCenter({
                           )
                         }}
                       />
+                      {selected ? (selected.views ?? []).map((view) => {
+                        const canOpen = enabled && entry.workspaceTrusted !== false &&
+                          (entry.workspaceGrantedPermissions ?? selected.grantedPermissions).includes('ui.views') &&
+                          (entry.workspaceGrantedPermissions ?? selected.grantedPermissions).includes('webview')
+                        return (
+                          <ActionButton
+                            key={`${view.point}:${view.id}`}
+                            icon={<PanelTop className="h-3.5 w-3.5" />}
+                            label={canOpen
+                              ? copy(`打开 ${view.title}`, `Open ${view.title}`)
+                              : copy(`授权后打开 ${view.title}`, `Authorize to open ${view.title}`)}
+                            disabled={busyId !== null || !selected || !workspaceRoot || !entry.globallyEnabled}
+                            onClick={() => {
+                              if (canOpen) {
+                                onOpenView(`extension:${entry.id}/${view.id}`)
+                                return
+                              }
+                              setPermissionEditorId(entry.id)
+                              setPermissionDraft(selected.requestedPermissions)
+                            }}
+                          />
+                        )
+                      }) : null}
                       <ActionButton icon={<Trash2 className="h-3.5 w-3.5" />} label={copy('卸载', 'Uninstall')} disabled={busyId !== null} danger onClick={() => void uninstall(entry)} />
                     </div>
                     {selected?.requestedPermissions.length ? <div className="mt-3 text-[10.5px] text-ds-faint">{copy('请求权限：', 'Requested permissions: ')}{selected.requestedPermissions.map((permission) => boundedText(permission, 256)).join(', ')}</div> : null}

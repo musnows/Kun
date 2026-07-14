@@ -49,6 +49,7 @@ export type WorkbenchStageRouterProps = {
   extensions: {
     workspaceRoot: string
     onOpenIntegrations: () => void
+    onOpenView: (contributionId: string) => void
   }
 }
 
@@ -81,6 +82,7 @@ export function WorkbenchStageRouter({
             onToggleLeftSidebar={onToggleLeftSidebar}
             workspaceRoot={extensions.workspaceRoot}
             onOpenIntegrations={extensions.onOpenIntegrations}
+            onOpenView={extensions.onOpenView}
           />
         </Suspense>
       ) : route === 'plugins' ? (

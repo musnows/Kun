@@ -10,6 +10,7 @@ import {
   ExtensionActivityBar,
   firstViewForContainer,
   readStoredExtensionSurfaceId,
+  resolveCommandOpenView,
   viewBelongsToContainer,
   type ExtensionWorkbenchViewGroups,
   writeStoredExtensionSurfaceId
@@ -102,5 +103,41 @@ describe('Extension workbench surface consumers', () => {
     expect(readStoredExtensionSurfaceId(storage)).toBeNull()
     writeStoredExtensionSurfaceId(storage, null)
     expect(readStoredExtensionSurfaceId(storage)).toBeNull()
+  })
+
+  it('resolves an extension command open-view result only within the owning extension', () => {
+    const { registry } = fixture()
+    const commands = registry.list('commands')
+    registry.replaceExtensions(ExtensionWorkbenchSnapshotSchema.parse({
+      schemaVersion: 1,
+      revision: 2,
+      extensions: [{
+        id: 'acme.workbench',
+        version: '1.0.0',
+        enabled: true,
+        compatible: true,
+        workspaceTrusted: true,
+        grantedPermissions: ['commands.register', 'ui.views', 'webview'],
+        contributes: ExtensionContributionsSchema.parse({
+          commands: [{ id: 'open', title: 'Open' }],
+          'views.fullPage': [{ id: 'dashboard', title: 'Dashboard', entry: 'dist/dashboard.html' }]
+        })
+      }]
+    }))
+    const liveCommands = registry.list('commands')
+    const liveViews = registry.list('views.fullPage')
+    expect(commands).toHaveLength(0)
+    expect(resolveCommandOpenView(
+      'extension:acme.workbench/open',
+      { action: 'open-view', viewId: 'dashboard' },
+      liveCommands,
+      liveViews
+    )?.id).toBe('extension:acme.workbench/dashboard')
+    expect(resolveCommandOpenView(
+      'builtin:unknown',
+      { action: 'open-view', viewId: 'dashboard' },
+      liveCommands,
+      liveViews
+    )).toBeUndefined()
   })
 })

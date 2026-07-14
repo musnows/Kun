@@ -34,6 +34,31 @@ export type ExtensionRightContainerTarget = {
   target: RegisteredContribution<'views.rightSidebar'>
 }
 
+export function resolveCommandOpenView(
+  commandId: string,
+  result: unknown,
+  commands: readonly RegisteredContribution<'commands'>[],
+  views: readonly ExtensionWorkbenchView[]
+): ExtensionWorkbenchView | undefined {
+  if (
+    !result ||
+    typeof result !== 'object' ||
+    Array.isArray(result) ||
+    !('action' in result) ||
+    result.action !== 'open-view' ||
+    !('viewId' in result) ||
+    typeof result.viewId !== 'string'
+  ) return undefined
+  const command = commands.find((candidate) => candidate.id === commandId)
+  if (command?.owner.kind !== 'extension') return undefined
+  const extensionId = command.owner.extensionId
+  return views.find((candidate) =>
+    candidate.owner.kind === 'extension' &&
+    candidate.owner.extensionId === extensionId &&
+    candidate.payload.id === result.viewId
+  )
+}
+
 export const EXTENSION_SURFACE_LAYOUT_STORAGE_KEY = 'kun.extension.surface-layout.v1'
 
 export function readStoredExtensionSurfaceId(

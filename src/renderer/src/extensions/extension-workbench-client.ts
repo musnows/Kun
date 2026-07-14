@@ -46,6 +46,11 @@ export type ExtensionManagementVersion = {
   stateSchemaVersion: number
   displayName?: string
   description?: string
+  views?: Array<{
+    id: string
+    title: string
+    point: 'views.editorTab' | 'views.fullPage'
+  }>
   modelProviders?: ModelProviderDeclaration[]
   authentication?: AuthenticationProviderDeclaration[]
   mutable: boolean

@@ -65,6 +65,7 @@ import {
   ExtensionActivityBar,
   firstViewForContainer,
   readStoredExtensionSurfaceId,
+  resolveCommandOpenView,
   type ExtensionRightContainerTarget,
   type ExtensionWorkbenchView,
   type ExtensionWorkbenchViewGroups,
@@ -920,8 +921,21 @@ export function Workbench(): ReactElement {
             extensionAttachmentContextMenus,
             extensionCommands,
             extensionResultPreviews,
-            onExtensionCommand: (commandId, context) =>
-              extensionWorkbenchClient.invokeCommand(commandId, context, workspaceRoot || undefined)
+            onExtensionCommand: async (commandId, context) => {
+              const result = await extensionWorkbenchClient.invokeCommand(
+                commandId,
+                context,
+                workspaceRoot || undefined
+              )
+              const view = resolveCommandOpenView(
+                commandId,
+                result,
+                extensionCommands,
+                extensionSurfaceItems
+              )
+              if (view) openExtensionSurface(view)
+              return result
+            }
           },
           sideChat: {
             open: sidePanel.open,
@@ -959,7 +973,8 @@ export function Workbench(): ReactElement {
         planOverlay={planOverlay}
         extensions={{
           workspaceRoot,
-          onOpenIntegrations: openPluginsView
+          onOpenIntegrations: openPluginsView,
+          onOpenView: selectExtensionSurface
         }}
       />
       )}

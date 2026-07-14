@@ -10,6 +10,7 @@ import {
   inspectKunxArchive,
   type ArchiveValidationOptions,
   type DevelopmentExtensionRecord,
+  type ExtensionManifest,
   type ExtensionRegistryEntry,
   type InstalledExtensionVersion
 } from '../../extensions/index.js'
@@ -461,6 +462,7 @@ function projectInstalledVersion(version: InstalledExtensionVersion) {
     stateSchemaVersion: version.manifest.stateSchemaVersion,
     displayName: version.manifest.displayName,
     description: version.manifest.description,
+    views: projectManagedViews(version.manifest),
     modelProviders: structuredClone(version.manifest.contributes.modelProviders),
     authentication: structuredClone(version.manifest.contributes.authentication),
     mutable: false
@@ -484,10 +486,21 @@ function projectDevelopment(development: DevelopmentExtensionRecord) {
     stateSchemaVersion: development.manifest.stateSchemaVersion,
     displayName: development.manifest.displayName,
     description: development.manifest.description,
+    views: projectManagedViews(development.manifest),
     modelProviders: structuredClone(development.manifest.contributes.modelProviders),
     authentication: structuredClone(development.manifest.contributes.authentication),
     mutable: true
   }
+}
+
+function projectManagedViews(manifest: ExtensionManifest) {
+  return (['views.editorTab', 'views.fullPage'] as const).flatMap((point) =>
+    manifest.contributes[point].map((view) => ({
+      id: view.id,
+      title: view.title,
+      point
+    }))
+  )
 }
 
 function projectInspection(inspection: Awaited<ReturnType<typeof inspectKunxArchive>>) {

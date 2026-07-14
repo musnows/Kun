@@ -40,7 +40,8 @@ describe('ExtensionManagementCenter', () => {
       leftSidebarCollapsed: false,
       workspaceRoot: '/workspace',
       onToggleLeftSidebar: vi.fn(),
-      onOpenIntegrations: vi.fn()
+      onOpenIntegrations: vi.fn(),
+      onOpenView: vi.fn()
     }))
     expect(html).toContain('Kun Extension Center')
     expect(html).toContain('Looking for UI appearance packs, MCP, or Skills?')
