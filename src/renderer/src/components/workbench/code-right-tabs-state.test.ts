@@ -50,6 +50,18 @@ describe('code right tab state', () => {
     expect(expandCodeRightTabs(collapsed)).toEqual(opened)
   })
 
+  it('expands an empty workspace without selecting a default tool', () => {
+    const expanded = expandCodeRightTabs(emptyCodeRightTabsState())
+
+    expect(expanded).toEqual({
+      version: 1,
+      tabs: [],
+      activeId: null,
+      expanded: true
+    })
+    expect(normalizeCodeRightTabsState(expanded)).toEqual(expanded)
+  })
+
   it('migrates legacy short and fully qualified modes', () => {
     expect(migrateLegacyRightPanelMode('browser')).toMatchObject({
       tabs: [BUILTIN_RIGHT_PANEL_IDS.browser],

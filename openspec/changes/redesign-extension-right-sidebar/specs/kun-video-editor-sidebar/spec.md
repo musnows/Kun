@@ -5,7 +5,7 @@ The bundled Kun Video Editor manifest SHALL declare one primary `views.rightSide
 
 #### Scenario: Trusted video extension is discovered
 - **WHEN** `kun-examples.kun-video-editor` is enabled and trusted for the active workspace
-- **THEN** its packaged video icon and localized title SHALL appear directly in Code mode's `+` tool menu and clicking it SHALL open the editor in an independent tab beside the main conversation
+- **THEN** its packaged video icon and localized title SHALL appear directly in Code mode's vertical right rail and `+` tool menu and clicking either entry SHALL open the editor in an independent tab beside the main conversation
 
 ### Requirement: Docked editor remains a complete usable workbench
 The video Webview SHALL provide project selection, player, timeline, media and transcript controls, inspector, captions, revision history, preview, render jobs, and export in a responsive docked layout. It MUST remain keyboard reachable and usable at the Host's minimum supported extension-panel width.

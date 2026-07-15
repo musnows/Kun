@@ -198,7 +198,7 @@ export function CodeRightPanelTabs({
   }
 
   return (
-    <div className="ds-code-right-tabs relative flex h-11 shrink-0 items-center gap-1 border-b border-ds-border-muted bg-ds-surface-subtle/90 px-2 backdrop-blur-xl dark:bg-ds-card/90">
+    <div className="ds-code-right-tabs ds-no-drag relative flex h-11 shrink-0 items-center gap-1 border-b border-ds-border-muted bg-ds-surface-subtle/90 px-2 backdrop-blur-xl dark:bg-ds-card/90">
       <div
         role="tablist"
         aria-label={t('rightPanelTabs')}

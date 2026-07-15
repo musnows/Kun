@@ -133,7 +133,7 @@ export function WorkbenchRightPanel({
   onCollapse
 }: WorkbenchRightPanelProps): ReactElement | null {
   if (route === 'chat' && rightPanelMode !== BUILTIN_RIGHT_PANEL_IDS.sddAi && code) {
-    if (code.state.tabs.length === 0) return null
+    if (!visible && code.state.tabs.length === 0) return null
     return (
       <CodeRightPanelWorkspace
         visible={visible}
@@ -347,7 +347,7 @@ function CodeRightPanelWorkspace({
           onSelectExtension={code.onSelectExtension}
         />
         <Suspense fallback={<div className="h-full w-full bg-ds-sidebar" />}>
-          <div className="relative min-h-0 flex-1">
+          <div className="relative min-h-0 flex-1 bg-ds-sidebar">
             {code.state.tabs.map((id) => {
               const active = code.state.activeId === id
               if (!visited.has(id) && !active) return null

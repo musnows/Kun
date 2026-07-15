@@ -115,7 +115,7 @@ kun extension install ./kun-video-editor-0.4.1.kunx
 ```
 
 Review and accept the declared permissions, enable the extension in a trusted
-workspace, then choose **Kun Video Editor** directly from Code mode's `+` tool menu. Kun opens it in its own right-workspace tab. Installation validates the archive's
+workspace, then choose **Kun Video Editor** from Code mode's vertical right rail or `+` tool menu. Kun opens it in its own right-workspace tab. Installation validates the archive's
 integrity manifest; it does not install FFmpeg, enable cloud ASR, or grant media
 paths. Media import and export still require protected Host pickers.
 
@@ -187,7 +187,7 @@ invoke a generative service.
 
 1. Use the default installed extension, or build and install the `.kunx` with the
    Kun Extension CLI. Grant it in a trusted workspace, then choose its direct
-   item from Code mode's `+` tool menu. The editor opens in an independent tab beside the main conversation.
+   item from Code mode's vertical right rail or `+` tool menu. The editor opens in an independent tab beside the main conversation.
 2. Create a project. The compact header remains available while Script, Clips,
    Timeline, Properties, or Output is active. Select the frame rate and one of
    the supported canvas presets.

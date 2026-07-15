@@ -45,11 +45,13 @@ const RIGHT_PANEL_MAX = 760
 const SIDEBAR_HARD_MIN = 180
 const MAIN_MIN_WIDTH = 560
 const PANEL_RESIZE_HANDLE_WIDTH = 5
+export const RAIL_WIDTH = 48
 export const WORKBENCH_RESIZE_CLASS = 'ds-workbench-resizing'
 
 export type WorkbenchWidthConstraints = {
   mainMinWidth: number
   rightPanelMax: number
+  fixedChromeWidth?: number
 }
 
 const DEFAULT_WIDTH_CONSTRAINTS: WorkbenchWidthConstraints = {
@@ -59,7 +61,8 @@ const DEFAULT_WIDTH_CONSTRAINTS: WorkbenchWidthConstraints = {
 
 const CODE_TABS_WIDTH_CONSTRAINTS: WorkbenchWidthConstraints = {
   mainMinWidth: MAIN_MIN_WIDTH,
-  rightPanelMax: Number.POSITIVE_INFINITY
+  rightPanelMax: Number.POSITIVE_INFINITY,
+  fixedChromeWidth: RAIL_WIDTH
 }
 
 function clampWidth(value: number, min: number, max: number): number {
@@ -185,10 +188,11 @@ export function fitWorkbenchWidths(
 ): { left: number; right: number } {
   const mainMinWidth = constraints.mainMinWidth
   const rightPanelMax = constraints.rightPanelMax
+  const fixedChromeWidth = constraints.fixedChromeWidth ?? 0
   const handleWidth =
     (panels.leftPanelVisible ? PANEL_RESIZE_HANDLE_WIDTH : 0) +
     (panels.rightPanelVisible ? PANEL_RESIZE_HANDLE_WIDTH : 0)
-  const usableWidth = Math.max(0, containerWidth - handleWidth)
+  const usableWidth = Math.max(0, containerWidth - handleWidth - fixedChromeWidth)
 
   if (!panels.leftPanelVisible) {
     if (!panels.rightPanelVisible) {
@@ -314,7 +318,7 @@ export function useWorkbenchLayout({
     ? writeAssistantOpen
     : route === 'design'
       ? designAssistantOpen || designImplementOpen
-      : rightPanelMode !== null
+      : codeRightTabs.expanded || rightPanelMode !== null
   const widthConstraints = workbenchWidthConstraintsForRightPanel(route, rightPanelMode)
   const ensureInitialCodePanelWidth = useCallback((): void => {
     if (codeRightTabsRef.current.tabs.length === 0) {
@@ -481,8 +485,9 @@ export function useWorkbenchLayout({
   }, [transientRightPanelMode])
 
   const expandRightPanel = useCallback((): void => {
+    ensureInitialCodePanelWidth()
     setCodeRightTabs((current) => expandCodeRightTabs(current))
-  }, [])
+  }, [ensureInitialCodePanelWidth])
 
   const setRightPanelMode: Dispatch<SetStateAction<RightPanelMode>> = useCallback((value) => {
     const currentMode = transientRightPanelMode ?? (codeRightTabs.expanded ? codeRightTabs.activeId : null)

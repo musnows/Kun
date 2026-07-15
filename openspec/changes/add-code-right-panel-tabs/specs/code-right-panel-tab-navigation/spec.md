@@ -51,6 +51,14 @@ The right workspace SHALL provide a horizontally scrollable tablist with roving 
 - **WHEN** the active tab is closed
 - **THEN** Kun SHALL activate the next tab to its right, otherwise the previous tab, and SHALL collapse the workspace if no tabs remain
 
+### Requirement: Right workspace may open without selecting a tool
+The Code right workspace SHALL support an expanded state with an empty tab list and no active contribution. In that state Kun SHALL render the tab chrome, an operable `+` launcher, and blank workspace content until the user chooses a tool from the `+` menu or vertical icon rail.
+
+#### Scenario: User expands an empty right workspace
+- **WHEN** no Code right-workspace tabs exist and the user activates the unified right-workspace toggle
+- **THEN** Kun SHALL expand an empty workspace without automatically opening Files, Browser, or another contribution
+- **AND** selecting a launcher SHALL create or activate exactly one matching tab
+
 ### Requirement: Tab state is workspace-scoped and backward compatible
 Kun SHALL persist a versioned ordered tab list, active tab, expanded state, and existing right-panel width per normalized workspace. A valid legacy single `rightPanelMode` SHALL migrate into a one-tab registry, while unknown, unavailable, or unauthorized contributions MUST be removed fail-closed.
 
@@ -69,12 +77,12 @@ Browser, Plan, and Side conversations SHALL close when their owning active threa
 - **WHEN** the user selects a different main conversation
 - **THEN** Kun SHALL close the previous Side conversations tab and SHALL NOT show its child conversations under the new parent
 
-### Requirement: Code layout removes duplicate navigation surfaces
-Code mode SHALL NOT render the legacy vertical right rail, separate file-tree side column, or bottom terminal drawer. Opening a Code tool SHALL use at least the 560-pixel preferred right-workspace width when space permits, SHALL preserve user resizing, and SHALL leave at least the existing 560-pixel minimum for the main conversation.
+### Requirement: Code layout retains the launcher rail without duplicate content columns
+Code mode SHALL retain the existing 48-pixel vertical icon rail as a direct launcher while it SHALL NOT render the separate file-tree side column or bottom terminal drawer. Rail and `+` menu selections SHALL use the same singleton tab controller. Opening the empty workspace or a Code tool SHALL use at least the 560-pixel preferred right-workspace width when space permits, SHALL preserve user resizing, and SHALL leave at least the existing 560-pixel minimum for the main conversation after reserving the rail.
 
 #### Scenario: User opens Files on a wide desktop
 - **WHEN** Code mode has sufficient width and Files is opened from a collapsed state
-- **THEN** Kun SHALL open the tabbed right workspace at no less than the preferred width without rendering the old rail or an additional file column
+- **THEN** Kun SHALL open the tabbed right workspace at no less than the preferred width beside the retained icon rail without rendering an additional file column
 
 ### Requirement: Non-Code workspaces remain unchanged
 Write, Design, and SDD-specific assistant panels SHALL retain their existing navigation, placement, sizing, and lifecycle.

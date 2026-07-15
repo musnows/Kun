@@ -642,20 +642,11 @@ export function Workbench(): ReactElement {
       collapseRightPanel()
       return
     }
-    if (codeRightTabs.tabs.length > 0) {
-      expandRightPanel()
-      return
-    }
-    openRightPanelTab(
-      fileTreeWorkspaceRoot ? BUILTIN_RIGHT_PANEL_IDS.files : BUILTIN_RIGHT_PANEL_IDS.browser
-    )
+    expandRightPanel()
   }, [
     codeRightTabs.expanded,
-    codeRightTabs.tabs.length,
     collapseRightPanel,
-    expandRightPanel,
-    fileTreeWorkspaceRoot,
-    openRightPanelTab
+    expandRightPanel
   ])
 
   useEffect(() => {
@@ -1193,7 +1184,23 @@ export function Workbench(): ReactElement {
               return result
             }
           },
-          rightPanel
+          rightPanel,
+          sideRail: {
+            rightPanelMode,
+            onToggleRightPanelMode: openCodeRightTool,
+            planPanelEnabled: Boolean(activeGuiPlan),
+            canvasEnabled: true,
+            sideChatCount: currentSideConversations.length,
+            sideChatRunningCount: currentSideRunningCount,
+            sideChatOpen: rightPanelMode === BUILTIN_RIGHT_PANEL_IDS.sideConversations,
+            sideChatEnabled: runtimeConnection === 'ready' && Boolean(activeThreadId),
+            fileTreeOpen: rightPanelMode === BUILTIN_RIGHT_PANEL_IDS.files,
+            fileTreeEnabled: Boolean(fileTreeWorkspaceRoot),
+            onToggleFileTree: () => openCodeRightTool(BUILTIN_RIGHT_PANEL_IDS.files),
+            onOpenSideChat: () => openCodeRightTool(BUILTIN_RIGHT_PANEL_IDS.sideConversations),
+            extensionItems: extensionRightRailItems,
+            onSelectExtension: selectRightRailExtension
+          }
         }}
         imageAnnotationHost={imageAnnotationHost}
         planOverlay={planOverlay}

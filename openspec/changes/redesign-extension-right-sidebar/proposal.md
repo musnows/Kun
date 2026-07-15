@@ -4,7 +4,7 @@ Kun currently exposes extension UI through a host-level launcher that mixes seve
 
 ## What Changes
 
-- Make `views.rightSidebar` the canonical discoverable extension UI: every visible contribution registers a direct item in Code mode's `+` tool menu and opens its own isolated top-level tab.
+- Make `views.rightSidebar` the canonical discoverable extension UI: every visible contribution registers a direct icon in Code mode's vertical right rail and an item in the `+` tool menu; either launcher opens its own isolated top-level tab.
 - Remove the aggregate extension-view launcher from the workbench rail. Existing non-right View contribution schemas remain accepted for Extension API v1 compatibility, but Kun no longer presents them as the default extension navigation model.
 - Keep the Host responsible for ordering, selection, panel sizing, focus, trust, permissions, session isolation, and fallback icons; an extension supplies only bounded declarative metadata and its sandboxed Webview.
 - Define a shared-workspace coordination model in which a main Kun Agent and an open extension panel use the extension's registered tools and workspace-scoped state rather than private renderer imports or cross-Webview DOM access.
@@ -16,7 +16,7 @@ Kun currently exposes extension UI through a host-level launcher that mixes seve
 
 ### New Capabilities
 
-- `extension-right-sidebar-navigation`: Direct extension tool-menu items and isolated tabs in Kun's Code right workspace, including ordering, selection, lifecycle, compatibility, and removal of the nested aggregate launcher.
+- `extension-right-sidebar-navigation`: Direct extension rail icons, tool-menu items, and isolated tabs in Kun's Code right workspace, including ordering, selection, lifecycle, compatibility, and removal of the nested aggregate launcher.
 - `extension-agent-panel-coordination`: Workspace-scoped coordination between the main Agent, extension tools, and an open extension panel without exposing renderer internals.
 - `kun-video-editor-sidebar`: A docked Kun Video Editor panel that shares project revisions with the main Agent through the public extension tool and event surfaces.
 

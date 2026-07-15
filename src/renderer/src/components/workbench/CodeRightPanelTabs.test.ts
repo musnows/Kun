@@ -95,4 +95,37 @@ describe('CodeRightPanelTabs', () => {
     act(() => items[1].props.onClick())
     expect(onOpen).toHaveBeenCalledWith(BUILTIN_RIGHT_PANEL_IDS.browser)
   })
+
+  it('keeps the plus launcher operable in an empty Electron no-drag workspace', () => {
+    const onOpen = vi.fn()
+    let renderer: ReactTestRenderer
+    act(() => {
+      renderer = create(createElement(CodeRightPanelTabs, {
+        state: { ...emptyCodeRightTabsState(), expanded: true },
+        domIdPrefix: 'empty-menu',
+        planEnabled: false,
+        filesEnabled: true,
+        sideConversationsEnabled: true,
+        sideConversationCount: 0,
+        sideConversationRunningCount: 0,
+        extensionItems: [],
+        onOpen,
+        onActivate: vi.fn(),
+        onClose: vi.fn(),
+        onCollapse: vi.fn(),
+        onSelectExtension: vi.fn()
+      }))
+    })
+
+    const chrome = renderer!.root.find((node) =>
+      typeof node.props.className === 'string' && node.props.className.includes('ds-code-right-tabs'))
+    expect(chrome.props.className).toContain('ds-no-drag')
+    expect(renderer!.root.findAll((node) => node.props.role === 'tab')).toHaveLength(0)
+
+    const addButton = renderer!.root.findByProps({ 'aria-label': 'Open right workspace tool' })
+    act(() => addButton.props.onClick())
+    const browser = renderer!.root.findByProps({ 'data-tool-id': BUILTIN_RIGHT_PANEL_IDS.browser })
+    act(() => browser.props.onClick())
+    expect(onOpen).toHaveBeenCalledWith(BUILTIN_RIGHT_PANEL_IDS.browser)
+  })
 })

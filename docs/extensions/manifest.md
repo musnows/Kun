@@ -178,7 +178,7 @@ v1 支持：
 | `authentication` | 认证 Provider | id、认证类型和受保护流程元数据 |
 | `hostContentScripts` | Direct DOM | 静态脚本/样式、允许宿主 surface、激活条件；高风险且不稳定 |
 
-`views.rightSidebar` 是新扩展的规范可发现 UI：View 的包内 icon 和本地化标题会直接成为 Code 模式 `+` 工具菜单中的项目，并在主会话旁打开独立标签。其它 `views.*` 位置继续保留 Extension API v1 解析和命令路由兼容，但宿主不会为它们生成嵌套的聚合扩展选择器。
+`views.rightSidebar` 是新扩展的规范可发现 UI：View 的包内 icon 和本地化标题会出现在 Code 模式右侧竖向图标栏，并直接成为 `+` 工具菜单中的项目；任一入口都会在主会话旁打开同一个独立标签。其它 `views.*` 位置继续保留 Extension API v1 解析和命令路由兼容，但宿主不会为它们生成嵌套的聚合扩展选择器。
 
 ### Contribution 隐含权限
 

@@ -1,11 +1,11 @@
 ## ADDED Requirements
 
 ### Requirement: Extensions self-register direct right-workspace entries
-Kun SHALL render every visible `views.rightSidebar` contribution as a direct, independently selectable entry in Code mode's `+` tool menu. Opening the entry SHALL create or activate that contribution's independent top-level tab. The entry MUST use the extension-declared packaged icon when valid, MUST use a Host-owned fallback when absent, and MUST retain the fully qualified contribution identity for selection and accessibility.
+Kun SHALL render every visible `views.rightSidebar` contribution as a direct, independently selectable icon in Code mode's vertical right rail and as an entry in the `+` tool menu. Opening either entry SHALL create or activate the same independent top-level tab. Both entries MUST use the extension-declared packaged icon when valid, MUST use a Host-owned fallback when absent, and MUST retain the fully qualified contribution identity for selection and accessibility.
 
 #### Scenario: Extension declares an icon and right-sidebar View
 - **WHEN** an enabled, compatible, trusted extension declares `views.rightSidebar` View `editor` with a valid packaged icon
-- **THEN** Kun SHALL display that icon and localized title directly in the tool menu and clicking it SHALL open `extension:<extension-id>/editor` in its own tab
+- **THEN** Kun SHALL display that icon and localized title in the vertical rail and tool menu and clicking either entry SHALL open `extension:<extension-id>/editor` in its own tab
 
 #### Scenario: Extension omits its icon
 - **WHEN** a visible right-sidebar View has no icon
@@ -18,7 +18,7 @@ Kun SHALL render every visible `views.rightSidebar` contribution as a direct, in
 - **AND** approval SHALL refresh contribution discovery and open the same View in the right panel
 
 #### Scenario: Host requests an extension icon resource
-- **WHEN** Kun renders a declared extension icon in the Code tool menu
+- **WHEN** Kun renders a declared extension icon in the Code vertical rail or tool menu
 - **THEN** the resource protocol SHALL serve only an exact manifest-declared icon path as an image and SHALL retain existing isolation for scripts, Views, and undeclared package files
 
 ### Requirement: Extension UI navigation has no aggregate launcher
@@ -26,7 +26,7 @@ Kun SHALL NOT require users to open a generic extension picker before selecting 
 
 #### Scenario: Multiple extensions register right-sidebar Views
 - **WHEN** two enabled extensions each contribute one visible right-sidebar View
-- **THEN** the tool menu SHALL show two directly selectable extension entries in deterministic order
+- **THEN** the vertical rail and tool menu SHALL show two directly selectable extension entries in deterministic order
 
 #### Scenario: Only a legacy full-page View is installed
 - **WHEN** an Extension API v1 manifest contributes a permitted `views.fullPage` View but no right-sidebar View
@@ -36,12 +36,12 @@ Kun SHALL NOT require users to open a generic extension picker before selecting 
 An opened extension right-sidebar View SHALL use the existing Host-owned resizable right panel, focus, collapse, persistence, trust, permission, and View Session lifecycle. Extension code MUST NOT select absolute coordinates, replace the rail, overlay protected UI, or receive private renderer access.
 
 #### Scenario: User opens a docked extension panel
-- **WHEN** the user selects a direct extension tool-menu entry
+- **WHEN** the user selects a direct extension rail or tool-menu entry
 - **THEN** Kun SHALL open its isolated View in an independent tab beside the main conversation at a useful Host-clamped width while preserving user resize and collapse controls
 
 #### Scenario: Permission is revoked while open
 - **WHEN** a permission required by the selected right-sidebar View is revoked
-- **THEN** Kun SHALL remove the tool-menu entry and tab, dispose the View Session, and retain unrelated built-in and extension tab state
+- **THEN** Kun SHALL remove the rail icon, tool-menu entry, and tab, dispose the View Session, and retain unrelated built-in and extension tab state
 
 #### Scenario: Active conversation has its own workspace
 - **WHEN** the selected conversation workspace differs from the globally selected project workspace
@@ -63,11 +63,11 @@ Extension API v1 schemas and runtime routing SHALL continue to accept documented
 - **THEN** validation SHALL continue to accept it subject to its existing permissions and constraints
 
 ### Requirement: Host-rendered extension chrome follows Kun locale
-Extension API manifests SHALL support bounded locale overlays for extension metadata and known contribution display fields. Kun SHALL resolve those fields for its current locale anywhere the Host renders extension copy, including direct tool-menu rows, tab titles, Extension Center entries, settings, and result-preview titles, while retaining the manifest's base language as fallback.
+Extension API manifests SHALL support bounded locale overlays for extension metadata and known contribution display fields. Kun SHALL resolve those fields for its current locale anywhere the Host renders extension copy, including direct rail tooltips, tool-menu rows, tab titles, Extension Center entries, settings, and result-preview titles, while retaining the manifest's base language as fallback.
 
 #### Scenario: Chinese Kun opens the bundled video extension
 - **WHEN** Kun's locale is Simplified Chinese and the video manifest provides a matching overlay
-- **THEN** the tool-menu row, tab title, management metadata, settings copy, and result-preview title SHALL render in Chinese without changing contribution identifiers
+- **THEN** the rail tooltip, tool-menu row, tab title, management metadata, settings copy, and result-preview title SHALL render in Chinese without changing contribution identifiers
 
 #### Scenario: Requested locale is not declared
 - **WHEN** Kun selects a locale for which an extension has no exact or language fallback

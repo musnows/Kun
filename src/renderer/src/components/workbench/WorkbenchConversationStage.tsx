@@ -1,4 +1,5 @@
 import { lazy, Suspense, type ComponentProps, type ReactElement, type ReactNode } from 'react'
+import { WorkbenchSideRail } from '../chat/WorkbenchTopBar'
 import { WorkbenchChatStage, type WorkbenchChatStageProps } from './WorkbenchChatStage'
 
 const SddDraftEditorView = lazy(() =>
@@ -26,6 +27,7 @@ export type WorkbenchConversationStageProps = {
   >
   chat: WorkbenchChatStageProps
   rightPanel: ReactNode
+  sideRail: ComponentProps<typeof WorkbenchSideRail>
 }
 
 function WorkbenchPaneFallback(): ReactElement {
@@ -38,7 +40,8 @@ export function WorkbenchConversationStage({
   activeSddDraft,
   sdd,
   chat,
-  rightPanel
+  rightPanel,
+  sideRail
 }: WorkbenchConversationStageProps): ReactElement {
   return (
     <>
@@ -55,6 +58,7 @@ export function WorkbenchConversationStage({
         </div>
 
         {rightPanel}
+        {route === 'chat' && !activeSddDraft ? <WorkbenchSideRail {...sideRail} /> : null}
       </div>
     </>
   )

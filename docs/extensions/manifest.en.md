@@ -108,7 +108,7 @@ The full ID is `publisher.name` and must not change after publication. Renaming 
 }
 ```
 
-Kun resolves a case-insensitive exact tag first, then progressively less-specific tags (`zh-Hans-CN` → `zh-Hans` → `zh`), then uses the base Manifest. Webview content continues to localize through `ui.getLocale` and `ui.localeChanged`; manifest overlays cover Host chrome such as tool-menu rows, tab/result-preview titles, Extension Center cards, and declarative settings.
+Kun resolves a case-insensitive exact tag first, then progressively less-specific tags (`zh-Hans-CN` → `zh-Hans` → `zh`), then uses the base Manifest. Webview content continues to localize through `ui.getLocale` and `ui.localeChanged`; manifest overlays cover Host chrome such as rail tooltips, tool-menu rows, tab/result-preview titles, Extension Center cards, and declarative settings.
 
 ## Version fields
 
@@ -178,7 +178,7 @@ v1 supports:
 | `authentication` | Authentication Providers | id, authentication kind, and protected-flow metadata |
 | `hostContentScripts` | Direct DOM | static scripts/styles, allowed host surfaces, activation conditions; high risk and unstable |
 
-`views.rightSidebar` is the canonical discoverable UI for new extensions. Its packaged icon and localized title become a direct item in Code mode's `+` tool menu and open an independent tab beside the main conversation. Other `views.*` locations remain Extension API v1 parse- and command-routing compatible, but the Host does not generate a nested aggregate extension picker for them.
+`views.rightSidebar` is the canonical discoverable UI for new extensions. Its packaged icon and localized title appear in Code mode's vertical right rail and as a direct item in the `+` tool menu; either launcher opens the same independent tab beside the main conversation. Other `views.*` locations remain Extension API v1 parse- and command-routing compatible, but the Host does not generate a nested aggregate extension picker for them.
 
 ### Implied contribution permissions
 

@@ -6,7 +6,7 @@
 
 The Kun workbench uses one typed `ContributionRegistry` for built-in and extension UI. An extension declares where an item belongs, what it displays, and which command it invokes. The host owns rendering, ordering, focus, accessibility, and lifecycle. Extension React components cannot mount directly into the Kun React tree.
 
-For directly discoverable extension UI, the canonical v1 entry point is `views.rightSidebar`: each visible View registers a direct row in Code mode's `+` tool menu and opens an isolated, independently closable tab beside the main conversation. Kun does not add a nested aggregate extension picker. `views.leftSidebar`, `views.auxiliaryPanel`, `views.editorTab`, and `views.fullPage` remain v1 Schema- and command-compatible, but new extensions should not use them as their default discoverable entry point.
+For directly discoverable extension UI, the canonical v1 entry point is `views.rightSidebar`: each visible View registers its icon in Code mode's vertical right rail and a direct row in the `+` tool menu. Either launcher opens the same isolated, independently closable tab beside the main conversation. Kun does not add a nested aggregate extension picker. `views.leftSidebar`, `views.auxiliaryPanel`, `views.editorTab`, and `views.fullPage` remain v1 Schema- and command-compatible, but new extensions should not use them as their default discoverable entry point.
 
 ## Identity and namespaces
 
@@ -63,7 +63,7 @@ Unknown locations fail validation and are never treated as arbitrary component s
 - `entry` must be an integrity-listed local resource in an allowed resource root.
 - Labels, titles, and descriptions are untrusted plain text, not executable HTML.
 - Icons must be supported package resources and remain clear in light/dark themes and on Retina displays.
-- Every visible `views.rightSidebar` View receives its own direct tool-menu row and top-level tab. If an icon is omitted, the Host uses an accessible fallback without executing extension code.
+- Every visible `views.rightSidebar` View receives its own direct rail icon, tool-menu row, and top-level tab. If an icon is omitted, the Host uses an accessible fallback without executing extension code.
 - `when` controls visibility/enablement and never grants permission.
 - `order` participates only within host groups; equal priorities sort by fully qualified ID.
 - Multiple instances are created only when the contribution contract permits them, each with an independent View Session.

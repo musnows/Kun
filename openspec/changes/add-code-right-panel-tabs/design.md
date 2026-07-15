@@ -47,17 +47,17 @@ Terminal receives an active-state notification so xterm refits after becoming vi
 
 Alternative considered: mount only the active panel. Rejected because browser navigation, terminal tab state, and extension sessions would be recreated on each switch.
 
-### 4. Existing entry points become direct menu rows and open operations
+### 4. Existing entry points become direct launchers and open operations
 
-The `+` menu contains direct rows for terminal, browser, files, side conversations, todo, conditional plan, changes, canvas, subagents, and every extension contribution. Files open the existing workspace/design tree in docked form; selecting a file opens the separate file-preview tab. Side conversations gain a docked presentation variant instead of overlay positioning. Terminal moves from the bottom drawer into the right-panel stack.
+The existing vertical rail remains available as a compact direct launcher for its current built-in and extension entries. The `+` menu additionally contains direct rows for terminal, browser, files, side conversations, todo, conditional plan, changes, canvas, subagents, and every extension contribution. Both launchers use the same singleton `openTab` operation. Files open the existing workspace/design tree in docked form; selecting a file opens the separate file-preview tab. Side conversations gain a docked presentation variant instead of overlay positioning. Terminal moves from the bottom drawer into the right-panel stack.
 
 Untrusted extension discovery entries remain visible as locked direct rows. Selecting one calls protected permission review; only a successful contribution refresh opens the tab. There is no nested extension picker.
 
-Alternative considered: keep the vertical rail as the launcher. Rejected because it duplicates navigation, permanently consumes width, and does not match the requested design.
+Alternative considered: make the `+` menu the only launcher. Rejected because the established icon rail is a fast, glanceable navigation surface and removing it breaks the existing Code workflow.
 
 ### 5. Code-mode geometry is widened without changing other routes
 
-The vertical rail and file-tree side-column reservations are removed. Opening any Code tool raises the right width to at least the existing 560-pixel code preferred width and ordinary Code tabs may grow into all space left after the left sidebar and the 560-pixel main minimum. Write, Design, and SDD continue to use their existing panel geometry and overlay rules.
+The 48-pixel vertical rail reservation is retained while the separate file-tree side-column reservation is removed. Opening the right workspace raises its width to at least the existing 560-pixel code preferred width and ordinary Code tabs may grow into all space left after the left sidebar, the rail, and the 560-pixel main minimum. The workspace may be expanded with an empty tab set; it shows the tab chrome and blank content until a launcher is selected. Write, Design, and SDD continue to use their existing panel geometry and overlay rules.
 
 ### 6. Accessibility and labels are Host-owned
 
@@ -76,7 +76,7 @@ The tab strip uses `tablist`/`tab`/`tabpanel`, roving focus, Arrow/Home/End navi
 
 1. Add new built-in IDs, state parser/reducer, and storage migration while retaining the legacy key reader.
 2. Introduce tab host/menu UI and route existing open actions through the controller.
-3. Move terminal, files, and side conversations into the host, then remove the old rail/drawer/extra-column layout.
+3. Move terminal, files, and side conversations into the host, retain the launcher rail, then remove the old drawer/extra-column layout.
 4. Update extension navigation specifications and documentation.
 5. Validate focused interactions, full renderer types/tests/build, and retain the old stored key as a one-time fallback for rollback compatibility.
 

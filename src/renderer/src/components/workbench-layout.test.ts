@@ -3,6 +3,7 @@ import {
   captureResizePointer,
   fitWorkbenchWidths,
   normalizeStoredCodeRightWidthsRegistry,
+  RAIL_WIDTH,
   WORKBENCH_RESIZE_CLASS,
   workbenchWidthConstraintsForRightPanel
 } from './workbench-layout'
@@ -19,7 +20,7 @@ describe('fitWorkbenchWidths', () => {
     )
 
     expect(next.left).toBe(304)
-    expect(next.right).toBe(926)
+    expect(next.right).toBe(878)
   })
 
   it('uses the same wide workspace constraints for the code canvas', () => {
@@ -33,7 +34,7 @@ describe('fitWorkbenchWidths', () => {
 
     expect(next.left).toBe(304)
     expect(next.right).toBeGreaterThan(760)
-    expect(next.right).toBe(926)
+    expect(next.right).toBe(878)
   })
 
   it.each([1280, 1440, 2048])(
@@ -47,7 +48,7 @@ describe('fitWorkbenchWidths', () => {
         workbenchWidthConstraintsForRightPanel('chat', BUILTIN_RIGHT_PANEL_IDS.files)
       )
       const handleWidth = 10
-      expect(containerWidth - handleWidth - next.left - next.right).toBeGreaterThanOrEqual(560)
+      expect(containerWidth - handleWidth - RAIL_WIDTH - next.left - next.right).toBeGreaterThanOrEqual(560)
       expect(next.right).toBeGreaterThanOrEqual(280)
     }
   )

@@ -62,7 +62,7 @@ export function normalizeCodeRightTabsState(
     version: CODE_RIGHT_TABS_STATE_VERSION,
     tabs,
     activeId,
-    expanded: tabs.length > 0 && source.expanded === true
+    expanded: source.expanded === true
   }
 }
 
@@ -123,8 +123,8 @@ export function collapseCodeRightTabs(state: CodeRightTabsState): CodeRightTabsS
 }
 
 export function expandCodeRightTabs(state: CodeRightTabsState): CodeRightTabsState {
-  if (state.tabs.length === 0 || state.expanded) return state
-  return { ...state, expanded: true, activeId: state.activeId ?? state.tabs[0] }
+  if (state.expanded) return state
+  return { ...state, expanded: true, activeId: state.activeId ?? state.tabs[0] ?? null }
 }
 
 export function retainCodeRightTabs(
