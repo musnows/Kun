@@ -1,7 +1,7 @@
 import type { Dispatch, ReactElement, SetStateAction } from 'react'
-import { Archive, AudioLines, Bot, BrainCircuit, GitBranch, Bug, ChevronLeft, Globe, Keyboard, Mic, Palette, PencilLine, Puzzle, RefreshCw, ServerCog, Settings, ShieldCheck, Smartphone, Sparkles, TerminalSquare, UsersRound } from 'lucide-react'
+import { Archive, AudioLines, Bot, BrainCircuit, GitBranch, Bug, ChevronLeft, Globe, Keyboard, Mic, Palette, PencilLine, Puzzle, RefreshCw, ServerCog, Settings, ShieldCheck, Smartphone, Sparkles, TerminalSquare, UsersRound, PackageOpen } from 'lucide-react'
 
-type SettingsCategory = 'general' | 'providers' | 'write' | 'design' | 'mediaGeneration' | 'speechToText' | 'agents' | 'subagents' | 'archives' | 'permissions' | 'worktree' | 'memory' | 'shortcuts' | 'easterEgg' | 'claw' | 'updates' | 'debug' | 'terminal' | 'extensions'
+type SettingsCategory = 'general' | 'providers' | 'write' | 'design' | 'mediaGeneration' | 'speechToText' | 'agents' | 'subagents' | 'archives' | 'permissions' | 'worktree' | 'memory' | 'shortcuts' | 'easterEgg' | 'claw' | 'updates' | 'debug' | 'terminal' | 'extensions' | 'dataMigration'
 
 export function SettingsSidebar({
   category,
@@ -129,6 +129,15 @@ export function SettingsSidebar({
         >
           <Archive className="h-4 w-4 shrink-0 opacity-70" strokeWidth={1.75} />
           {t('archives')}
+        </button>
+        <button
+          type="button"
+          data-cursor-spotlight-target
+          className={catCls('dataMigration')}
+          onClick={() => setCategory('dataMigration')}
+        >
+          <PackageOpen className="h-4 w-4 shrink-0 opacity-70" strokeWidth={1.75} />
+          {t('dataMigration')}
         </button>
         <button
           type="button"

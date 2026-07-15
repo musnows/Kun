@@ -15,7 +15,7 @@ import {
   type ContextMenuParams,
   type MenuItemConstructorOptions
 } from 'electron'
-import { randomBytes } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -114,6 +114,7 @@ import {
   stableSettingsStringify
 } from './runtime-settings-apply-mode'
 import { registerAppIpcHandlers } from './ipc/register-app-ipc-handlers'
+import { DataMigrationController } from './data-migration/data-migration-controller'
 import {
   configureManagedWeixinBridgeUrlResolver,
   pollFeishuInstall,
@@ -1832,6 +1833,29 @@ app.whenReady().then(async () => {
     resolveLogDirectory: () => resolveLogDirectory(app),
     logError
   })
+  const dataMigrationController = new DataMigrationController({
+    userDataPath: app.getPath('userData'),
+    store,
+    getMainWindow: () => mainWindow,
+    runtimeFetch: async (path, init = {}) => {
+      const settings = await store.load()
+      const ensured = await ensureRuntime(settings)
+      const requestSettings = ensured ?? settings
+      const headers = runtimeAuthHeaders(requestSettings)
+      new Headers(init.headers).forEach((value, key) => headers.set(key, value))
+      const normalizedPath = path.startsWith('/') ? path : `/${path}`
+      return fetch(`${getRuntimeBaseUrlForSettings(requestSettings)}${normalizedPath}`, {
+        ...init,
+        headers
+      } as RequestInit)
+    },
+    sourceInstallationId: `installation_${createHash('sha256').update(app.getPath('userData')).digest('hex').slice(0, 24)}`,
+    sourceAppVersion: app.getVersion(),
+    sourceRuntimeVersion: app.getVersion(),
+    featureEnabled: process.env.KUN_DATA_MIGRATION_ENABLED === '1' ||
+      (process.env.KUN_DATA_MIGRATION_ENABLED !== '0' && !app.isPackaged)
+  })
+  dataMigrationController.registerIpc()
   const extensionIpcOptions: RegisterExtensionIpcHandlersOptions = {
     getMainWindow: () => mainWindow,
     runtimeRequest: async (path, method, body, headers) => {

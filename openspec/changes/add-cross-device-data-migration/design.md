@@ -51,13 +51,12 @@ catalog/threads.json
 catalog/portable-settings.json
 catalog/renderer-state.json
 payload/workspaces/<workspace-id>/<relative-path>
-payload/runtime/threads/<export-thread-id>/{thread.json,session.json,messages.jsonl,events.jsonl}
-payload/runtime/attachments/<content-id>.{json,bin}
-payload/runtime/artifacts/<content-id>.{json,bin}
-payload/runtime/memory/<record-id>.json
+payload/runtime/snapshot.jsonl
 reports/export-report.json
 checksums.jsonl
 ```
+
+`payload/runtime/snapshot.jsonl` is the Kun-owned canonical stream for selected threads, sessions, items, events, reachable attachments/artifacts, and memory. Attachment and artifact metadata use ordinary bounded records; their bytes are emitted as ordered 1 MiB Base64 chunks with declared byte size and SHA-256 so a near-limit attachment never creates an oversized JSONL record. The importer validates sequence, length, digest, and content-addressed metadata before mutating stores, while retaining read compatibility for v1 packages that used an inline content record.
 
 `manifest.json` carries `formatVersion`, `minimumReaderVersion`, package/source IDs, app/runtime versions, source OS/architecture, created time, selection policy, counts, logical component schema versions, expanded byte count, and the SHA-256 digest of every catalog/checksum stream. Each payload entry has a SHA-256 hash, size, classification, and owning logical ID. ZIP CRC is not treated as sufficient integrity checking.
 

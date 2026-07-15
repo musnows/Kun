@@ -12,6 +12,7 @@ import type { TurnItem, UserMessageSource } from '../contracts/items.js'
 import type { RuntimeErrorSeverity } from '../contracts/errors.js'
 import type { SessionStore } from '../ports/session-store.js'
 import type { ThreadStore } from '../ports/thread-store.js'
+import type { MigrationMaintenanceLock } from '../ports/migration-maintenance-lock.js'
 import type { IdGenerator } from '../ports/id-generator.js'
 import type { ModelClient } from '../ports/model-client.js'
 import type { ImmutablePrefix } from '../cache/immutable-prefix.js'
@@ -57,6 +58,7 @@ export type TurnServiceDeps = {
   maxConcurrentTurns?: number
   /** Reject turn admission while this thread is being destructively removed. */
   lifecycleFence?: ThreadLifecycleFence
+  migrationMaintenance?: MigrationMaintenanceLock
   ids: IdGenerator
   nowIso: () => string
 }
@@ -133,6 +135,9 @@ export class TurnService {
     /** Internal extension-broker accounting baseline; not part of StartTurnRequest. */
     extensionBudgetTokenBaseline?: number
   } = {}): Promise<StartTurnResponse> {
+    if (this.deps.migrationMaintenance?.isLocked()) {
+      throw new TurnConflictError('runtime migration maintenance is in progress')
+    }
     let attemptedTurnId: string | undefined
     try {
       const started = await this.withThreadMutation(input.threadId, async () => {

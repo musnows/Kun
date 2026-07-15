@@ -65,6 +65,8 @@ import type { ExtensionSecretRevealConsentService } from '../../services/extensi
 import type { ExtensionConfigurationService } from '../../services/extension-configuration-service.js'
 import type { ExtensionArtifactService } from '../../services/extension-artifact-service.js'
 import type { ExtensionMediaHandleService } from '../../services/extension-media-handle-service.js'
+import type { RuntimeMigrationService } from '../../services/runtime-migration-service.js'
+import type { RuntimeMigrationImportService } from '../../services/runtime-migration-import-service.js'
 
 export type RuntimeToolDiagnostics = {
   providers: ToolProviderPolicy[]
@@ -147,6 +149,8 @@ export type ServerRuntime = {
   toolHost?: ToolHost
   attachmentStore?: AttachmentStore
   memoryStore?: MemoryStore
+  migrationService?: RuntimeMigrationService
+  migrationImportService?: RuntimeMigrationImportService
   /**
    * Active delegation runtime exposed for diagnostics + agent profile
    * listing. Optional so test scaffolds can omit it.
