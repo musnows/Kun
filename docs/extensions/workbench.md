@@ -6,7 +6,7 @@
 
 Kun 的工作台使用一个 typed `ContributionRegistry` 组合内置与扩展 UI。扩展声明“放在哪里、显示什么、调用哪个命令”，宿主负责真正渲染、排序、焦点、可访问性和生命周期。扩展 React 组件不能直接挂进 Kun React tree。
 
-对于用户可直接进入的扩展 UI，v1 的规范入口是 `views.rightSidebar`：每个可见 View 用自己声明的 `icon` 注册到 Code 模式右侧竖向图标栏，同时在 `+` 工具菜单中提供直接项目；任一入口都会在主会话旁打开同一个独立标签和隔离 Webview。Kun 不提供额外的“所有扩展”拼图菜单。`views.leftSidebar`、`views.auxiliaryPanel`、`views.editorTab` 和 `views.fullPage` 仍保持 v1 Schema 与命令打开兼容，但新扩展不应把它们作为默认可发现入口。
+对于用户可直接进入的扩展 UI，v1 的规范入口是 `views.rightSidebar`：每个可见 View 用自己声明的 `icon` 注册到 Code 模式右侧竖向图标栏，并在主会话旁打开独立标签和隔离 Webview。Kun 不提供额外的工具菜单或“所有扩展”拼图菜单。`views.leftSidebar`、`views.auxiliaryPanel`、`views.editorTab` 和 `views.fullPage` 仍保持 v1 Schema 与命令打开兼容，但新扩展不应把它们作为默认可发现入口。
 
 ## 身份和命名空间
 
@@ -63,7 +63,7 @@ extension:acme.issues/backlog
 - `entry` 必须是完整性清单中的本地资源，并位于声明的 resource root。
 - label/title/description 是不可信纯文本，不能包含可执行 HTML。
 - icon 必须是包内允许类型；应在浅色/深色主题和 Retina 下清晰。
-- 每个可见 `views.rightSidebar` View 会在 Code 模式右侧图标栏和 `+` 工具菜单中获得直接入口，并拥有独立顶层标签；没有 icon 时宿主使用可访问的 fallback，不会执行扩展代码来生成图标。
+- 每个可见 `views.rightSidebar` View 会在 Code 模式右侧图标栏获得直接入口，并拥有独立顶层标签；没有 icon 时宿主使用可访问的 fallback，不会执行扩展代码来生成图标。
 - `when` 只决定 visibility/enablement，不授予权限。
 - `order` 只在宿主分组内参与排序；同优先级按 fully-qualified ID 稳定排序。
 - 多实例只在 contribution contract 明确允许时创建，每个实例有独立 View Session。

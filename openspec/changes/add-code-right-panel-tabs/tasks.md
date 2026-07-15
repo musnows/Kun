@@ -5,20 +5,20 @@
 
 ## 2. Tab navigation chrome
 
-- [x] 2.1 Build the accessible horizontal tab strip, dynamic labels, close behavior, overflow handling, collapse control, and single-level `+` tool menu
-- [x] 2.2 Wire Code-mode rail/top actions and route existing Dev Preview, review, canvas, subagent, file-preview, terminal, and extension launch paths through the tab controller
+- [x] 2.1 Build the accessible horizontal tab strip, dynamic labels, close behavior, overflow handling, and collapse control
+- [x] 2.2 Wire Code-mode rail/top actions and route Dev Preview, review, canvas, subagent, file-preview, and extension launch paths through the tab controller while keeping Terminal on its independent drawer controller
 
 ## 3. Tool integration and lifecycle
 
-- [x] 3.1 Move Terminal into a keep-alive right-workspace tab while preserving internal PTY tabs, shortcut behavior, and visible refitting
+- [x] 3.1 Preserve Terminal as the resizable bottom drawer with its internal PTY tabs and shortcut behavior, independent of right-workspace tab selection
 - [x] 3.2 Move Files and File preview into distinct tabs while preserving workspace/design trees, file references, preview tabs, pins, and thread-retention rules
 - [x] 3.3 Add a docked Side conversations tab with count/running state and keep Subagents as its existing independent detail tab
 - [x] 3.4 Keep trusted extension tabs mounted across selection, preserve locked permission review, and dispose tabs on close, revocation, or workspace invalidation
 
 ## 4. Compatibility, copy, and specifications
 
-- [x] 4.1 Add English and Simplified Chinese tab/menu labels and update extension/video-editor guidance for direct rail/tool-menu tabs
-- [x] 4.2 Preserve Write, Design, and SDD panel behavior, retain the Code launcher rail, and remove obsolete file-column and terminal-drawer state without changing public IPC/runtime contracts
+- [x] 4.1 Add English and Simplified Chinese tab labels and update extension/video-editor guidance for direct rail tabs
+- [x] 4.2 Preserve Write, Design, and SDD panel behavior, retain the Code launcher rail and terminal drawer, and remove only the obsolete file-column state without changing public IPC/runtime contracts
 
 ## 5. Verification
 
@@ -29,5 +29,17 @@
 
 - [x] 6.1 Restore the existing Code vertical icon rail and route its built-in and extension launchers through the singleton tab controller
 - [x] 6.2 Support an expanded empty right workspace instead of automatically opening Files or Browser
-- [x] 6.3 Make the horizontal tab chrome an Electron no-drag region so the `+` launcher and tab controls receive pointer input
-- [x] 6.4 Add correction-focused state, layout, rail, and menu tests; rerun validation and update navigation guidance
+- [x] 6.3 Make the horizontal tab chrome an Electron no-drag region so tab and collapse controls receive pointer input
+- [x] 6.4 Add correction-focused state, layout, rail, and tab-chrome tests; rerun validation and update navigation guidance
+
+## 7. Terminal placement correction
+
+- [x] 7.1 Restore the Code top-bar Terminal action and the original resizable bottom terminal drawer
+- [x] 7.2 Route the top action and `Ctrl+\`` to the same drawer while excluding Terminal from right-tab persistence and migration
+- [x] 7.3 Add terminal-routing and invalid-tab regression tests, update specifications, and rerun focused validation
+
+## 8. Redundant tool-menu correction
+
+- [x] 8.1 Remove the duplicate `+` tool menu from the horizontal tab strip while retaining tab navigation, close, overflow, and collapse controls
+- [x] 8.2 Remove menu-only routing props and locale copy, keeping built-in and extension discovery on the vertical rail and Terminal on its top-bar action/shortcut
+- [x] 8.3 Update OpenSpec and extension guidance, add regression coverage, and rerun focused and full validation

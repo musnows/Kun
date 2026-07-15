@@ -1,7 +1,7 @@
 ## 1. Right-sidebar host navigation
 
 - [x] 1.1 Remove the aggregate extension View launcher and its renderer composition/tests while preserving legacy View routing
-- [x] 1.2 Keep one direct rail icon, tool-menu entry, and independent tab per visible right-sidebar contribution with declared-icon and fallback behavior
+- [x] 1.2 Keep one direct rail icon and independent tab per visible right-sidebar contribution with declared-icon and fallback behavior
 - [x] 1.3 Expand a selected extension panel to the Host-clamped preferred docked width and preserve normal resize/collapse behavior
 - [x] 1.4 Confine Host-rendered extension icons to exact manifest declarations and the main renderer image CSP
 
@@ -22,7 +22,7 @@
 
 - [x] 4.1 Run focused renderer, extension API, video tool, package, and release-gate tests
 - [x] 4.2 Run repository typecheck, lint, test, build, and OpenSpec validation
-- [x] 4.3 Verify the bundled video editor in the running app as a direct rail/tool-menu tab beside the main conversation
+- [x] 4.3 Verify the bundled video editor in the running app as a direct rail tab beside the main conversation
 - [x] 4.4 Commit the completed redesign on the local `develop` branch
 
 ## 5. Real-app usability follow-up

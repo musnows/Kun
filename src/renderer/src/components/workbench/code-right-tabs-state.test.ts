@@ -43,9 +43,9 @@ describe('code right tab state', () => {
   })
 
   it('collapses without discarding tabs and expands the retained selection', () => {
-    const opened = openCodeRightTab(emptyCodeRightTabsState(), BUILTIN_RIGHT_PANEL_IDS.terminal)
+    const opened = openCodeRightTab(emptyCodeRightTabsState(), BUILTIN_RIGHT_PANEL_IDS.browser)
     const collapsed = collapseCodeRightTabs(opened)
-    expect(collapsed.tabs).toEqual([BUILTIN_RIGHT_PANEL_IDS.terminal])
+    expect(collapsed.tabs).toEqual([BUILTIN_RIGHT_PANEL_IDS.browser])
     expect(collapsed.expanded).toBe(false)
     expect(expandCodeRightTabs(collapsed)).toEqual(opened)
   })
@@ -73,12 +73,18 @@ describe('code right tab state', () => {
     ])
     expect(migrateLegacyRightPanelMode('removed-mode')).toEqual(emptyCodeRightTabsState())
     expect(migrateLegacyRightPanelMode('sdd-ai')).toEqual(emptyCodeRightTabsState())
+    expect(migrateLegacyRightPanelMode('terminal')).toEqual(emptyCodeRightTabsState())
   })
 
   it('normalizes duplicates and fails closed for invalid persisted values', () => {
     const state = normalizeCodeRightTabsState({
       version: 1,
-      tabs: [BUILTIN_RIGHT_PANEL_IDS.files, 'bad', BUILTIN_RIGHT_PANEL_IDS.files],
+      tabs: [
+        BUILTIN_RIGHT_PANEL_IDS.files,
+        'bad',
+        BUILTIN_RIGHT_PANEL_IDS.terminal,
+        BUILTIN_RIGHT_PANEL_IDS.files
+      ],
       activeId: 'bad',
       expanded: true
     })
@@ -92,6 +98,10 @@ describe('code right tab state', () => {
       version: 1,
       workspaces: {}
     })
+    expect(openCodeRightTab(
+      emptyCodeRightTabsState(),
+      BUILTIN_RIGHT_PANEL_IDS.terminal
+    )).toEqual(emptyCodeRightTabsState())
   })
 
   it('removes unavailable contributions without disturbing retained order', () => {

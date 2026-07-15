@@ -55,9 +55,6 @@ const WriteAssistantPanel = lazy(() =>
 const SddAssistantPanel = lazy(() =>
   import('../sdd/SddAssistantPanel').then((module) => ({ default: module.SddAssistantPanel }))
 )
-const TerminalPanel = lazy(() =>
-  import('../terminal/TerminalPanel').then((module) => ({ default: module.TerminalPanel }))
-)
 const SideConversationPanel = lazy(() =>
   import('../chat/SideConversationPanel').then((module) => ({ default: module.SideConversationPanel }))
 )
@@ -72,19 +69,13 @@ type WorkspaceFilePreviewPanelProps = ComponentProps<typeof WorkspaceFilePreview
 
 export type WorkbenchCodeRightWorkspaceProps = {
   state: CodeRightTabsState
-  planEnabled: boolean
-  filesEnabled: boolean
-  sideConversationsEnabled: boolean
   sideConversationCount: number
   sideConversationRunningCount: number
-  terminalWorkspaceRoot: string
   files: WorkbenchFileTreeSidePanelProps
   extensionItems: readonly ExtensionRightRailViewEntry[]
   extensionViews: readonly RegisteredContribution<'views.rightSidebar'>[]
-  onOpen: (id: RightPanelContributionId) => void
   onActivate: (id: RightPanelContributionId) => void
   onClose: (id: RightPanelContributionId) => void
-  onSelectExtension: (entry: ExtensionRightRailViewEntry) => void
 }
 
 export type WorkbenchRightPanelProps = {
@@ -253,7 +244,7 @@ function CodeRightPanelWorkspace({
     ? { ...dynamicTitles, [BUILTIN_RIGHT_PANEL_IDS.file]: fileTitle }
     : dynamicTitles
 
-  const renderPanel = (id: RightPanelContributionId, active: boolean): ReactElement => {
+  const renderPanel = (id: RightPanelContributionId): ReactElement => {
     if (id === BUILTIN_RIGHT_PANEL_IDS.subagents) {
       return <SubagentDetailPanel className="h-full max-h-full w-full" onCollapse={onCollapse} />
     }
@@ -293,18 +284,6 @@ function CodeRightPanelWorkspace({
         />
       )
     }
-    if (id === BUILTIN_RIGHT_PANEL_IDS.terminal) {
-      return (
-        <TerminalPanel
-          workspaceRoot={code.terminalWorkspaceRoot}
-          onCollapse={onCollapse}
-          active={active}
-          embedded
-          className="h-full w-full"
-          onTitleChange={(title) => updateTitle(id, title)}
-        />
-      )
-    }
     if (isExtensionContributionId(id)) {
       const contribution = code.extensionViews.find((view) => view.id === id)
       if (contribution) {
@@ -334,17 +313,12 @@ function CodeRightPanelWorkspace({
           state={code.state}
           domIdPrefix={domIdPrefix}
           titles={titles}
-          planEnabled={code.planEnabled}
-          filesEnabled={code.filesEnabled}
-          sideConversationsEnabled={code.sideConversationsEnabled}
           sideConversationCount={code.sideConversationCount}
           sideConversationRunningCount={code.sideConversationRunningCount}
           extensionItems={code.extensionItems}
-          onOpen={code.onOpen}
           onActivate={code.onActivate}
           onClose={code.onClose}
           onCollapse={onCollapse}
-          onSelectExtension={code.onSelectExtension}
         />
         <Suspense fallback={<div className="h-full w-full bg-ds-sidebar" />}>
           <div className="relative min-h-0 flex-1 bg-ds-sidebar">
@@ -361,7 +335,7 @@ function CodeRightPanelWorkspace({
                   hidden={!active}
                   className="absolute inset-0 min-h-0"
                 >
-                  {renderPanel(id, active)}
+                  {renderPanel(id)}
                 </div>
               )
             })}

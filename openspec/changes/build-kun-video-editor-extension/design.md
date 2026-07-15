@@ -106,7 +106,7 @@ The profile instructs the Agent to read current revision before mutation, align 
 
 ### 8. The Webview is a real editor, with bounded first-release scope
 
-The extension contributes `views.rightSidebar` as its only primary surface. Its manifest-declared icon and localized title register in Code mode's vertical right rail and directly in the `+` tool menu; selecting either launcher opens the docked editor in the same independent tab beside the main conversation. The React Webview contains Agent synchronization status, Player, Media Library, Transcript, Timeline, inspector, jobs/export status, and undo/redo. It uses public theme/locale/state/media/jobs/Agent APIs only and remains useful without an active Agent run.
+The extension contributes `views.rightSidebar` as its only primary surface. Its manifest-declared icon and localized title register in Code mode's vertical right rail; selecting the launcher opens the docked editor in an independent tab beside the main conversation. The React Webview contains Agent synchronization status, Player, Media Library, Transcript, Timeline, inspector, jobs/export status, and undo/redo. It uses public theme/locale/state/media/jobs/Agent APIs only and remains useful without an active Agent run.
 
 Initial manual editing covers selection, split, trim, delete, reorder, track placement, captions, canvas aspect presets, and revision navigation. Preview uses source playback for simple selections plus broker-generated proxy/proof frames for composed state; export uses FFmpeg jobs. Unsupported timeline effects remain visible as validation warnings rather than being silently flattened or discarded.
 

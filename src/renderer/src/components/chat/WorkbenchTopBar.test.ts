@@ -15,9 +15,11 @@ describe('WorkbenchTopActions', () => {
     await i18n.changeLanguage('en')
   })
 
-  it('renders editor and right workspace actions for the top bar', () => {
+  it('renders editor, terminal, and right workspace actions for the top bar', () => {
     const html = renderToStaticMarkup(
       createElement(WorkbenchTopActions, {
+        terminalOpen: false,
+        onToggleTerminal: vi.fn(),
         rightWorkspaceExpanded: false,
         onToggleRightWorkspace: vi.fn()
       })
@@ -25,11 +27,16 @@ describe('WorkbenchTopActions', () => {
 
     expect(html).toContain(`data-tooltip="Choose default editor"`)
     expect(html).toContain(`aria-label="Choose default editor"`)
+    expect(html).toContain(`data-tooltip="Terminal"`)
+    expect(html).toContain(`aria-label="Terminal"`)
     expect(html).toContain(`data-tooltip="Toggle right workspace"`)
     expect(html).toContain(`aria-label="Toggle right workspace"`)
     expect(html).not.toContain(`title="Choose default editor"`)
     expect(html).not.toContain(`title="Toggle right workspace"`)
     expect(html.indexOf('data-tooltip="Choose default editor"')).toBeLessThan(
+      html.indexOf('data-tooltip="Terminal"')
+    )
+    expect(html.indexOf('data-tooltip="Terminal"')).toBeLessThan(
       html.indexOf('data-tooltip="Toggle right workspace"')
     )
   })

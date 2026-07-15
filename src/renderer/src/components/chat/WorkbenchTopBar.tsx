@@ -60,6 +60,8 @@ type Props = {
 }
 
 type WorkbenchTopActionsProps = {
+  terminalOpen?: boolean
+  onToggleTerminal?: () => void
   rightWorkspaceExpanded?: boolean
   onToggleRightWorkspace?: () => void
 }
@@ -82,6 +84,8 @@ function topbarActionButtonClass(active: boolean, extra?: string): string {
 }
 
 export function WorkbenchTopActions({
+  terminalOpen = false,
+  onToggleTerminal,
   rightWorkspaceExpanded = false,
   onToggleRightWorkspace
 }: WorkbenchTopActionsProps): ReactElement {
@@ -345,6 +349,19 @@ export function WorkbenchTopActions({
           </div>
         ) : null}
       </div>
+
+      {onToggleTerminal ? (
+        <button
+          type="button"
+          onClick={onToggleTerminal}
+          className={topbarActionButtonClass(terminalOpen)}
+          data-tooltip={t('rightPanelTerminal')}
+          aria-label={t('rightPanelTerminal')}
+          aria-pressed={terminalOpen}
+        >
+          <Terminal className={TOPBAR_ICON_CLASS} strokeWidth={1.75} />
+        </button>
+      ) : null}
 
       {onToggleRightWorkspace ? (
         <button

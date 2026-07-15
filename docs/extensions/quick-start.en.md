@@ -175,7 +175,7 @@ kun extension doctor acme.hello-sidebar
 
 Before installation, a protected Kun window shows source, ID, version, SHA-256, signature status, contributions, and permissions. Node or Direct DOM capabilities receive additional high-risk disclosure. Kun installs and selects the version atomically only after confirmation.
 
-Open Kun, choose **Hello** from Code mode's vertical right rail or `+` tool menu, and Kun opens it as an independent right-workspace tab. Rendering its icon and title does not activate Node code. Opening the View triggers `onView:hello` and creates an identity-bound View Session.
+Open Kun, choose **Hello** from Code mode's vertical right rail, and Kun opens it as an independent right-workspace tab. Rendering its icon and title does not activate Node code. Opening the View triggers `onView:hello` and creates an identity-bound View Session.
 
 ## 7. Inspect logs and clean up
 

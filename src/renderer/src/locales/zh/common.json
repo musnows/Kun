@@ -1853,8 +1853,6 @@
   "rightPanelChangesReview": "变更/审查",
   "rightPanelTabs": "右侧工作区标签",
   "rightPanelCloseTab": "关闭{{title}}",
-  "rightPanelAddTool": "打开右侧工作区工具",
-  "rightPanelToolMenu": "右侧工作区工具",
   "rightPanelUnavailable": "不可用",
   "rightPanelWorkspaceToggle": "展开或收起右侧工作区",
   "terminalPanelTitle": "终端",

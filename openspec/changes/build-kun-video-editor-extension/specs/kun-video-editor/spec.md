@@ -8,7 +8,7 @@ The repository SHALL ship a runnable `kun-video-editor` `.kunx` package built on
 - **THEN** its manifest, Node entry, browser entry, right-sidebar contribution, Agent profile, tool declarations, permissions, and packaged resources SHALL validate and produce an installable `.kunx`
 
 #### Scenario: The user opens the editor
-- **WHEN** the enabled extension's right-sidebar contribution is opened from its direct Code rail icon or tool-menu item in a trusted workspace
+- **WHEN** the enabled extension's right-sidebar contribution is opened from its direct Code rail icon in a trusted workspace
 - **THEN** Kun SHALL activate the extension, create an isolated View session, and render the video workbench without importing Kun renderer internals or exposing `window.kunGui`
 
 ### Requirement: The same standard package is Kun's local default and reference example

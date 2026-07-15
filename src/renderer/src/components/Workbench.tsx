@@ -328,11 +328,11 @@ export function Workbench(): ReactElement {
     skillMenuOpen: getSlashQuery(input) !== null
   })
   const {
-    activateRightPanelTab, beginLeftResize, beginRightResize, closeRightPanelTab,
+    activateRightPanelTab, beginLeftResize, beginRightResize, beginTerminalResize, closeRightPanelTab,
     codeRightTabs, collapseRightPanel, expandRightPanel, filePreviewTarget,
     leftSidebarCollapsed, leftSidebarWidth, openDevPreview, rightPanelMode, rightPanelVisible,
     openRightPanelTab, rightSidebarWidth, setFilePreviewTarget, setRightPanelMode,
-    setRightSidebarWidth, shellRef, toggleLeftSidebar, toggleTerminal,
+    setRightSidebarWidth, shellRef, terminalHeight, terminalOpen, toggleLeftSidebar, toggleTerminal,
   } = useWorkbenchLayout({
     activeThreadId,
     designAssistantOpen,
@@ -627,10 +627,14 @@ export function Workbench(): ReactElement {
   }, [openDesignFileTreeSidePanel, openRightPanelTab])
 
   const openCodeRightTool = useCallback((id: RightPanelContributionId): void => {
+    if (id === BUILTIN_RIGHT_PANEL_IDS.terminal) {
+      toggleTerminal()
+      return
+    }
     if (id === BUILTIN_RIGHT_PANEL_IDS.sideConversations) openSideChat()
     if (id === BUILTIN_RIGHT_PANEL_IDS.files) setFileTreeSidePanelView('workspace')
     openRightPanelTab(id)
-  }, [openRightPanelTab, openSideChat, setFileTreeSidePanelView])
+  }, [openRightPanelTab, openSideChat, setFileTreeSidePanelView, toggleTerminal])
 
   const closeCodeRightTool = useCallback((id: RightPanelContributionId): void => {
     if (id === BUILTIN_RIGHT_PANEL_IDS.sideConversations) setSidePanelOpen(false)
@@ -657,7 +661,7 @@ export function Workbench(): ReactElement {
     const unavailable: RightPanelContributionId[] = []
     if (!activeGuiPlan) unavailable.push(BUILTIN_RIGHT_PANEL_IDS.plan)
     if (!fileTreeWorkspaceRoot) {
-      unavailable.push(BUILTIN_RIGHT_PANEL_IDS.files, BUILTIN_RIGHT_PANEL_IDS.terminal)
+      unavailable.push(BUILTIN_RIGHT_PANEL_IDS.files)
     }
     if (!filePreviewTarget) unavailable.push(BUILTIN_RIGHT_PANEL_IDS.file)
     if (!activeThreadId) unavailable.push(BUILTIN_RIGHT_PANEL_IDS.sideConversations)
@@ -966,12 +970,8 @@ export function Workbench(): ReactElement {
     extensionView: activeExtensionRightPanel,
     code: {
       state: codeRightTabs,
-      planEnabled: Boolean(activeGuiPlan),
-      filesEnabled: Boolean(fileTreeWorkspaceRoot),
-      sideConversationsEnabled: runtimeConnection === 'ready' && Boolean(activeThreadId),
       sideConversationCount: currentSideConversations.length,
       sideConversationRunningCount: currentSideRunningCount,
-      terminalWorkspaceRoot: fileTreeWorkspaceRoot,
       files: {
         open: true,
         view: fileTreeSidePanelView,
@@ -987,10 +987,8 @@ export function Workbench(): ReactElement {
       },
       extensionItems: extensionRightRailItems,
       extensionViews: extensionRightPanelItems,
-      onOpen: openCodeRightTool,
       onActivate: activateRightPanelTab,
-      onClose: closeCodeRightTool,
-      onSelectExtension: selectRightRailExtension
+      onClose: closeCodeRightTool
     },
     workspaceRoot: extensionWorkspaceRoot
   })
@@ -1149,6 +1147,9 @@ export function Workbench(): ReactElement {
             returnParentTitle: threads.find((thread) => thread.id === activeThreadParentId)?.title?.trim() ?? '',
             showReturnBar: activeThreadRelation === 'side' && Boolean(activeThreadParentId),
             composerProps: chatComposerProps,
+            terminalOpen,
+            terminalWorkspaceRoot: fileTreeWorkspaceRoot,
+            terminalHeight,
             rightWorkspaceExpanded: codeRightTabs.expanded,
             onToggleLeftSidebar: toggleLeftSidebar,
             onRetryConnection: () => void probeRuntime('user', { restart: true }),
@@ -1160,6 +1161,8 @@ export function Workbench(): ReactElement {
             onBackToParent: () => {
               if (activeThreadParentId) void selectThread(activeThreadParentId)
             },
+            onBeginTerminalResize: beginTerminalResize,
+            onToggleTerminal: toggleTerminal,
             onToggleRightWorkspace: toggleCodeRightWorkspace,
             extensionTopBarActions,
             extensionComposerActions,

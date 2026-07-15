@@ -8,7 +8,7 @@ The desired model is closer to an IDE tool window: an extension declares one rig
 
 **Goals:**
 
-- Give every enabled `views.rightSidebar` contribution a direct, independently selectable Code rail icon, tool-menu item, and top-level tab.
+- Give every enabled `views.rightSidebar` contribution a direct, independently selectable Code rail icon and top-level tab.
 - Make right-sidebar Views the canonical extension UI shown by the host, with deterministic ordering and normal right-panel resize/collapse behavior.
 - Keep the negotiated Extension API v1 manifest compatible for existing non-right View keys while removing the aggregate launcher that advertises them.
 - Keep the main Agent visible and able to operate on the same workspace-scoped extension project as the open panel.
@@ -26,7 +26,7 @@ The desired model is closer to an IDE tool window: an extension declares one rig
 
 ### 1. `views.rightSidebar` is the self-registration contract
 
-The workbench will render each visible right-sidebar View as a direct icon in the Code vertical right rail and a direct row in the right workspace's `+` menu. Both launchers use the manifest icon when valid and a host fallback otherwise; clicking either selects the fully qualified View ID through the tab controller and opens the isolated View in its own Host-owned tab.
+The workbench will render each visible right-sidebar View as a direct icon in the Code vertical right rail. The launcher uses the manifest icon when valid and a host fallback otherwise; clicking it selects the fully qualified View ID through the tab controller and opens the isolated View in its own Host-owned tab.
 
 The aggregate `ExtensionViewRailLauncher` and its popover will be removed. This avoids a second navigation hierarchy and makes ownership obvious. `views.leftSidebar`, `views.auxiliaryPanel`, `views.editorTab`, and `views.fullPage` remain parseable and invokable for API v1 compatibility, but Kun documentation and bundled examples will no longer present them as the standard extension UI path.
 
@@ -34,7 +34,7 @@ Host-rendered icons use an explicit host-image resource request. The resource pr
 
 An installed version that has not yet been reviewed for the active workspace remains discoverable as an inert locked launcher. The Runtime projects only the localized ID, title, icon, grouping, order, and visibility expression for that launcher; it withholds View entry paths and resource roots. The renderer stores this metadata outside the executable contribution registry, and clicking it invokes Main's protected permission review. Normal `get`, `has`, layout restoration, activation, and View Session creation remain fail-closed until the reviewed grant is persisted. A later explicit permission revocation still removes the runnable entry as before.
 
-Alternative considered: retain a nested puzzle picker inside the tool menu. Rejected because it still makes users choose an extension twice and prevents an extension's own direct row from becoming a stable target.
+Alternative considered: retain a separate puzzle picker or duplicate tool menu. Rejected because it makes users choose an extension twice and duplicates the stable direct rail target.
 
 ### 2. The Host continues to own panel geometry
 
@@ -102,7 +102,7 @@ Alternative considered: ask users to paste transcript contents or asset IDs into
 
 ### 12. Manifest localization is a generic Extension API capability
 
-Extension manifests MAY declare bounded locale overlays for extension metadata and contribution copy. Kun resolves the best supported locale for Host-rendered chrome such as tool-menu rows, tab titles, Extension Center cards, settings, and result previews; Webview localization remains controlled by the existing appearance API. The mechanism is generic and versioned in the public manifest schema, not special-cased to the bundled video editor.
+Extension manifests MAY declare bounded locale overlays for extension metadata and contribution copy. Kun resolves the best supported locale for Host-rendered chrome such as rail tooltips, tab titles, Extension Center cards, settings, and result previews; Webview localization remains controlled by the existing appearance API. The mechanism is generic and versioned in the public manifest schema, not special-cased to the bundled video editor.
 
 Alternative considered: translate only the Webview body. Rejected because the panel title and other Host-rendered surfaces would still contradict Kun's selected language.
 
@@ -140,7 +140,7 @@ The packaged smoke path SHALL open `kun-examples.kun-video-editor` through its r
 2. Route direct right-sidebar extension buttons through the existing right-panel selection and widen-on-open behavior.
 3. Migrate the video manifest, icon, Host command catalog, active-project tool contract, Agent instructions, and Webview layout; bump and regenerate the deterministic bundled package.
 4. Update Chinese/English extension guidance and release/version fixtures.
-5. Validate old non-right manifests still parse and command-open, while the bundled video editor appears as a direct rail icon/tool-menu item and independent tab and shares revisions with Agent tools.
+5. Validate old non-right manifests still parse and command-open, while the bundled video editor appears as a direct rail icon and independent tab and shares revisions with Agent tools.
 6. Isolate workspace-scoped Host instances, registered tools, and View events, then add cross-workspace security regressions.
 7. Complete the executable video workflow, public bounded transcript read, generic manifest localization, and real packaged View smoke before advancing the bundled package version again.
 

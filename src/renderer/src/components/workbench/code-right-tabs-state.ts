@@ -16,7 +16,9 @@ export type CodeRightTabsState = {
 }
 
 function isCodeRightTabContributionId(value: unknown): value is RightPanelContributionId {
-  return isRightPanelContributionId(value) && value !== BUILTIN_RIGHT_PANEL_IDS.sddAi
+  return isRightPanelContributionId(value) &&
+    value !== BUILTIN_RIGHT_PANEL_IDS.sddAi &&
+    value !== BUILTIN_RIGHT_PANEL_IDS.terminal
 }
 
 export type StoredCodeRightTabsRegistry = {
@@ -68,7 +70,7 @@ export function normalizeCodeRightTabsState(
 
 export function migrateLegacyRightPanelMode(mode: unknown): CodeRightTabsState {
   const normalized = normalizeStoredRightPanelId(mode)
-  if (!normalized || normalized === BUILTIN_RIGHT_PANEL_IDS.sddAi) return emptyCodeRightTabsState()
+  if (!isCodeRightTabContributionId(normalized)) return emptyCodeRightTabsState()
   return {
     version: CODE_RIGHT_TABS_STATE_VERSION,
     tabs: [normalized],
@@ -81,6 +83,7 @@ export function openCodeRightTab(
   state: CodeRightTabsState,
   id: RightPanelContributionId
 ): CodeRightTabsState {
+  if (!isCodeRightTabContributionId(id)) return state
   return {
     version: CODE_RIGHT_TABS_STATE_VERSION,
     tabs: state.tabs.includes(id) ? state.tabs : [...state.tabs, id],

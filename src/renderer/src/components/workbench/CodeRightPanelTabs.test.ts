@@ -29,17 +29,12 @@ describe('CodeRightPanelTabs', () => {
           [BUILTIN_RIGHT_PANEL_IDS.browser]: 'Kun docs',
           [BUILTIN_RIGHT_PANEL_IDS.file]: 'README.md'
         },
-        planEnabled: false,
-        filesEnabled: true,
-        sideConversationsEnabled: true,
         sideConversationCount: 2,
         sideConversationRunningCount: 1,
         extensionItems: [],
-        onOpen: vi.fn(),
         onActivate,
         onClose: vi.fn(),
-        onCollapse: vi.fn(),
-        onSelectExtension: vi.fn()
+        onCollapse: vi.fn()
       }))
     })
 
@@ -54,66 +49,41 @@ describe('CodeRightPanelTabs', () => {
     expect(onActivate).toHaveBeenLastCalledWith(BUILTIN_RIGHT_PANEL_IDS.file)
   })
 
-  it('shows the ordered direct tool menu and disables context-dependent entries', () => {
-    const onOpen = vi.fn()
+  it('omits the redundant add-tool menu and keeps the collapse control', () => {
+    const onCollapse = vi.fn()
     let renderer: ReactTestRenderer
     act(() => {
       renderer = create(createElement(CodeRightPanelTabs, {
-        state: openCodeRightTab(emptyCodeRightTabsState(), BUILTIN_RIGHT_PANEL_IDS.todo),
-        domIdPrefix: 'test-menu',
-        planEnabled: true,
-        filesEnabled: false,
-        sideConversationsEnabled: false,
+        state: openCodeRightTab(emptyCodeRightTabsState(), BUILTIN_RIGHT_PANEL_IDS.canvas),
+        domIdPrefix: 'test-no-menu',
         sideConversationCount: 0,
         sideConversationRunningCount: 0,
         extensionItems: [],
-        onOpen,
         onActivate: vi.fn(),
         onClose: vi.fn(),
-        onCollapse: vi.fn(),
-        onSelectExtension: vi.fn()
+        onCollapse
       }))
     })
 
-    const addButton = renderer!.root.findByProps({ 'aria-label': 'Open right workspace tool' })
-    act(() => addButton.props.onClick())
-    const items = renderer!.root.findAll((node) => node.props['data-tool-id'])
-    expect(items.map((item) => item.props['data-tool-id'])).toEqual([
-      BUILTIN_RIGHT_PANEL_IDS.terminal,
-      BUILTIN_RIGHT_PANEL_IDS.browser,
-      BUILTIN_RIGHT_PANEL_IDS.files,
-      BUILTIN_RIGHT_PANEL_IDS.sideConversations,
-      BUILTIN_RIGHT_PANEL_IDS.todo,
-      BUILTIN_RIGHT_PANEL_IDS.plan,
-      BUILTIN_RIGHT_PANEL_IDS.changes,
-      BUILTIN_RIGHT_PANEL_IDS.canvas,
-      BUILTIN_RIGHT_PANEL_IDS.subagents
-    ])
-    expect(items[0].props.disabled).toBe(true)
-    expect(items[2].props.disabled).toBe(true)
-    expect(items[3].props.disabled).toBe(true)
-    act(() => items[1].props.onClick())
-    expect(onOpen).toHaveBeenCalledWith(BUILTIN_RIGHT_PANEL_IDS.browser)
+    expect(renderer!.root.findAllByProps({ 'aria-label': 'Open right workspace tool' })).toHaveLength(0)
+    expect(renderer!.root.findAll((node) => node.props.role === 'menu')).toHaveLength(0)
+    const collapse = renderer!.root.findByProps({ 'aria-label': 'Collapse right sidebar' })
+    act(() => collapse.props.onClick())
+    expect(onCollapse).toHaveBeenCalledTimes(1)
   })
 
-  it('keeps the plus launcher operable in an empty Electron no-drag workspace', () => {
-    const onOpen = vi.fn()
+  it('keeps empty tab chrome as an Electron no-drag region without an add button', () => {
     let renderer: ReactTestRenderer
     act(() => {
       renderer = create(createElement(CodeRightPanelTabs, {
         state: { ...emptyCodeRightTabsState(), expanded: true },
-        domIdPrefix: 'empty-menu',
-        planEnabled: false,
-        filesEnabled: true,
-        sideConversationsEnabled: true,
+        domIdPrefix: 'empty-tabs',
         sideConversationCount: 0,
         sideConversationRunningCount: 0,
         extensionItems: [],
-        onOpen,
         onActivate: vi.fn(),
         onClose: vi.fn(),
-        onCollapse: vi.fn(),
-        onSelectExtension: vi.fn()
+        onCollapse: vi.fn()
       }))
     })
 
@@ -121,11 +91,6 @@ describe('CodeRightPanelTabs', () => {
       typeof node.props.className === 'string' && node.props.className.includes('ds-code-right-tabs'))
     expect(chrome.props.className).toContain('ds-no-drag')
     expect(renderer!.root.findAll((node) => node.props.role === 'tab')).toHaveLength(0)
-
-    const addButton = renderer!.root.findByProps({ 'aria-label': 'Open right workspace tool' })
-    act(() => addButton.props.onClick())
-    const browser = renderer!.root.findByProps({ 'data-tool-id': BUILTIN_RIGHT_PANEL_IDS.browser })
-    act(() => browser.props.onClick())
-    expect(onOpen).toHaveBeenCalledWith(BUILTIN_RIGHT_PANEL_IDS.browser)
+    expect(renderer!.root.findAllByProps({ 'aria-label': 'Open right workspace tool' })).toHaveLength(0)
   })
 })

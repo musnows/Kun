@@ -172,7 +172,7 @@ kun extension doctor acme.hello-sidebar
 
 安装前，Kun 会在受保护窗口显示来源、ID、版本、SHA-256、签名状态、贡献和权限。Node 或 Direct DOM 权限会显示额外高风险说明。确认后才会原子安装并选择该版本。
 
-打开 Kun，在 Code 模式右侧竖向图标栏或 `+` 工具菜单中直接选择 **Hello**，Kun 会把它作为独立的右侧工作区标签打开。只渲染图标和标题不会激活 Node 入口；真正打开 View 时 `onView:hello` 才触发激活并建立一个身份绑定的 View Session。
+打开 Kun，在 Code 模式右侧竖向图标栏中直接选择 **Hello**，Kun 会把它作为独立的右侧工作区标签打开。只渲染图标和标题不会激活 Node 入口；真正打开 View 时 `onView:hello` 才触发激活并建立一个身份绑定的 View Session。
 
 ## 7. 查看日志与清理
 
