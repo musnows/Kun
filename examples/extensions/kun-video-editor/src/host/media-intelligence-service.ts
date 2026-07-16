@@ -5,6 +5,10 @@ import type {
   MediaAudioAnalysisCapabilities
 } from '@kun/extension-api'
 import {
+  containsAsciiControlCharacters,
+  replaceAsciiControlCharacters
+} from '../text-safety.js'
+import {
   SpeakerIdentityRegistry,
   SpeakerRegistry,
   VisualIndexProgressTracker,
@@ -548,7 +552,7 @@ export class MediaIntelligenceService {
       }
   > {
     const query = input.query.normalize('NFKC').trim()
-    if (!query || query.length > 256 || /[\u0000-\u001f\u007f]/u.test(query)) {
+    if (!query || query.length > 256 || containsAsciiControlCharacters(query)) {
       throw new Error('Visual moment query must contain 1 through 256 printable characters.')
     }
     const index = await this.getRecord(input.project.id, input.indexId)
@@ -1576,9 +1580,7 @@ function verifyVisualReceiptProjection(
 }
 
 function boundedRemediation(value: string): string {
-  const printable = value
-    .normalize('NFKC')
-    .replace(/[\u0000-\u001f\u007f]/gu, ' ')
+  const printable = replaceAsciiControlCharacters(value.normalize('NFKC'), ' ')
     .replace(/\b(?:file|https?):\/\/\S+/giu, '[redacted-location]')
     .replace(/\/(?:Users|private|tmp|home)\/[^\s,;]+/gu, '[redacted-path]')
     .replace(/\s+/gu, ' ')

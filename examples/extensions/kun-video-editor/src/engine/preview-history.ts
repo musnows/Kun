@@ -1,6 +1,7 @@
 import { engineError } from './errors.js'
 import type { TimelineOperation, VideoProject } from './schema.js'
 import { framesToMicroseconds, normalizeRational } from './time.js'
+import { containsNullOrLineBreak } from '../text-safety.js'
 
 export const PREVIEW_HISTORY_LIMITS = Object.freeze({
   entries: 40,
@@ -205,7 +206,7 @@ export function validateHistory(history: PreviewHistory): void {
 function validateEntry(entry: PreviewHistoryEntry): void {
   boundedId(entry.id, 'preview.id')
   boundedId(entry.projectId, 'preview.projectId')
-  if (!entry.label || entry.label.length > 160 || /[\u0000\r\n]/u.test(entry.label)) invalid('Preview label is invalid')
+  if (!entry.label || entry.label.length > 160 || containsNullOrLineBreak(entry.label)) invalid('Preview label is invalid')
   if (!Number.isFinite(Date.parse(entry.createdAt))) invalid('Preview timestamp is invalid')
   if (entry.source.kind === 'asset') {
     boundedId(entry.source.assetId, 'preview.assetId')

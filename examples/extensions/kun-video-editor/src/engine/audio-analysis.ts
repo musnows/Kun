@@ -9,6 +9,7 @@ import type {
 } from './schema.js'
 import { applyTimelineOperations } from './timeline.js'
 import { microsecondsToFrames } from './time.js'
+import { containsAsciiControlCharacters } from '../text-safety.js'
 
 export type LocalAnalysisProvenance = {
   adapterId: string
@@ -1367,7 +1368,7 @@ function persistedSpeakerAttribution(value: SpeakerAttribution): SpeakerAttribut
 
 function boundedSpeakerLabel(value: string, name: string): string {
   const normalized = value.normalize('NFKC').trim()
-  if (normalized.length < 1 || normalized.length > 128 || /[\u0000-\u001f\u007f]/u.test(normalized)) {
+  if (normalized.length < 1 || normalized.length > 128 || containsAsciiControlCharacters(normalized)) {
     throw engineError('invalid_operation', `${name} is invalid`)
   }
   return normalized

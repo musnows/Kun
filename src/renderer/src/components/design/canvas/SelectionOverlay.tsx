@@ -1,6 +1,6 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from 'react'
 import { useTranslation } from 'react-i18next'
-import type { CanvasShape, Rect } from '../../../design/canvas/canvas-types'
+import type { CanvasDocument, CanvasShape, Rect } from '../../../design/canvas/canvas-types'
 import { ROOT_SHAPE_ID, isHtmlFrame } from '../../../design/canvas/canvas-types'
 import { shapeGeometry } from '../../../design/canvas/canvas-types'
 import { useDesignWorkspaceStore } from '../../../design/design-workspace-store'
@@ -23,6 +23,7 @@ import {
   endAutoKeyCanvasGesture
 } from '../../../design/motion/canvas-motion-auto-key'
 import { useCanvasMotionStore } from '../../../design/motion/canvas-motion-store'
+import { projectCanvasMotionObjects } from '../../../design/motion/canvas-motion-preview'
 import { useCanvasSelectionStore } from '../../../design/canvas/canvas-selection-store'
 import { useCanvasViewportStore } from '../../../design/canvas/canvas-viewport-store'
 import { useDesignAssistantStore } from '../../../design/design-assistant-store'
@@ -599,3 +600,22 @@ function handleCursor(pos: ResizeHandle): string {
 }
 
 export const SelectionOverlay = memo(SelectionOverlayInner)
+
+type MotionSelectionOverlayProps = Omit<ComponentProps<typeof SelectionOverlay>, 'objects'> & {
+  document: CanvasDocument
+}
+
+/** Projects motion values at the playhead before drawing selection handles. */
+export function MotionSelectionOverlay({ document, ...props }: MotionSelectionOverlayProps) {
+  const open = useCanvasMotionStore((state) => state.open)
+  const frameId = useCanvasMotionStore((state) => state.activeFrameId)
+  const timeMs = useCanvasMotionStore((state) => state.currentTimeMs)
+  const gestureOverrides = useCanvasMotionStore((state) => state.gestureOverrides)
+  const objects = useMemo(
+    () => open && frameId
+      ? projectCanvasMotionObjects(document, frameId, timeMs, gestureOverrides)
+      : document.objects,
+    [document, frameId, gestureOverrides, open, timeMs]
+  )
+  return <SelectionOverlay {...props} objects={objects} />
+}

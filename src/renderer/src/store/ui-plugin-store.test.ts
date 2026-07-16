@@ -110,4 +110,62 @@ describe('UI plugin CDP theme activation', () => {
     expect(attributes.get('data-ui-plugin')).toBe('beta-theme')
     expect(createElement).not.toHaveBeenCalled()
   })
+
+  it('waits for activation before removing that plugin and leaves the default mode active', async () => {
+    const { attributes, localStorage } = createDomFixture()
+    const activationResult = deferred<{
+      ok: true
+      manifest: { id: string; name: string; version: string; figures: {} }
+      figures: {}
+    }>()
+    const activateUiPluginTheme = vi.fn(() => activationResult.promise)
+    const deactivateUiPluginTheme = vi.fn(async () => ({ ok: true as const }))
+    const removeUiPlugin = vi.fn(async () => ({ ok: true }))
+    const listUiPlugins = vi.fn(async () => ({ plugins: [] }))
+    vi.stubGlobal('window', {
+      localStorage,
+      kunGui: {
+        activateUiPluginTheme,
+        deactivateUiPluginTheme,
+        removeUiPlugin,
+        listUiPlugins
+      }
+    })
+
+    const activation = useUiPluginStore.getState().activateUiMode('alpha-theme')
+    await vi.waitFor(() => expect(activateUiPluginTheme).toHaveBeenCalledOnce())
+    const removal = useUiPluginStore.getState().removeUiPluginById('alpha-theme')
+    expect(removeUiPlugin).not.toHaveBeenCalled()
+
+    activationResult.resolve({
+      ok: true,
+      manifest: { id: 'alpha-theme', name: 'Alpha', version: '1.0.0', figures: {} },
+      figures: {}
+    })
+    await Promise.all([activation, removal])
+
+    expect(deactivateUiPluginTheme).toHaveBeenCalledOnce()
+    expect(removeUiPlugin).toHaveBeenCalledWith('alpha-theme')
+    expect(useUiPluginStore.getState()).toMatchObject({
+      uiMode: UI_MODE_DEFAULT,
+      activeRuntime: null,
+      busy: false,
+      lastError: null
+    })
+    expect(attributes.has('data-ui-plugin')).toBe(false)
+  })
+
+  it('surfaces a failed plugin removal instead of silently refreshing the list', async () => {
+    const { localStorage } = createDomFixture()
+    const removeUiPlugin = vi.fn(async () => ({ ok: false }))
+    const listUiPlugins = vi.fn(async () => ({ plugins: [] }))
+    vi.stubGlobal('window', { localStorage, kunGui: { removeUiPlugin, listUiPlugins } })
+
+    await useUiPluginStore.getState().removeUiPluginById('alpha-theme')
+
+    expect(removeUiPlugin).toHaveBeenCalledWith('alpha-theme')
+    expect(listUiPlugins).toHaveBeenCalledOnce()
+    expect(useUiPluginStore.getState().lastError).toMatch(/删除 UI 插件失败/)
+    expect(useUiPluginStore.getState().busy).toBe(false)
+  })
 })

@@ -184,7 +184,6 @@ async function main() {
     )
   } catch (error) {
     primaryError = error
-    throw error
   } finally {
     if (electronApplication) {
       await electronApplication.close().catch((error) => cleanupErrors.push(error))
@@ -205,14 +204,15 @@ async function main() {
         await rm(path, { recursive: true, force: true }).catch((error) => cleanupErrors.push(error))
       }))
     }
-    if (!primaryError && cleanupErrors.length > 0) {
-      throw new Error(`Packaged layout smoke cleanup failed: ${cleanupErrors.map(String).join(' | ')}`)
-    }
     if (primaryError && cleanupErrors.length > 0) {
       process.stderr.write(
         `Packaged layout smoke cleanup warnings: ${cleanupErrors.map(String).join(' | ')}\n`
       )
     }
+  }
+  if (primaryError) throw primaryError
+  if (cleanupErrors.length > 0) {
+    throw new Error(`Packaged layout smoke cleanup failed: ${cleanupErrors.map(String).join(' | ')}`)
   }
 }
 

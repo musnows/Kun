@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { PenLine } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useCanvasShapeStore } from '../../../design/canvas/canvas-shape-store'
@@ -27,7 +27,7 @@ import { CanvasGrid } from './CanvasGrid'
 import { CanvasToolbar } from './CanvasToolbar'
 import { CanvasZoomBar } from './CanvasZoomBar'
 import { CanvasMinimap } from './CanvasMinimap'
-import { SelectionOverlay } from './SelectionOverlay'
+import { MotionSelectionOverlay } from './SelectionOverlay'
 import { PrototypePlayerOverlay } from './PrototypePlayerOverlay'
 import { AlignmentToolbar } from './AlignmentToolbar'
 import {
@@ -105,24 +105,6 @@ export function canvasViewportBackgroundFillClass(surface: 'design' | 'code'): s
 
 export function shouldShowCanvasDocumentLoading(document: CanvasDocument): boolean {
   return !document.objects[document.rootId]
-}
-
-type MotionSelectionOverlayProps = Omit<ComponentProps<typeof SelectionOverlay>, 'objects'> & {
-  document: CanvasDocument
-}
-
-function MotionSelectionOverlay({ document, ...props }: MotionSelectionOverlayProps) {
-  const open = useCanvasMotionStore((state) => state.open)
-  const frameId = useCanvasMotionStore((state) => state.activeFrameId)
-  const timeMs = useCanvasMotionStore((state) => state.currentTimeMs)
-  const gestureOverrides = useCanvasMotionStore((state) => state.gestureOverrides)
-  const objects = useMemo(
-    () => open && frameId
-      ? projectCanvasMotionObjects(document, frameId, timeMs, gestureOverrides)
-      : document.objects,
-    [document, frameId, gestureOverrides, open, timeMs]
-  )
-  return <SelectionOverlay {...props} objects={objects} />
 }
 
 export function CanvasViewport({

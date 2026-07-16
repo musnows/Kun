@@ -8,6 +8,14 @@ const OpaqueMediaReferenceSchema = z
   .max(512)
   .regex(/^[A-Za-z0-9_-]+$/, 'Expected an opaque media reference')
 
+function containsAsciiControlCharacters(value: string): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index)
+    if (code <= 0x1f || code === 0x7f) return true
+  }
+  return false
+}
+
 export const MediaHandleIdSchema = OpaqueMediaReferenceSchema
 export type MediaHandleId = z.infer<typeof MediaHandleIdSchema>
 
@@ -856,7 +864,7 @@ export const MediaAnalyzeVisualFramesResultSchema = z.discriminatedUnion('outcom
 export type MediaAnalyzeVisualFramesResult = z.infer<typeof MediaAnalyzeVisualFramesResultSchema>
 
 export const MediaEmbedVisualQueryRequestSchema = z.strictObject({
-  query: z.string().min(1).max(256).refine((value) => !/[\u0000-\u001f\u007f]/u.test(value), {
+  query: z.string().min(1).max(256).refine((value) => !containsAsciiControlCharacters(value), {
     message: 'Visual query must contain printable text'
   }),
   adapter: MediaVisualAdapterBindingSchema

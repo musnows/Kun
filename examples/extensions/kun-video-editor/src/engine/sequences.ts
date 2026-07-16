@@ -12,6 +12,7 @@ import {
 } from './schema.js'
 import { framesToMicroseconds, microsecondsToFrames, normalizeRational } from './time.js'
 import { trimKeyframeTrack } from './keyframes.js'
+import { containsNullOrLineBreak } from '../text-safety.js'
 
 export const SEQUENCE_EDIT_LIMITS = Object.freeze({
   nestingDepth: 8,
@@ -449,7 +450,7 @@ function boundedId(value: string, label: string): void {
 }
 
 function boundedName(value: string): void {
-  if (!value.trim() || value.length > 160 || /[\u0000\r\n]/u.test(value)) invalid('Sequence name is invalid')
+  if (!value.trim() || value.length > 160 || containsNullOrLineBreak(value)) invalid('Sequence name is invalid')
 }
 
 function nonNegativeFrame(value: number, label: string): void {

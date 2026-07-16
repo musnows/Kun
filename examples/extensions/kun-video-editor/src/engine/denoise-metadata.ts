@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { engineError } from './errors.js'
 import type { LocalAnalysisProvenance } from './audio-analysis.js'
 import type { SourceIdentity } from './schema.js'
+import { containsAsciiControlCharacters } from '../text-safety.js'
 
 const MAX_ANALYZED_DURATION_US = 7 * 24 * 60 * 60 * 1_000_000
 const MAX_SAMPLE_WINDOWS = 1_000_000
@@ -349,7 +350,7 @@ function validateIdentifier(value: string, name: string): void {
 }
 
 function boundedString(value: string, minimum: number, maximum: number, name: string): string {
-  if (value.length < minimum || value.length > maximum || /[\u0000-\u001f\u007f]/u.test(value)) {
+  if (value.length < minimum || value.length > maximum || containsAsciiControlCharacters(value)) {
     throw engineError('invalid_operation', `${name} is out of bounds`)
   }
   return value

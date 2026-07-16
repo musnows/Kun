@@ -13,6 +13,7 @@ import type {
   ToolInvocationContext,
   ToolResult
 } from '@kun/extension-api'
+import { replaceAsciiControlCharacters } from '../text-safety.js'
 import {
   ProjectService,
   TimelineOperationSchema,
@@ -5133,7 +5134,7 @@ function safeInterchangeName(value: string): string {
 
 function safeInterchangeDisplayName(value: string): string {
   const leaf = value.split(/[\\/]/u).filter(Boolean).at(-1) ?? 'timeline.otio'
-  return leaf.replace(/[\u0000-\u001f\u007f]/gu, '').slice(0, 256) || 'timeline.otio'
+  return replaceAsciiControlCharacters(leaf, '').slice(0, 256) || 'timeline.otio'
 }
 
 function suggestedImportProjectId(sourceProjectId: string, existing: ReadonlySet<string>): string {

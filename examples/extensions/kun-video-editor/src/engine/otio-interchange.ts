@@ -13,6 +13,7 @@ import {
   type VideoProject
 } from './schema.js'
 import { framesToMicroseconds, microsecondsToFrames, rescaleFrames } from './time.js'
+import { containsNullOrLineBreak, replaceNullOrLineBreaks } from '../text-safety.js'
 
 export const OTIO_ADAPTER_ID = 'kun.otio-json' as const
 export const OTIO_ADAPTER_VERSION = '1.0.0' as const
@@ -531,7 +532,7 @@ function arrayValue(value: unknown, label: string): unknown[] {
 
 function safeOtioName(value: unknown, fallback: string): string {
   if (typeof value !== 'string') return fallback
-  const safe = value.replace(/[\u0000\r\n]/gu, ' ').trim().slice(0, 255)
+  const safe = replaceNullOrLineBreaks(value, ' ').trim().slice(0, 255)
   return safe || fallback
 }
 
@@ -1036,7 +1037,7 @@ function optionalRecord(value: unknown): Record<string, unknown> | undefined {
 }
 
 function stringValue(value: unknown, label: string, maximum: number): string {
-  if (typeof value !== 'string' || value.length < 1 || value.length > maximum || /[\u0000\r\n]/u.test(value)) {
+  if (typeof value !== 'string' || value.length < 1 || value.length > maximum || containsNullOrLineBreak(value)) {
     invalid(`${label} must be a bounded string`)
   }
   return value

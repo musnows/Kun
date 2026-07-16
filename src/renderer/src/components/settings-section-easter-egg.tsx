@@ -105,10 +105,11 @@ function ModeCardButton({
       {card.removable && onRemove ? (
         <button
           type="button"
+          disabled={busy}
           onClick={onRemove}
           title={removeLabel}
           aria-label={removeLabel}
-          className="absolute right-2 top-2 rounded-md p-1 text-ds-faint transition hover:bg-ds-danger-soft hover:text-ds-danger"
+          className="absolute right-2 top-2 rounded-md p-1 text-ds-faint transition hover:bg-ds-danger-soft hover:text-ds-danger disabled:cursor-default disabled:opacity-50"
         >
           <Trash2 className="h-3.5 w-3.5" strokeWidth={1.8} />
         </button>

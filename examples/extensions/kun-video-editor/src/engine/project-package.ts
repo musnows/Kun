@@ -8,6 +8,7 @@ import {
   type MutationReceipt,
   type VideoProject
 } from './schema.js'
+import { containsNullOrLineBreak, replaceNullOrLineBreaks } from '../text-safety.js'
 
 export const PROJECT_PACKAGE_SCHEMA_VERSION = 1 as const
 
@@ -662,7 +663,7 @@ function looksLikePath(value: string): boolean {
 
 function safeLogicalName(value: string, fallback: string): string {
   const leaf = value.split(/[\\/]/u).filter(Boolean).at(-1) ?? fallback
-  const safe = leaf.replace(/[\u0000\r\n]/gu, '').trim().slice(0, 255)
+  const safe = replaceNullOrLineBreaks(leaf, '').trim().slice(0, 255)
   return safe || fallback
 }
 
@@ -728,7 +729,7 @@ function boundedId(value: unknown, label: string): asserts value is string {
 }
 
 function boundedString(value: unknown, label: string, maximum: number): asserts value is string {
-  if (typeof value !== 'string' || value.length < 1 || value.length > maximum || /[\u0000\r\n]/u.test(value)) {
+  if (typeof value !== 'string' || value.length < 1 || value.length > maximum || containsNullOrLineBreak(value)) {
     invalid(`${label} must be a bounded string`)
   }
 }

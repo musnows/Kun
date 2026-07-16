@@ -219,17 +219,42 @@ export const useUiPluginStore = create<UiPluginState>((set, get) => ({
     }
   },
 
-  removeUiPluginById: async (id: string) => {
-    const api = uiPluginApi()
-    if (typeof api?.removeUiPlugin !== 'function') return
-    if (get().uiMode === id) {
-      await get().activateUiMode(UI_MODE_DEFAULT)
-    }
-    try {
-      await api.removeUiPlugin(id)
-    } finally {
-      await get().refreshUiPlugins()
-    }
+  removeUiPluginById: (id: string) => {
+    const normalized = id.trim().toLowerCase()
+    // Removal shares the activation queue so an in-flight load/injection must
+    // settle before we inspect the active mode or delete its on-disk assets.
+    const operation = activationQueue.then(async () => {
+      const api = uiPluginApi()
+      if (typeof api?.removeUiPlugin !== 'function') {
+        set({ busy: false, lastError: '桌面接口不可用' })
+        return
+      }
+
+      set({ busy: true, lastError: null })
+      try {
+        if (get().uiMode === normalized) {
+          writeUiModePreference(UI_MODE_DEFAULT)
+          set({ uiMode: UI_MODE_DEFAULT, activeRuntime: null })
+          applyUiModeDom(UI_MODE_DEFAULT, null)
+          await deactivateHostTheme(api)
+        }
+
+        const result = await api.removeUiPlugin(normalized)
+        if (!result.ok) {
+          set({ lastError: '删除 UI 插件失败，插件可能正在使用或文件不可写' })
+        }
+      } catch (error) {
+        set({ lastError: error instanceof Error ? error.message : String(error) })
+      } finally {
+        await get().refreshUiPlugins()
+        set({ busy: false })
+      }
+    })
+    activationQueue = operation.then(
+      () => undefined,
+      () => undefined
+    )
+    return operation
   }
 }))
 

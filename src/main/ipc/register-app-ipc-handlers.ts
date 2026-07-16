@@ -528,6 +528,15 @@ export function registerAppIpcHandlers(options: RegisterAppIpcHandlersOptions): 
       })
     }
   })
+  let uiPluginOperationQueue: Promise<void> = Promise.resolve()
+  const enqueueUiPluginOperation = <T>(operation: () => Promise<T>): Promise<T> => {
+    const result = uiPluginOperationQueue.then(operation, operation)
+    uiPluginOperationQueue = result.then(
+      () => undefined,
+      () => undefined
+    )
+    return result
+  }
 
   const applyProtectedSettingsPatch = async (
     event: Pick<IpcMainInvokeEvent, 'sender' | 'senderFrame'>,
@@ -1255,7 +1264,9 @@ export function registerAppIpcHandlers(options: RegisterAppIpcHandlersOptions): 
     if (picked.canceled || !sourceDir) {
       return { canceled: true as const }
     }
-    const result = await installUiPluginFromDirectory(join(homedir(), '.kun'), sourceDir)
+    const result = await enqueueUiPluginOperation(() =>
+      installUiPluginFromDirectory(join(homedir(), '.kun'), sourceDir)
+    )
     if (!result.ok) {
       return { canceled: false as const, ok: false as const, errors: result.errors }
     }
@@ -1265,18 +1276,20 @@ export function registerAppIpcHandlers(options: RegisterAppIpcHandlersOptions): 
   ipcMain.handle('ui-plugin:remove', async (event, payload: unknown) => {
     assertTrustedWorkbenchSender(event, getMainWindow)
     const request = parseIpcPayload('ui-plugin:remove', uiPluginIdPayloadSchema, payload)
-    if (uiPluginThemeController.activePluginId === request.id) {
-      try {
-        await uiPluginThemeController.deactivate()
-      } catch (error) {
-        logError('ui-plugin-cdp', 'Could not deactivate the UI plugin before removal', {
-          pluginId: request.id,
-          message: error instanceof Error ? error.message : String(error)
-        })
-        return { ok: false }
+    return enqueueUiPluginOperation(async () => {
+      if (uiPluginThemeController.activePluginId === request.id) {
+        try {
+          await uiPluginThemeController.deactivate()
+        } catch (error) {
+          logError('ui-plugin-cdp', 'Could not deactivate the UI plugin before removal', {
+            pluginId: request.id,
+            message: error instanceof Error ? error.message : String(error)
+          })
+          return { ok: false }
+        }
       }
-    }
-    return { ok: await removeUiPlugin(join(homedir(), '.kun'), request.id) }
+      return { ok: await removeUiPlugin(join(homedir(), '.kun'), request.id) }
+    })
   })
 
   ipcMain.handle('ui-plugin:load', async (event, payload: unknown) => {
@@ -1294,46 +1307,50 @@ export function registerAppIpcHandlers(options: RegisterAppIpcHandlersOptions): 
       uiPluginIdPayloadSchema,
       payload
     )
-    const kunHomeDir = join(homedir(), '.kun')
-    await ensureBundledUiPlugins(kunHomeDir)
-    const loaded = await loadUiPluginFigures(kunHomeDir, request.id)
-    if (!loaded.ok) return { ok: false as const, error: loaded.error }
+    return enqueueUiPluginOperation(async () => {
+      const kunHomeDir = join(homedir(), '.kun')
+      await ensureBundledUiPlugins(kunHomeDir)
+      const loaded = await loadUiPluginFigures(kunHomeDir, request.id)
+      if (!loaded.ok) return { ok: false as const, error: loaded.error }
 
-    // Only normalized manifest fields and main-validated image data reach the
-    // CSS builders. The renderer cannot supply CSS or executable payloads.
-    const css = [
-      buildUiPluginTokenCss(loaded.manifest),
-      buildUiPluginBackgroundCss(loaded.manifest, loaded.backgrounds)
-    ]
-      .filter(Boolean)
-      .join('\n\n')
-    try {
-      await uiPluginThemeController.activate(loaded.manifest.id, css)
-      return {
-        ok: true as const,
-        manifest: loaded.manifest,
-        figures: loaded.figures
+      // Only normalized manifest fields and main-validated image data reach the
+      // CSS builders. The renderer cannot supply CSS or executable payloads.
+      const css = [
+        buildUiPluginTokenCss(loaded.manifest),
+        buildUiPluginBackgroundCss(loaded.manifest, loaded.backgrounds)
+      ]
+        .filter(Boolean)
+        .join('\n\n')
+      try {
+        await uiPluginThemeController.activate(loaded.manifest.id, css)
+        return {
+          ok: true as const,
+          manifest: loaded.manifest,
+          figures: loaded.figures
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        logError('ui-plugin-cdp', 'Could not activate a UI plugin theme', {
+          pluginId: loaded.manifest.id,
+          message
+        })
+        return { ok: false as const, error: message }
       }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      logError('ui-plugin-cdp', 'Could not activate a UI plugin theme', {
-        pluginId: loaded.manifest.id,
-        message
-      })
-      return { ok: false as const, error: message }
-    }
+    })
   })
 
   ipcMain.handle('ui-plugin:theme:deactivate', async (event) => {
     assertTrustedWorkbenchSender(event, getMainWindow)
-    try {
-      await uiPluginThemeController.deactivate()
-      return { ok: true as const }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      logError('ui-plugin-cdp', 'Could not deactivate the UI plugin theme', { message })
-      return { ok: false as const, error: message }
-    }
+    return enqueueUiPluginOperation(async () => {
+      try {
+        await uiPluginThemeController.deactivate()
+        return { ok: true as const }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        logError('ui-plugin-cdp', 'Could not deactivate the UI plugin theme', { message })
+        return { ok: false as const, error: message }
+      }
+    })
   })
 
   ipcMain.handle('kun:config:read', async () => {

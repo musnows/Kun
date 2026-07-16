@@ -12,6 +12,10 @@ import {
 } from '@kun/extension-api'
 import { useCallback, useEffect, useMemo, useReducer, useRef } from 'react'
 import {
+  containsAsciiControlCharacters,
+  replaceNullOrLineBreaks
+} from '../text-safety.js'
+import {
   INITIAL_EDITOR_STATE,
   VIEW_LIMITS,
   editorReducer,
@@ -4513,7 +4517,8 @@ function otioImportPreviewFrom(value: unknown, invalidMessage: string): OtioImpo
     value.persisted !== false || value.confirmationRequired !== true ||
     typeof value.inputHandleId !== 'string' || !/^[A-Za-z0-9_-]{16,512}$/u.test(value.inputHandleId) ||
     typeof value.displayName !== 'string' || value.displayName.length < 1 || value.displayName.length > 256 ||
-    /[\\/\u0000-\u001f\u007f]/u.test(value.displayName) ||
+    (value.displayName.includes('/') || value.displayName.includes('\\') ||
+      containsAsciiControlCharacters(value.displayName)) ||
     typeof value.sourceDocumentDigest !== 'string' || !/^[a-f0-9]{64}$/u.test(value.sourceDocumentDigest) ||
     !stableProjectionId(value.sourceProjectId) || safeInteger(value.sourceProjectRevision) === undefined ||
     !stableProjectionId(value.suggestedProjectId) ||
@@ -4906,7 +4911,7 @@ function boundedIdentifier(value: unknown): value is string {
 }
 
 function boundedName(value: string, missingMessage: string): string {
-  const normalized = value.trim().replace(/[\r\n\u0000]/gu, ' ').slice(0, 160)
+  const normalized = replaceNullOrLineBreaks(value.trim(), ' ').slice(0, 160)
   if (!normalized) throw new Error(missingMessage)
   return normalized
 }

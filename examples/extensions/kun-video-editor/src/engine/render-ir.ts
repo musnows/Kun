@@ -19,6 +19,7 @@ import type {
   EffectInstance,
   KeyframeTrack
 } from './schema.js'
+import { containsNullOrLineBreak } from '../text-safety.js'
 
 export const RENDER_IR_SCHEMA_VERSION = 1 as const
 
@@ -941,7 +942,7 @@ function validateFrameRange(range: RenderFrameRange, maximum?: number): void {
 function validateReference(reference: RenderSourceReference): void {
   if (reference.kind !== 'media-handle' && reference.kind !== 'workspace-file') invalid('Unsupported source reference kind')
   boundedString(reference.reference, 'source reference', 512)
-  if (/[\u0000\r\n]/u.test(reference.reference)) invalid('Source reference contains control characters')
+  if (containsNullOrLineBreak(reference.reference)) invalid('Source reference contains control characters')
 }
 
 function validateBackendCapabilities(capabilities: RenderBackendCapabilities): void {
@@ -1084,7 +1085,7 @@ function boundedId(value: unknown, label: string): asserts value is string {
 }
 
 function boundedString(value: unknown, label: string, maximum: number): asserts value is string {
-  if (typeof value !== 'string' || value.length < 1 || value.length > maximum || /\u0000/u.test(value)) {
+  if (typeof value !== 'string' || value.length < 1 || value.length > maximum || value.includes('\0')) {
     invalid(`${label} must be a bounded string`)
   }
 }

@@ -1,4 +1,5 @@
 import type { GeneratedArtifact, JobSnapshot, MediaCapabilityFeature } from '@kun/extension-api'
+import { replaceAsciiControlCharacters } from '../text-safety.js'
 import {
   useEffect,
   useMemo,
@@ -2699,5 +2700,5 @@ function recordValue(value: unknown): Record<string, unknown> | undefined {
 
 function safeHostDisplayName(value: string): string {
   const leaf = value.normalize('NFKC').replace(/\\/gu, '/').split('/').at(-1)?.trim() ?? ''
-  return leaf.replace(/[\u0000-\u001f\u007f]/gu, '').slice(0, 256) || 'project-package.zip'
+  return replaceAsciiControlCharacters(leaf, '').slice(0, 256) || 'project-package.zip'
 }

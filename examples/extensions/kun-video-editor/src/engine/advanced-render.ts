@@ -7,6 +7,7 @@ import {
   type RenderIrEffect
 } from './render-ir.js'
 import type { Rational } from './schema.js'
+import { containsNullOrLineBreak } from '../text-safety.js'
 
 export const ADVANCED_RENDER_LIMITS = Object.freeze({
   capabilityEntries: 256,
@@ -851,7 +852,7 @@ function sortJson(value: unknown): unknown {
 }
 
 function boundedString(value: unknown, label: string, maximum: number): asserts value is string {
-  if (typeof value !== 'string' || value.length < 1 || value.length > maximum || /[\u0000\r\n]/u.test(value)) {
+  if (typeof value !== 'string' || value.length < 1 || value.length > maximum || containsNullOrLineBreak(value)) {
     invalid(`${label} must be a bounded string`)
   }
 }

@@ -14,6 +14,7 @@ import {
   type ProjectPackageChatProvenance,
   type ProjectPackageGenerationLineage
 } from './project-package.js'
+import { containsNullOrLineBreak, replaceNullOrLineBreaks } from '../text-safety.js'
 
 export const PROJECT_PACKAGE_ARCHIVE_SCHEMA_VERSION = 1 as const
 export const PROJECT_PACKAGE_ARCHIVE_INLINE_ENTRIES = 6
@@ -473,7 +474,7 @@ function assertManifestSafe(manifest: ProjectPackageArchiveManifest): void {
 
 function safeLeaf(value: string, fallback: string): string {
   const leaf = value.split(/[\\/]/u).filter(Boolean).at(-1) ?? fallback
-  return leaf.replace(/[\u0000\r\n]/gu, '').trim().slice(0, 255) || fallback
+  return replaceNullOrLineBreaks(leaf, '').trim().slice(0, 255) || fallback
 }
 
 function safeExtension(value: string): string {
@@ -550,7 +551,7 @@ function boundedId(value: unknown, label: string): string {
 }
 
 function boundedString(value: unknown, label: string, maximum: number): asserts value is string {
-  if (typeof value !== 'string' || value.length < 1 || value.length > maximum || /[\u0000\r\n]/u.test(value)) {
+  if (typeof value !== 'string' || value.length < 1 || value.length > maximum || containsNullOrLineBreak(value)) {
     invalid(`${label} must be a bounded string`)
   }
 }
