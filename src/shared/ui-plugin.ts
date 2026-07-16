@@ -22,6 +22,48 @@ export const UI_PLUGIN_FIGURE_SLOTS = [
 
 export type UiPluginFigureSlot = (typeof UI_PLUGIN_FIGURE_SLOTS)[number]
 
+/** 可换肤的应用表面:整窗、侧栏和主舞台 */
+export const UI_PLUGIN_BACKGROUND_SLOTS = ['app', 'sidebar', 'stage'] as const
+
+export type UiPluginBackgroundSlot = (typeof UI_PLUGIN_BACKGROUND_SLOTS)[number]
+
+export const UI_PLUGIN_BACKGROUND_THEMES = ['light', 'dark'] as const
+
+export type UiPluginBackgroundTheme = (typeof UI_PLUGIN_BACKGROUND_THEMES)[number]
+
+export const UI_PLUGIN_BACKGROUND_FITS = ['cover', 'contain'] as const
+
+export type UiPluginBackgroundFit = (typeof UI_PLUGIN_BACKGROUND_FITS)[number]
+
+export const UI_PLUGIN_BACKGROUND_POSITIONS = [
+  'top-left',
+  'top',
+  'top-right',
+  'left',
+  'center',
+  'right',
+  'bottom-left',
+  'bottom',
+  'bottom-right'
+] as const
+
+export type UiPluginBackgroundPosition = (typeof UI_PLUGIN_BACKGROUND_POSITIONS)[number]
+
+export type UiPluginBackgroundLayer = {
+  /** 插件目录内的相对图片路径 */
+  path: string
+  fit: UiPluginBackgroundFit
+  position: UiPluginBackgroundPosition
+  opacity: number
+}
+
+export type UiPluginBackgrounds = Partial<
+  Record<
+    UiPluginBackgroundTheme,
+    Partial<Record<UiPluginBackgroundSlot, UiPluginBackgroundLayer>>
+  >
+>
+
 export const UI_PLUGIN_LABEL_KEYS = [
   'working',
   'workingSprint',
@@ -41,6 +83,8 @@ export type UiPluginManifestV1 = {
   description?: string
   /** 槽位 → 插件目录内的相对图片路径 */
   figures: Partial<Record<UiPluginFigureSlot, string>>
+  /** 可选:按明暗主题和应用表面声明背景层 */
+  backgrounds?: UiPluginBackgrounds
   /** 可选:进行中状态文案(按语言、按泳姿键) */
   labels?: Partial<Record<UiPluginLabelLocale, Partial<Record<UiPluginLabelKey, string>>>>
   /** 可选:主题 token 覆盖(仅 --ds-*) */
@@ -56,11 +100,23 @@ export type UiPluginManifestV1 = {
 
 export type UiPluginListItem = {
   manifest: UiPluginManifestV1
-  /** 预览图(toggleIcon → swim → 第一个槽位)的 data URL,列表页用 */
+  /** 列表预览 data URL:形象槽位优先,否则仅回退到满足严格预览预算的小型背景 */
   previewDataUrl: string | null
 }
 
 export type UiPluginRuntimeFigures = Partial<Record<UiPluginFigureSlot, string>>
+
+/**
+ * 主进程验证、读取后提供给渲染层的背景资源。
+ *
+ * 新运行时把同一路径的 data URL 只放入 assets 一次，避免 IPC 在多个槽位复用图片时
+ * 重复序列化大字符串。light/dark 保留为旧运行时 shape 的兼容读取入口。
+ */
+export type UiPluginRuntimeBackgrounds = {
+  assets?: Record<string, string>
+  light?: Partial<Record<UiPluginBackgroundSlot, string>>
+  dark?: Partial<Record<UiPluginBackgroundSlot, string>>
+}
 
 export type UiPluginValidationResult =
   | { ok: true; manifest: UiPluginManifestV1 }
@@ -70,6 +126,15 @@ export const UI_PLUGIN_LIMITS = {
   manifestBytes: 64 * 1024,
   figureBytes: 2 * 1024 * 1024,
   totalFigureBytes: 24 * 1024 * 1024,
+  figureMaxDimension: 4096,
+  figureMaxPixels: 12_000_000,
+  totalFigurePixels: 48_000_000,
+  backgroundBytes: 8 * 1024 * 1024,
+  totalBackgroundBytes: 32 * 1024 * 1024,
+  totalAssetBytes: 48 * 1024 * 1024,
+  backgroundMaxDimension: 8192,
+  backgroundMaxPixels: 24_000_000,
+  totalBackgroundPixels: 64_000_000,
   tokenEntries: 60,
   labelChars: 24
 } as const
@@ -86,21 +151,30 @@ const UI_PLUGIN_RESERVED_IDS = new Set(['default', 'kun', 'on', 'off', 'none'])
 /** 预装示例插件(iKun)的 id:激活时会同时启用 data-ikun-mode 手工动画机制 */
 export const UI_PLUGIN_BUNDLED_IKUN_ID = 'ikun'
 const UI_PLUGIN_VERSION_PATTERN = /^\d+\.\d+\.\d+(?:[-+][\w.-]{0,40})?$/
-const UI_PLUGIN_FIGURE_PATH_PATTERN = /^[\w][\w./-]{0,200}$/
+const UI_PLUGIN_ASSET_PATH_PATTERN = /^[\w][\w./-]{0,200}$/
 const UI_PLUGIN_FIGURE_EXTENSIONS = new Set(['png', 'webp', 'jpg', 'jpeg', 'gif'])
+const UI_PLUGIN_BACKGROUND_EXTENSIONS = new Set(['png', 'webp', 'jpg', 'jpeg'])
 const UI_PLUGIN_TOKEN_NAME_PATTERN = /^--ds-[a-z][a-z0-9-]{0,60}$/
 /** 颜色/渐变等安全值:禁分号、花括号、url()、反斜杠 */
 const UI_PLUGIN_TOKEN_VALUE_PATTERN = /^[#a-zA-Z0-9(),.%\s/-]{1,120}$/
 
-export function isSafeUiPluginFigurePath(value: string): boolean {
-  if (!UI_PLUGIN_FIGURE_PATH_PATTERN.test(value)) return false
+function isSafeUiPluginAssetPath(value: string, extensions: ReadonlySet<string>): boolean {
+  if (!UI_PLUGIN_ASSET_PATH_PATTERN.test(value)) return false
   if (value.includes('\\')) return false
   const segments = value.split('/')
   if (segments.some((segment) => segment.length === 0 || segment === '.' || segment === '..')) {
     return false
   }
   const extension = segments[segments.length - 1]?.split('.').pop()?.toLowerCase() ?? ''
-  return UI_PLUGIN_FIGURE_EXTENSIONS.has(extension)
+  return extensions.has(extension)
+}
+
+export function isSafeUiPluginFigurePath(value: string): boolean {
+  return isSafeUiPluginAssetPath(value, UI_PLUGIN_FIGURE_EXTENSIONS)
+}
+
+export function isSafeUiPluginBackgroundPath(value: string): boolean {
+  return isSafeUiPluginAssetPath(value, UI_PLUGIN_BACKGROUND_EXTENSIONS)
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -112,6 +186,88 @@ function readTrimmedString(value: unknown, max: number): string | null {
   const trimmed = value.trim()
   if (trimmed.length === 0 || trimmed.length > max) return null
   return trimmed
+}
+
+export const UI_PLUGIN_BACKGROUND_DEFAULT_OPACITY: Readonly<
+  Record<UiPluginBackgroundSlot, number>
+> = {
+  app: 0.22,
+  sidebar: 0.18,
+  stage: 0.32
+}
+
+function normalizeUiPluginBackgroundLayer(
+  raw: unknown,
+  theme: UiPluginBackgroundTheme,
+  slot: UiPluginBackgroundSlot,
+  errors: string[]
+): UiPluginBackgroundLayer | null {
+  const prefix = `backgrounds.${theme}.${slot}`
+  if (typeof raw === 'string') {
+    const path = raw.trim()
+    if (!isSafeUiPluginBackgroundPath(path)) {
+      errors.push(`${prefix} 的图片路径不合法(需为插件内相对路径,png/webp/jpg/jpeg)`)
+      return null
+    }
+    return {
+      path,
+      fit: 'cover',
+      position: 'center',
+      opacity: UI_PLUGIN_BACKGROUND_DEFAULT_OPACITY[slot]
+    }
+  }
+
+  if (!isPlainObject(raw)) {
+    errors.push(`${prefix} 需为图片路径字符串或背景层对象`)
+    return null
+  }
+
+  let valid = true
+  const allowedKeys = new Set(['path', 'fit', 'position', 'opacity'])
+  for (const key of Object.keys(raw)) {
+    if (!allowedKeys.has(key)) {
+      errors.push(`${prefix} 不支持键 "${key}"`)
+      valid = false
+    }
+  }
+
+  const path = typeof raw.path === 'string' ? raw.path.trim() : ''
+  if (!isSafeUiPluginBackgroundPath(path)) {
+    errors.push(`${prefix}.path 不合法(需为插件内相对路径,png/webp/jpg/jpeg)`)
+    valid = false
+  }
+
+  let fit: UiPluginBackgroundFit = 'cover'
+  if (raw.fit !== undefined) {
+    if (!(UI_PLUGIN_BACKGROUND_FITS as readonly unknown[]).includes(raw.fit)) {
+      errors.push(`${prefix}.fit 仅支持 cover 或 contain`)
+      valid = false
+    } else {
+      fit = raw.fit as UiPluginBackgroundFit
+    }
+  }
+
+  let position: UiPluginBackgroundPosition = 'center'
+  if (raw.position !== undefined) {
+    if (!(UI_PLUGIN_BACKGROUND_POSITIONS as readonly unknown[]).includes(raw.position)) {
+      errors.push(`${prefix}.position 不是支持的九宫格位置`)
+      valid = false
+    } else {
+      position = raw.position as UiPluginBackgroundPosition
+    }
+  }
+
+  let opacity = UI_PLUGIN_BACKGROUND_DEFAULT_OPACITY[slot]
+  if (raw.opacity !== undefined) {
+    if (typeof raw.opacity !== 'number' || !Number.isFinite(raw.opacity) || raw.opacity < 0 || raw.opacity > 1) {
+      errors.push(`${prefix}.opacity 需为 0-1 的有限数字`)
+      valid = false
+    } else {
+      opacity = raw.opacity
+    }
+  }
+
+  return valid ? { path, fit, position, opacity } : null
 }
 
 export function normalizeUiPluginManifest(raw: unknown): UiPluginValidationResult {
@@ -143,9 +299,9 @@ export function normalizeUiPluginManifest(raw: unknown): UiPluginValidationResul
   }
 
   const figures: Partial<Record<UiPluginFigureSlot, string>> = {}
-  if (!isPlainObject(raw.figures)) {
-    errors.push('figures 必填:至少声明一个形象槽位')
-  } else {
+  if (raw.figures !== undefined && !isPlainObject(raw.figures)) {
+    errors.push('figures 需为形象槽位对象')
+  } else if (isPlainObject(raw.figures)) {
     for (const [slot, value] of Object.entries(raw.figures)) {
       if (!(UI_PLUGIN_FIGURE_SLOTS as readonly string[]).includes(slot)) {
         errors.push(`未知形象槽位 "${slot}"`)
@@ -157,9 +313,49 @@ export function normalizeUiPluginManifest(raw: unknown): UiPluginValidationResul
       }
       figures[slot as UiPluginFigureSlot] = value.trim()
     }
-    if (Object.keys(figures).length === 0 && errors.length === 0) {
-      errors.push('figures 至少需要一个合法槽位')
+  }
+
+  const backgrounds: UiPluginBackgrounds = {}
+  if (raw.backgrounds !== undefined) {
+    if (!isPlainObject(raw.backgrounds)) {
+      errors.push('backgrounds 需为对象,如 { "light": { "app": "img/bg.png" } }')
+    } else {
+      for (const [theme, entries] of Object.entries(raw.backgrounds)) {
+        if (!(UI_PLUGIN_BACKGROUND_THEMES as readonly string[]).includes(theme)) {
+          errors.push(`backgrounds 不支持主题 "${theme}"`)
+          continue
+        }
+        if (!isPlainObject(entries)) {
+          errors.push(`backgrounds.${theme} 需为对象`)
+          continue
+        }
+        const normalized: Partial<Record<UiPluginBackgroundSlot, UiPluginBackgroundLayer>> = {}
+        for (const [slot, layerRaw] of Object.entries(entries)) {
+          if (!(UI_PLUGIN_BACKGROUND_SLOTS as readonly string[]).includes(slot)) {
+            errors.push(`backgrounds.${theme} 不支持槽位 "${slot}"`)
+            continue
+          }
+          const layer = normalizeUiPluginBackgroundLayer(
+            layerRaw,
+            theme as UiPluginBackgroundTheme,
+            slot as UiPluginBackgroundSlot,
+            errors
+          )
+          if (layer) normalized[slot as UiPluginBackgroundSlot] = layer
+        }
+        if (Object.keys(normalized).length > 0) {
+          backgrounds[theme as UiPluginBackgroundTheme] = normalized
+        }
+      }
     }
+  }
+
+  const backgroundCount = Object.values(backgrounds).reduce(
+    (count, theme) => count + Object.keys(theme ?? {}).length,
+    0
+  )
+  if (Object.keys(figures).length === 0 && backgroundCount === 0) {
+    errors.push('figures 与 backgrounds 至少需要声明一个合法图片资源')
   }
 
   let labels: UiPluginManifestV1['labels']
@@ -224,6 +420,7 @@ export function normalizeUiPluginManifest(raw: unknown): UiPluginValidationResul
           }
           if (
             typeof tokenValue !== 'string' ||
+            /url\s*\(/i.test(tokenValue) ||
             !UI_PLUGIN_TOKEN_VALUE_PATTERN.test(tokenValue.trim())
           ) {
             errors.push(`token "${tokenName}" 的值包含不允许的字符`)
@@ -256,6 +453,7 @@ export function normalizeUiPluginManifest(raw: unknown): UiPluginValidationResul
       ...(author ? { author } : {}),
       ...(description ? { description } : {}),
       figures,
+      ...(Object.keys(backgrounds).length > 0 ? { backgrounds } : {}),
       ...(labels && Object.keys(labels).length > 0 ? { labels } : {}),
       ...(tokens && Object.keys(tokens).length > 0 ? { tokens } : {}),
       ...(features ? { features } : {})
@@ -297,6 +495,210 @@ export function buildUiPluginTokenCss(manifest: UiPluginManifestV1): string {
     const body = darkEntries.map(([key, value]) => `  ${key}: ${value};`).join('\n')
     const selector = scopedSelector(`html[data-ui-plugin='${manifest.id}'][data-theme='dark']`)
     blocks.push(`${selector} {\n${body}\n}`)
+  }
+  return blocks.join('\n\n')
+}
+
+const UI_PLUGIN_BACKGROUND_DATA_URL_PATTERN =
+  /^data:image\/(?:png|jpeg|webp);base64,([A-Za-z0-9+/]+={0,2})$/
+
+function isSafeUiPluginBackgroundDataUrl(value: unknown): value is string {
+  if (typeof value !== 'string') return false
+  const match = UI_PLUGIN_BACKGROUND_DATA_URL_PATTERN.exec(value)
+  return match !== null && match[1].length > 0 && match[1].length % 4 === 0
+}
+
+function runtimeBackgroundDataUrl(
+  runtimeBackgrounds: UiPluginRuntimeBackgrounds | null | undefined,
+  theme: UiPluginBackgroundTheme,
+  slot: UiPluginBackgroundSlot,
+  relativePath: string
+): string | undefined {
+  const assets = runtimeBackgrounds?.assets
+  if (assets && Object.prototype.hasOwnProperty.call(assets, relativePath)) {
+    return assets[relativePath]
+  }
+  return runtimeBackgrounds?.[theme]?.[slot]
+}
+
+const UI_PLUGIN_BACKGROUND_CSS_POSITION: Readonly<Record<UiPluginBackgroundPosition, string>> = {
+  'top-left': 'left top',
+  top: 'center top',
+  'top-right': 'right top',
+  left: 'left center',
+  center: 'center center',
+  right: 'right center',
+  'bottom-left': 'left bottom',
+  bottom: 'center bottom',
+  'bottom-right': 'right bottom'
+}
+
+const UI_PLUGIN_BACKGROUND_HOSTS: Readonly<
+  Record<UiPluginBackgroundSlot, { selectors: readonly string[]; baseBackground: string }>
+> = {
+  app: {
+    selectors: ['.ds-workbench-shell', '.ds-settings-surface'],
+    baseBackground: 'var(--ds-bg-main)'
+  },
+  sidebar: {
+    selectors: ['.ds-sidebar-shell', '.ds-settings-sidebar'],
+    baseBackground: 'var(--ds-sidebar-gradient)'
+  },
+  stage: {
+    selectors: ['.ds-stage-surface', '.ds-settings-stage'],
+    baseBackground: 'var(--ds-stage-gradient)'
+  }
+}
+
+const UI_PLUGIN_APP_CHILD_SURFACES = [
+  '.ds-sidebar-shell',
+  '.ds-stage-surface',
+  '.ds-settings-sidebar',
+  '.ds-settings-stage'
+] as const
+
+const UI_PLUGIN_STAGE_REVEAL_SURFACES = [
+  '.ds-stage-route-host > *',
+  '.ds-stage-design-canvas',
+  '.ds-stage-design-canvas-fill'
+] as const
+
+function uiPluginThemeSelector(id: string, theme: UiPluginBackgroundTheme): string {
+  return theme === 'dark'
+    ? `html[data-ui-plugin='${id}'][data-theme='dark']`
+    : `html[data-ui-plugin='${id}']:not([data-theme='dark'])`
+}
+
+function formatCssNumber(value: number): string {
+  return String(Math.round(value * 1000) / 1000)
+}
+
+/**
+ * 生成背景层样式。manifest 只提供布局参数,图片来源只能是主进程验证后传入的
+ * base64 data URL;因此不会把插件提供的原始路径拼入 CSS。
+ *
+ * 图片放在各表面的独立 ::after 层并直接使用 layer.opacity。这样可以保留宿主
+ * 原有渐变，也不会要求插件 token 中的 --ds-bg-* 必须是 color-mix 可接受的纯色。
+ */
+export function buildUiPluginBackgroundCss(
+  manifest: UiPluginManifestV1,
+  runtimeBackgrounds: UiPluginRuntimeBackgrounds | null | undefined
+): string {
+  if (!UI_PLUGIN_ID_PATTERN.test(manifest.id)) return ''
+
+  const blocks: string[] = []
+  const assetVariables = new Map<string, string>()
+  const layerVariables = new Map<string, string>()
+  for (const theme of UI_PLUGIN_BACKGROUND_THEMES) {
+    for (const slot of UI_PLUGIN_BACKGROUND_SLOTS) {
+      const layer = manifest.backgrounds?.[theme]?.[slot]
+      if (
+        !layer ||
+        !(UI_PLUGIN_BACKGROUND_FITS as readonly string[]).includes(layer.fit) ||
+        !(UI_PLUGIN_BACKGROUND_POSITIONS as readonly string[]).includes(layer.position) ||
+        !Number.isFinite(layer.opacity) ||
+        layer.opacity < 0 ||
+        layer.opacity > 1
+      ) {
+        continue
+      }
+      const dataUrl = runtimeBackgroundDataUrl(
+        runtimeBackgrounds,
+        theme,
+        slot,
+        layer.path
+      )
+      if (!isSafeUiPluginBackgroundDataUrl(dataUrl)) continue
+      let variable = assetVariables.get(dataUrl)
+      if (!variable) {
+        variable = `--kun-ui-plugin-background-${assetVariables.size}`
+        assetVariables.set(dataUrl, variable)
+      }
+      layerVariables.set(`${theme}.${slot}`, variable)
+    }
+  }
+
+  if (assetVariables.size > 0) {
+    const declarations = [...assetVariables]
+      .map(([dataUrl, variable]) => `  ${variable}: url("${dataUrl}");`)
+      .join('\n')
+    blocks.push(`html[data-ui-plugin='${manifest.id}'] {\n${declarations}\n}`)
+  }
+
+  for (const theme of UI_PLUGIN_BACKGROUND_THEMES) {
+    const rootSelector = uiPluginThemeSelector(manifest.id, theme)
+    let revealStageRoute = false
+    for (const slot of UI_PLUGIN_BACKGROUND_SLOTS) {
+      const layer = manifest.backgrounds?.[theme]?.[slot]
+      const assetVariable = layerVariables.get(`${theme}.${slot}`)
+      if (
+        !layer ||
+        !(UI_PLUGIN_BACKGROUND_FITS as readonly string[]).includes(layer.fit) ||
+        !(UI_PLUGIN_BACKGROUND_POSITIONS as readonly string[]).includes(layer.position) ||
+        !Number.isFinite(layer.opacity) ||
+        layer.opacity < 0 ||
+        layer.opacity > 1 ||
+        !assetVariable
+      ) {
+        continue
+      }
+
+      const host = UI_PLUGIN_BACKGROUND_HOSTS[slot]
+      const selectors = host.selectors
+        .map((selector) => `${rootSelector} ${selector}`)
+        .join(',\n')
+      const pseudoSelectors = host.selectors
+        .map((selector) => `${rootSelector} ${selector}::after`)
+        .join(',\n')
+      blocks.push(
+        `${selectors} {\n` +
+          `  position: relative;\n` +
+          `  isolation: isolate;\n` +
+          `  background: ${host.baseBackground};\n` +
+          `}\n\n` +
+          `${pseudoSelectors} {\n` +
+          `  content: '';\n` +
+          `  position: absolute;\n` +
+          `  inset: 0;\n` +
+          `  z-index: -1;\n` +
+          `  pointer-events: none;\n` +
+          `  background-image: var(${assetVariable});\n` +
+          `  background-size: ${layer.fit};\n` +
+          `  background-position: ${UI_PLUGIN_BACKGROUND_CSS_POSITION[layer.position]};\n` +
+          `  background-repeat: no-repeat;\n` +
+          `  opacity: ${formatCssNumber(layer.opacity)};\n` +
+          `}`
+      )
+
+      if (slot === 'app') {
+        const childSurfaceSelectors = UI_PLUGIN_APP_CHILD_SURFACES
+          .map((selector) => `${rootSelector} ${selector}`)
+          .join(',\n')
+        blocks.push(`${childSurfaceSelectors} {\n  background: transparent;\n}`)
+        revealStageRoute = true
+      } else if (slot === 'stage') {
+        revealStageRoute = true
+      }
+    }
+
+    if (revealStageRoute) {
+      const revealSelectors = UI_PLUGIN_STAGE_REVEAL_SURFACES
+        .map((selector) => `${rootSelector} ${selector}`)
+        .join(',\n')
+      blocks.push(
+        `${revealSelectors} {\n` +
+          `  background-color: transparent !important;\n` +
+          `}`
+      )
+    }
+
+    if (Object.prototype.hasOwnProperty.call(manifest.tokens?.[theme] ?? {}, '--ds-topbar-bg')) {
+      blocks.push(
+        `${rootSelector} .ds-topbar-surface {\n` +
+          `  background: var(--ds-topbar-bg);\n` +
+          `}`
+      )
+    }
   }
   return blocks.join('\n\n')
 }

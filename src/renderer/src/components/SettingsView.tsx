@@ -1207,7 +1207,7 @@ export function SettingsView(): ReactElement {
   }
 
   return (
-    <div className="ds-drag flex h-full min-h-0 w-full min-w-0 bg-ds-main">
+    <div className="ds-settings-surface ds-drag flex h-full min-h-0 w-full min-w-0 bg-ds-main">
       <SettingsSidebar
         category={category}
         setCategory={setCategory}
@@ -1216,8 +1216,9 @@ export function SettingsView(): ReactElement {
         t={t}
       />
 
-      <div className="ds-no-drag min-h-0 min-w-0 flex-1 overflow-y-auto px-10 py-10">
-        <div className="mx-auto max-w-3xl">
+      <div className="ds-settings-stage relative min-h-0 min-w-0 flex-1 overflow-hidden">
+        <div className="ds-no-drag h-full min-h-0 overflow-y-auto px-10 py-10">
+          <div className="mx-auto max-w-3xl">
           {category !== 'extensions' && category !== 'dataMigration' && !activeApiKey.trim() ? (
             <div className="mb-6 rounded-2xl border border-amber-300/80 bg-amber-50/95 px-5 py-4 text-amber-950 shadow-sm dark:border-amber-700/60 dark:bg-amber-950/35 dark:text-amber-100">
               <div className="text-[15px] font-semibold">{t('apiKeyRequiredTitle')}</div>
@@ -1294,6 +1295,7 @@ export function SettingsView(): ReactElement {
             {category === 'debug' ? <LlmDebugSettingsSection ctx={settingsSectionContext} /> : null}
             {category === 'dataMigration' ? <DataMigrationSettingsSection /> : null}
           </Suspense>
+          </div>
         </div>
       </div>
       {category !== 'extensions' && category !== 'dataMigration' && saveStatus === 'error' && saveError ? (

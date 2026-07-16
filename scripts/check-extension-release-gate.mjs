@@ -718,7 +718,9 @@ for (const pattern of [
   '**/kun/dist/**/*',
   '**/kun/node_modules/**/*',
   '**/packages/extension-api/**/*',
-  '**/packages/create-kun-extension/**/*'
+  '**/packages/create-kun-extension/**/*',
+  '**/node_modules/sharp/**/*',
+  '**/node_modules/@img/**/*'
 ]) {
   check(
     builderConfig.asarUnpack.includes(pattern),

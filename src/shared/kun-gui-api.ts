@@ -106,6 +106,7 @@ import type {
 import type {
   UiPluginListItem,
   UiPluginManifestV1,
+  UiPluginRuntimeBackgrounds,
   UiPluginRuntimeFigures
 } from './ui-plugin'
 import type {
@@ -219,7 +220,12 @@ export type UiPluginInstallIpcResult =
   | { canceled: false; ok: true; plugin: UiPluginListItem }
   | { canceled: false; ok: false; errors: string[] }
 export type UiPluginLoadIpcResult =
-  | { ok: true; manifest: UiPluginManifestV1; figures: UiPluginRuntimeFigures }
+  | {
+      ok: true
+      manifest: UiPluginManifestV1
+      figures: UiPluginRuntimeFigures
+      backgrounds: UiPluginRuntimeBackgrounds
+    }
   | { ok: false; error: string }
 export type DeepseekConfigFileResult = { path: string; content: string; exists: boolean }
 export type DeepseekConfigSaveResult = { ok: true; path: string }

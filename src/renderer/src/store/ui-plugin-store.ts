@@ -1,11 +1,13 @@
 import { create } from 'zustand'
 import {
+  buildUiPluginBackgroundCss,
   buildUiPluginTokenCss,
   resolveUiPluginFigure,
   type UiPluginFigureSlot,
   type UiPluginLabelKey,
   type UiPluginListItem,
   type UiPluginManifestV1,
+  type UiPluginRuntimeBackgrounds,
   type UiPluginRuntimeFigures
 } from '@shared/ui-plugin'
 import {
@@ -24,6 +26,7 @@ import {
 export type UiPluginRuntime = {
   manifest: UiPluginManifestV1
   figures: UiPluginRuntimeFigures
+  backgrounds: UiPluginRuntimeBackgrounds
 }
 
 type UiPluginState = {
@@ -60,7 +63,15 @@ function applyUiModeDom(mode: string, runtime: UiPluginRuntime | null): void {
     root.removeAttribute('data-ui-plugin')
   }
 
-  const css = runtime && mode === runtime.manifest.id ? buildUiPluginTokenCss(runtime.manifest) : ''
+  const css =
+    runtime && mode === runtime.manifest.id
+      ? [
+          buildUiPluginTokenCss(runtime.manifest),
+          buildUiPluginBackgroundCss(runtime.manifest, runtime.backgrounds)
+        ]
+          .filter(Boolean)
+          .join('\n\n')
+      : ''
   let styleElement = document.getElementById(TOKEN_STYLE_ELEMENT_ID)
   if (!css) {
     styleElement?.remove()
@@ -152,7 +163,11 @@ export const useUiPluginStore = create<UiPluginState>((set, get) => ({
         applyUiModeDom(UI_MODE_DEFAULT, null)
         return
       }
-      const runtime: UiPluginRuntime = { manifest: result.manifest, figures: result.figures }
+      const runtime: UiPluginRuntime = {
+        manifest: result.manifest,
+        figures: result.figures,
+        backgrounds: result.backgrounds ?? {}
+      }
       writeUiModePreference(normalized)
       set({ busy: false, uiMode: normalized, activeRuntime: runtime, lastError: null })
       applyUiModeDom(normalized, runtime)

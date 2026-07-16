@@ -59,6 +59,7 @@ function ModeCardButton({
             className="max-h-16 max-w-16 object-contain"
             draggable={false}
             decoding="async"
+            loading="lazy"
           />
         ) : (
           <span className="h-12 w-12 rounded-xl bg-ds-subtle" />

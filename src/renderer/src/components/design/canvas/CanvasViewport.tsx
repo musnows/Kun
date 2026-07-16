@@ -99,6 +99,10 @@ type Props = {
   onRequestQualityRepair?: (payload: DesignRuntimeQualityPayload) => void
 }
 
+export function canvasViewportBackgroundFillClass(surface: 'design' | 'code'): string {
+  return surface === 'design' ? 'ds-stage-design-canvas-fill' : ''
+}
+
 export function shouldShowCanvasDocumentLoading(document: CanvasDocument): boolean {
   return !document.objects[document.rootId]
 }
@@ -513,7 +517,7 @@ export function CanvasViewport({
       <div
         ref={rootRef}
         tabIndex={surface === 'code' ? -1 : undefined}
-        className="ds-no-drag relative h-full w-full overflow-hidden bg-[#f8fafc] text-[#1e1e1e] outline-none dark:bg-[#111318] dark:text-[#e9ecef]"
+        className={`ds-no-drag relative h-full w-full overflow-hidden bg-[#f8fafc] text-[#1e1e1e] outline-none dark:bg-[#111318] dark:text-[#e9ecef] ${canvasViewportBackgroundFillClass(surface)}`}
         style={{
           '--canvas-motion-dock-height': '264px',
           '--canvas-bottom-ui-inset': designMotionOpen
@@ -574,7 +578,7 @@ export function CanvasViewport({
         ) : null}
         <div
           ref={containerRef}
-          className="absolute inset-0 overflow-hidden bg-[#f8fafc] dark:bg-[#111318]"
+          className={`absolute inset-0 overflow-hidden bg-[#f8fafc] dark:bg-[#111318] ${canvasViewportBackgroundFillClass(surface)}`}
           style={{
             bottom: designMotionOpen
               ? 'calc(var(--canvas-motion-dock-height) + 12px)'

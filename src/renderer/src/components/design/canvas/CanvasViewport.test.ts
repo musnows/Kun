@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  canvasViewportBackgroundFillClass,
   resolveCanvasDesignSystemBaseDir,
   shouldRenderCanvasMinimap,
   shouldHandleCanvasKeyboardEvent,
@@ -17,6 +18,11 @@ import {
 import { createDefaultShape, createEmptyDocument, createHtmlFrameShape } from '../../../design/canvas/canvas-types'
 
 describe('CanvasViewport surface behavior', () => {
+  it('only exposes the design canvas fill layers to UI plugin backgrounds', () => {
+    expect(canvasViewportBackgroundFillClass('design')).toBe('ds-stage-design-canvas-fill')
+    expect(canvasViewportBackgroundFillClass('code')).toBe('')
+  })
+
   it('renders the initialized empty canvas while a historical document is still loading', () => {
     expect(shouldShowCanvasDocumentLoading(createEmptyDocument())).toBe(false)
   })

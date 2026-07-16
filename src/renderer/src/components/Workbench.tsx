@@ -1067,11 +1067,13 @@ export function Workbench(): ReactElement {
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       {activeExtensionCenterView ? (
         <main className="ds-stage-surface relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-          <ExtensionViewOutlet
-            contribution={activeExtensionCenterView}
-            workspaceRoot={extensionWorkspaceRoot}
-            onClose={() => selectExtensionSurface(null)}
-          />
+          <div className="ds-stage-route-host relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+            <ExtensionViewOutlet
+              contribution={activeExtensionCenterView}
+              workspaceRoot={extensionWorkspaceRoot}
+              onClose={() => selectExtensionSurface(null)}
+            />
+          </div>
         </main>
       ) : (
       <WorkbenchStageRouter
