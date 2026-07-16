@@ -502,10 +502,11 @@ export function CanvasViewport({
       sourceSvg,
       document: useCanvasShapeStore.getState().document,
       format,
+      workspaceRoot,
       filename: 'kun-whiteboard',
       backgroundColor
     })
-  }, [t])
+  }, [t, workspaceRoot])
 
   return (
     <CanvasWorkspaceContext.Provider value={workspaceValue}>
@@ -591,6 +592,7 @@ export function CanvasViewport({
               ref={svgRef}
               className="absolute inset-0 h-full w-full"
               data-canvas-surface={surface}
+              data-canvas-artifact-id={artifactId}
               viewBox={viewBoxStr}
               xmlns="http://www.w3.org/2000/svg"
               style={{ cursor }}

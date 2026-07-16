@@ -161,7 +161,8 @@ describe("design turn prompt code canvas and context guidance", () => {
       expect(codePrompt).toContain('Do NOT use `design_create_screen` unless they explicitly ask for a UI screen mockup')
       expect(codePrompt).toContain('services/modules as frames or rects')
       expect(codePrompt).toContain('data/events as arrows')
-      expect(codePrompt).toContain('finish the editable diagram first and then call `design_export_canvas`')
+      expect(codePrompt).toContain('call `design_export_canvas` directly when the current snapshot already contains the requested diagram')
+      expect(codePrompt).toContain('export it directly without recreating or modifying shapes')
       expect(codePrompt).toContain('Do not export automatically when the user asked only for an editable diagram')
   
       const designPrompt = buildDesignTurnPrompt({

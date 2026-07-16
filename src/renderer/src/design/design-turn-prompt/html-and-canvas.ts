@@ -365,7 +365,7 @@ export function buildCanvasTurnPrompt(options: DesignTurnOptions): string {
     '- CREATE A STANDALONE RASTER IMAGE ASSET — the user asks for a photo, textured/painterly illustration, poster, mascot, or other raster visual material, not a full page/screen. → call `generate_image`, then add/update an `image` shape on the canvas with the saved workspace-relative path. Keep it as a reusable whiteboard asset for later page drafts. Do NOT call `design_create_screen` and do NOT write or edit HTML.',
     ...(codeCanvasMode
       ? [
-          '- MAP CODE / ARCHITECTURE / FLOW — the user asks for system architecture, code structure, module relationships, data flow, API flow, state machine, database/schema map, sequence diagram, dependency graph, implementation plan, or debugging notes. → use `design_update_shapes` / `design_arrange` with normal frames, rects, text, arrows, lines, groups, and auto-layout. Do NOT use `design_create_screen` unless they explicitly ask for a UI screen mockup. If they also ask for an image/PNG/SVG/file, finish the editable diagram first and then call `design_export_canvas`.'
+          '- MAP CODE / ARCHITECTURE / FLOW — the user asks for system architecture, code structure, module relationships, data flow, API flow, state machine, database/schema map, sequence diagram, dependency graph, implementation plan, or debugging notes. → use `design_update_shapes` / `design_arrange` with normal frames, rects, text, arrows, lines, groups, and auto-layout. Do NOT use `design_create_screen` unless they explicitly ask for a UI screen mockup. If they also ask for an image/PNG/SVG/file, call `design_export_canvas` directly when the current snapshot already contains the requested diagram; otherwise finish the editable diagram first and then export it.'
         ]
       : []),
     codeCanvasMode
@@ -393,7 +393,7 @@ export function buildCanvasTurnPrompt(options: DesignTurnOptions): string {
     '- `design_update_shapes`: { "ops": [ ShapeOp, ... ] }. Edits vector layers/images on the active board.',
     '- `design_arrange`: { "operation": "align"|"distribute"|"stack"|"grid"|"responsive_reflow", ... }. Use for layout mechanics and whiteboard cleanup.',
     ...(codeCanvasMode
-      ? ['- `design_export_canvas`: { "format"?: "png"|"svg", "name"?: "short-file-stem" }. Call only after the editable diagram exists and only when the user explicitly asks for an image/export/file. PNG is the default.']
+      ? ['- `design_export_canvas`: { "format"?: "png"|"svg", "name"?: "short-file-stem" }. Call only when the user explicitly asks for an image/export/file. If the current snapshot already contains the requested diagram, export it directly without recreating or modifying shapes. PNG is the default.']
       : []),
     codeCanvasMode
       ? '- `design_system`: { "operation": "create"|"update"|"apply"|"validate", ... }. Updates thread-scoped structured tokens/components without drawing a board.'
