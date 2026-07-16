@@ -198,6 +198,8 @@ export const UI_PLUGIN_LIMITS = {
   figureMaxDimension: 4096,
   figureMaxPixels: 12_000_000,
   totalFigurePixels: 48_000_000,
+  portraitPreviewBytes: 96 * 1024,
+  portraitPreviewMaxDimension: 256,
   backgroundBytes: 8 * 1024 * 1024,
   totalBackgroundBytes: 32 * 1024 * 1024,
   totalAssetBytes: 48 * 1024 * 1024,

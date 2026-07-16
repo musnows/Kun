@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import sharp from 'sharp'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { UI_PLUGIN_LIMITS } from '../../shared/ui-plugin'
 import {
   installUiPluginFromDirectory,
   listUiPlugins,
@@ -595,10 +596,14 @@ describe('loadUiPluginFigures', () => {
     if (!installed.ok) return
     expect(installed.plugin.previewDataUrl?.startsWith('data:image/webp;base64,')).toBe(true)
     const previewBytes = Buffer.from(installed.plugin.previewDataUrl!.split(',')[1], 'base64')
-    expect(previewBytes.byteLength).toBeLessThanOrEqual(96 * 1024)
+    expect(previewBytes.byteLength).toBeLessThanOrEqual(UI_PLUGIN_LIMITS.portraitPreviewBytes)
     const previewMetadata = await sharp(previewBytes, { animated: true }).metadata()
-    expect(previewMetadata.width).toBeLessThanOrEqual(256)
-    expect(previewMetadata.height).toBeLessThanOrEqual(256)
+    expect(previewMetadata.width).toBeLessThanOrEqual(
+      UI_PLUGIN_LIMITS.portraitPreviewMaxDimension
+    )
+    expect(previewMetadata.height).toBeLessThanOrEqual(
+      UI_PLUGIN_LIMITS.portraitPreviewMaxDimension
+    )
     expect(previewMetadata.pages ?? 1).toBe(1)
 
     const listed = await listUiPlugins(userDataDir)
@@ -710,6 +715,16 @@ describe('seedUiPlugin (bundled plugins like ikun)', () => {
       {}
     )
     expect(result.ok).toBe(false)
+  })
+
+  it('rejects an animated portrait supplied by a bundled seed', async () => {
+    const result = await seedUiPlugin(
+      userDataDir,
+      portraitManifest('img/portrait.gif'),
+      { portrait: ANIMATED_GIF_BYTES }
+    )
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.errors.join(';')).toContain('portrait 仅支持静态')
   })
 
   it('seeds a background-only plugin with the optional fourth argument', async () => {

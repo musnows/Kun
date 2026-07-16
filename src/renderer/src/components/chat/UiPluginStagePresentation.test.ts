@@ -60,4 +60,15 @@ describe('UiPluginStagePresentation', () => {
       )
     ).toBe('')
   })
+
+  it('uses host-owned color primitives when presentation tokens may be gradients', async () => {
+    const nodeFs = 'node:fs/promises'
+    const { readFile } = await import(/* @vite-ignore */ nodeFs)
+    const css = await readFile(new URL('../../styles/surfaces-write.css', import.meta.url), 'utf8')
+    expect(css).toContain('--kun-ui-plugin-host-bg-color: var(--bg-app, #f3f5fc);')
+    expect(css).toContain('--kun-ui-plugin-host-surface-color: var(--surface-2, #ffffff);')
+    expect(css).toContain('var(--kun-ui-plugin-host-bg-color) 0%')
+    expect(css).not.toMatch(/color-mix\([^;]*var\(--ds-bg-main\)/)
+    expect(css).not.toMatch(/color-mix\([^;]*var\(--ds-surface-elevated\)/)
+  })
 })

@@ -327,6 +327,8 @@ describe('normalizeUiPluginManifest', () => {
 
   it('exposes the background and aggregate limits used by the host', () => {
     expect(UI_PLUGIN_LIMITS).toMatchObject({
+      portraitPreviewBytes: 96 * 1024,
+      portraitPreviewMaxDimension: 256,
       backgroundBytes: 8 * 1024 * 1024,
       totalBackgroundBytes: 32 * 1024 * 1024,
       totalAssetBytes: 48 * 1024 * 1024,
@@ -400,6 +402,22 @@ describe('buildUiPluginPresentationCss', () => {
     const result = normalizeUiPluginManifest(validManifest)
     if (!result.ok) throw new Error(result.errors.join('\n'))
     expect(buildUiPluginPresentationCss(result.manifest)).toBe('')
+  })
+
+  it('keeps gradient stage tokens separate from presentation numeric CSS', () => {
+    const result = normalizeUiPluginManifest({
+      ...validPresentationManifest,
+      tokens: {
+        light: {
+          '--ds-bg-main': 'linear-gradient(180deg,#fff 0%,#eef2ff 100%)'
+        }
+      }
+    })
+    if (!result.ok) throw new Error(result.errors.join('\n'))
+    expect(buildUiPluginTokenCss(result.manifest)).toContain(
+      '--ds-bg-main: linear-gradient(180deg,#fff 0%,#eef2ff 100%);'
+    )
+    expect(buildUiPluginPresentationCss(result.manifest)).not.toContain('--ds-bg-main')
   })
 
   it('defensively rejects unnormalized numeric presentation values', () => {

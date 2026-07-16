@@ -75,8 +75,6 @@ const MIME_BY_FORMAT: Record<ImageFormat, string> = {
 // 列表会一次读取所有插件预览；背景原图只在足够小的情况下才可作为卡片预览。
 const UI_PLUGIN_BACKGROUND_PREVIEW_MAX_BYTES = 512 * 1024
 const UI_PLUGIN_BACKGROUND_PREVIEW_MAX_PIXELS = 2_100_000
-const UI_PLUGIN_PORTRAIT_PREVIEW_MAX_BYTES = 96 * 1024
-const UI_PLUGIN_PORTRAIT_PREVIEW_MAX_DIMENSION = 256
 
 const JPEG_START_OF_FRAME_MARKERS = new Set([
   0xc0,
@@ -545,20 +543,20 @@ async function buildPortraitPreviewDataUrl(asset: ValidatedAsset): Promise<strin
       })
         .rotate()
         .resize({
-          width: UI_PLUGIN_PORTRAIT_PREVIEW_MAX_DIMENSION,
-          height: UI_PLUGIN_PORTRAIT_PREVIEW_MAX_DIMENSION,
+          width: UI_PLUGIN_LIMITS.portraitPreviewMaxDimension,
+          height: UI_PLUGIN_LIMITS.portraitPreviewMaxDimension,
           fit: 'inside',
           withoutEnlargement: true
         })
         .webp({ quality, effort: 4 })
         .toBuffer()
-      if (thumbnailBytes.byteLength > UI_PLUGIN_PORTRAIT_PREVIEW_MAX_BYTES) continue
+      if (thumbnailBytes.byteLength > UI_PLUGIN_LIMITS.portraitPreviewBytes) continue
       const inspected = inspectImage(thumbnailBytes)
       if (
         inspected?.format !== 'webp' ||
         inspected.animated ||
-        inspected.width > UI_PLUGIN_PORTRAIT_PREVIEW_MAX_DIMENSION ||
-        inspected.height > UI_PLUGIN_PORTRAIT_PREVIEW_MAX_DIMENSION
+        inspected.width > UI_PLUGIN_LIMITS.portraitPreviewMaxDimension ||
+        inspected.height > UI_PLUGIN_LIMITS.portraitPreviewMaxDimension
       ) {
         continue
       }

@@ -102,7 +102,7 @@ my-plugin/
 | `name` | ✓ | ≤60 字符 |
 | `version` | ✓ | 语义化版本,如 `1.0.0` |
 | `author` / `description` | | ≤80 / ≤240 字符 |
-| `figures` | 至少一类 | 形象槽位对象;图片仅支持 `png/webp/jpg/jpeg/gif` |
+| `figures` | 至少一类 | 形象槽位对象;活动小形象支持 `png/webp/jpg/jpeg/gif`;`portrait` 仅支持静态 `png/webp/jpg/jpeg` |
 | `backgrounds` | 至少一类 | `light` / `dark` 主题下可放 `app` / `sidebar` / `stage`;图片仅支持静态 `png/webp/jpg/jpeg`(不支持 APNG、animated WebP) |
 | `presentation` | | 人物舞台的严格声明式配置;一旦提供就必须同时提供 `figures.portrait` |
 | `labels` | | 仅 `zh` / `en`;键限 `working` / `workingSprint` / `workingDive` / `workingSurf`;每条 ≤24 字符 |
@@ -157,7 +157,9 @@ my-plugin/
 
 `figures.portrait` 是会话舞台使用的主人物图片。建议使用透明背景的原始人物立绘,不要把
 Kun 的侧栏、顶栏、输入框或其它应用界面烘焙进图片。Kun 会保留人物原画,只在图片外侧
-绘制宿主框景和氛围层,不会重新设计人物。
+绘制宿主框景和氛围层,不会重新设计人物。portrait 必须是静态 PNG/JPEG/WebP;GIF、APNG
+和 animated WebP 会在安装及每次加载时被拒绝,避免绕过“减少动态效果”或持续占用解码资源。
+这个限制不影响 `swim`、`greet` 等既有活动小形象继续使用 GIF。
 
 `presentation` 必须完整包含下面三个对象。所有键和取值都是严格白名单;未知键、缺失键、
 任意 CSS、选择器、URL 或布局字符串都会让安装失败。
@@ -237,6 +239,10 @@ Kun 美术,或按下表回退链借用插件内的其它槽位;`portrait` 不参
 - 去重后的形象与背景文件合计 ≤48 MiB。
 - 任一背景图片宽、高均 ≤8192 px,且单张解码尺寸 ≤24 MP(宽 × 高)。
 - 去重后的全部背景图片解码尺寸合计 ≤64 MP。
+
+形象工坊列表优先使用 `toggleIcon`、`swim`、`greet` 等小形象作为预览,不会把全尺寸
+portrait 的 base64 放进列表 IPC。只有 portrait 可用时,宿主会生成最长边 ≤256px、编码后
+≤96 KiB 的单帧静态 WebP 缩略图;无法满足上限时显示占位图。
 
 这些限制同时约束压缩文件大小和解码后的像素规模。安装、预装和重新加载时还会调用应用
 已有的图片解码器验证像素数据,而不只信任文件头。形象工坊列表若只能用背景作为卡片预览,
