@@ -584,7 +584,7 @@ describe('MessageTimeline Kun runtime metadata smoke', () => {
     expect(html).toContain('aria-expanded="false"')
   })
 
-  it('keeps an active failed-tool detail visible while the turn is running', () => {
+  it('keeps an active failed-tool detail collapsed while the turn is running', () => {
     const block: ChatBlock = toolBlock({
       summary: 'Recognize image recognize_image',
       status: 'error',
@@ -603,8 +603,48 @@ describe('MessageTimeline Kun runtime metadata smoke', () => {
     )
 
     expect(html).toContain('Recognize image recognize_image')
-    expect(html).toContain('model request failed with status 401')
-    expect(html).toContain('aria-expanded="true"')
+    expect(html).toContain('text-orange-700')
+    expect(html).not.toContain('model request failed with status 401')
+    expect(html).toContain('aria-expanded="false"')
+  })
+
+  it('keeps failed-tool details collapsed inside an active tool batch', () => {
+    const failedBlock: ChatBlock = toolBlock({
+      id: 'tool_failed',
+      summary: 'Search src',
+      status: 'error',
+      detail: 'search error detail should stay tucked away',
+      meta: { toolName: 'grep', pattern: 'needle' },
+      filePath: '/tmp/src'
+    })
+    const successfulBlock: ChatBlock = toolBlock({
+      id: 'tool_success',
+      summary: 'Read file',
+      status: 'success',
+      detail: 'read detail should stay tucked away',
+      meta: { toolName: 'read' },
+      filePath: '/tmp/readme.md'
+    })
+
+    const html = renderToStaticMarkup(
+      createElement(ProcessSectionRow, {
+        section: {
+          id: 'execution-active-batch',
+          kind: 'execution',
+          blocks: [failedBlock, successfulBlock]
+        },
+        processing: true,
+        singleReasoningSection: false,
+        workspaceRoot: '/tmp/project',
+        viewportRef: { current: null }
+      })
+    )
+
+    expect(html).toContain('Used 2 tools')
+    expect(html).toContain('Search needle')
+    expect(html).toContain('text-orange-700')
+    expect(html).not.toContain('search error detail should stay tucked away')
+    expect(html).not.toContain('read detail should stay tucked away')
   })
 
   it('expands active reasoning so the current process is visible', () => {

@@ -108,22 +108,13 @@ const REASONING_RAIL_THUMB_RADIUS = 18
 const UNGROUPED_MODEL_PROVIDER_ID = '__composer_models__'
 const REASONING_RAIL_ORDER: ComposerReasoningEffort[] = ['off', 'low', 'medium', 'high', 'max', 'auto']
 const REASONING_PARTICLES = [
-  { x: '6%', y: '61%', size: '5px', delay: '-2.1s', duration: '3.7s', driftX: '7px', driftY: '-7px' },
-  { x: '11%', y: '29%', size: '3px', delay: '-0.4s', duration: '2.9s', driftX: '-5px', driftY: '6px' },
-  { x: '17%', y: '67%', size: '2px', delay: '-1.6s', duration: '4.4s', driftX: '6px', driftY: '-5px' },
-  { x: '23%', y: '37%', size: '4px', delay: '-3.1s', duration: '3.2s', driftX: '-7px', driftY: '-4px' },
-  { x: '29%', y: '72%', size: '3px', delay: '-0.9s', duration: '4.1s', driftX: '5px', driftY: '-8px' },
-  { x: '35%', y: '24%', size: '6px', delay: '-2.8s', duration: '3.8s', driftX: '-4px', driftY: '7px' },
-  { x: '41%', y: '55%', size: '2px', delay: '-1.2s', duration: '2.7s', driftX: '8px', driftY: '-4px' },
-  { x: '47%', y: '31%', size: '4px', delay: '-3.7s', duration: '4.6s', driftX: '-6px', driftY: '5px' },
-  { x: '53%', y: '69%', size: '3px', delay: '-0.2s', duration: '3.4s', driftX: '5px', driftY: '-7px' },
-  { x: '59%', y: '43%', size: '5px', delay: '-2.4s', duration: '4.2s', driftX: '-8px', driftY: '-5px' },
-  { x: '65%', y: '24%', size: '2px', delay: '-1.4s', duration: '3.1s', driftX: '6px', driftY: '8px' },
-  { x: '71%', y: '66%', size: '4px', delay: '-3.4s', duration: '3.9s', driftX: '-5px', driftY: '-7px' },
-  { x: '77%', y: '36%', size: '3px', delay: '-0.7s', duration: '2.8s', driftX: '7px', driftY: '5px' },
-  { x: '83%', y: '71%', size: '5px', delay: '-2.6s', duration: '4.5s', driftX: '-6px', driftY: '-8px' },
-  { x: '89%', y: '27%', size: '3px', delay: '-1.8s', duration: '3.5s', driftX: '5px', driftY: '7px' },
-  { x: '95%', y: '56%', size: '4px', delay: '-3.9s', duration: '4s', driftX: '-7px', driftY: '-5px' }
+  { x: '15%', y: '30%', size: '2px', delay: '-1.2s', duration: '4.8s', driftX: '2px', driftY: '-2px' },
+  { x: '29%', y: '67%', size: '2px', delay: '-3.1s', duration: '5.4s', driftX: '3px', driftY: '-1px' },
+  { x: '45%', y: '37%', size: '3px', delay: '-2.2s', duration: '4.6s', driftX: '2px', driftY: '-2px' },
+  { x: '59%', y: '71%', size: '2px', delay: '-0.7s', duration: '5.8s', driftX: '3px', driftY: '-2px' },
+  { x: '72%', y: '27%', size: '2px', delay: '-3.8s', duration: '5.1s', driftX: '2px', driftY: '-1px' },
+  { x: '83%', y: '62%', size: '3px', delay: '-1.8s', duration: '6.2s', driftX: '3px', driftY: '-2px' },
+  { x: '92%', y: '35%', size: '2px', delay: '-4.2s', duration: '5.6s', driftX: '2px', driftY: '-1px' }
 ] as const
 const DEFAULT_COMPOSER_MODEL_KEYS = new Set(
   DEFAULT_COMPOSER_MODEL_IDS.map((id) => normalizeModelCapabilityKey(id))
@@ -503,7 +494,12 @@ export function FloatingComposerModelPicker({
           <span>{t('composerReasoningSmarter')}</span>
         </div>
         <div
-          className={`ds-composer-reasoning-rail${canChangeModel ? '' : ' is-disabled'}`}
+          className={`ds-composer-reasoning-rail${canChangeModel ? '' : ' is-disabled'}${reasoningHasEnergyMotion ? ' is-energized' : ''}`}
+          style={{
+            '--ds-reasoning-energy': reasoningRailPosition,
+            '--ds-reasoning-light-opacity': 0.16 + reasoningRailPosition * 0.22,
+            '--ds-reasoning-particle-opacity': 0.22 + reasoningRailPosition * 0.58
+          } as CSSProperties}
           role="slider"
           tabIndex={canChangeModel ? 0 : -1}
           aria-label={t('composerReasoning')}
@@ -521,10 +517,8 @@ export function FloatingComposerModelPicker({
         >
           <div className="ds-composer-reasoning-rail-inner">
             <div className="ds-composer-reasoning-rail-track" aria-hidden="true">
-              <span
-                className={`ds-composer-reasoning-rail-fill${reasoningHasEnergyMotion ? ' is-energized' : ''}`}
-                style={{ width: reasoningThumbCenter }}
-              >
+              <span className="ds-composer-reasoning-rail-light" />
+              <span className="ds-composer-reasoning-particles">
                 {REASONING_PARTICLES.slice(0, particleCount).map((particle, index) => (
                   <i
                     key={index}
@@ -539,17 +533,6 @@ export function FloatingComposerModelPicker({
                       '--ds-reasoning-particle-x': particle.driftX,
                       '--ds-reasoning-particle-y': particle.driftY
                     } as CSSProperties}
-                  />
-                ))}
-              </span>
-              <span className="ds-composer-reasoning-stops">
-                {reasoningRailEfforts.map((effort, index) => (
-                  <i
-                    key={effort}
-                    className={index <= reasoningRailIndex ? 'is-filled' : ''}
-                    style={{ left: composerReasoningRailThumbCenter(
-                      composerReasoningRailPosition(reasoningRailEfforts, effort)
-                    ) }}
                   />
                 ))}
               </span>

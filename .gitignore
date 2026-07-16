@@ -49,6 +49,7 @@ TestResults.xml
 
 ### Tool data
 .workbuddy/
+.kun-design/
 
 ### Internal docs
 docs/R2_RELEASE.md
