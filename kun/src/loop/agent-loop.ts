@@ -141,6 +141,12 @@ export type AgentLoopOptions = {
   roles?: RolesConfig
   toolStorm?: ToolStormBreakerOptions & { enabled?: boolean }
   turnLimits?: TurnLimitsConfig
+  /**
+   * Disable only the wall-clock deadline for this loop. Delegated child
+   * agents use this so they run until completion or explicit cancellation;
+   * step and per-response tool-call limits still apply.
+   */
+  disableWallTimeLimit?: boolean
   toolArgumentRepair?: {
     maxStringBytes?: number
   }
@@ -453,7 +459,7 @@ export class AgentLoop {
       : configuredWallTimeMs
     let wallTimeExceeded = false
     let deadline: ReturnType<typeof setTimeout> | undefined
-    if (!delegatedSdkRuntime) {
+    if (!delegatedSdkRuntime && this.opts.disableWallTimeLimit !== true) {
       deadline = setTimeout(() => {
         wallTimeExceeded = true
         this.opts.turns.abortTurnExecution(turnId)
@@ -689,7 +695,10 @@ export class AgentLoop {
         )
         return 'failed'
       }
-      if ((this.opts.nowMs?.() ?? Date.now()) - startedAt >= limits.maxWallTimeMs) {
+      if (
+        this.opts.disableWallTimeLimit !== true &&
+        (this.opts.nowMs?.() ?? Date.now()) - startedAt >= limits.maxWallTimeMs
+      ) {
         const extensionLimited = Boolean(
           thread?.extensionBudget && thread.extensionBudget.maxElapsedMs <= configuredLimits.maxWallTimeMs
         )
