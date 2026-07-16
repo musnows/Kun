@@ -428,7 +428,9 @@ export function FloatingComposer({
       ? clawHasInboundConversation
       : (hasActiveThread || !!effectiveWorkspaceRoot)
   )
-  const canChangeModel = canCompose && !busy
+  // Code's split controls configure the next submission. The active turn has
+  // already captured its model and reasoning effort, so busy must not lock them.
+  const canChangeModel = canCompose && (modelControlVariant === 'split' || !busy)
   const canSend = canCompose && (
     input.trim().length > 0 ||
     (attachmentUploadEnabled && attachments.length > 0) ||
@@ -1717,7 +1719,7 @@ export function FloatingComposer({
                     />
                   )}
                   {hideModelPicker ? null : (
-                    <FloatingComposerAgentPicker compact={compact} disabled={!canChangeModel} />
+                    <FloatingComposerAgentPicker compact={compact} disabled={!canCompose || busy} />
                   )}
                   {showVoiceDictation ? (
                     <button

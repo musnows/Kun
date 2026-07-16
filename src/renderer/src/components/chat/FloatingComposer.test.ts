@@ -1426,7 +1426,7 @@ describe('FloatingComposer capability controls', () => {
     expect(html).toContain('shot.png')
   })
 
-  it('keeps the busy composer toolbar focused on stop and model text', () => {
+  it('keeps busy Code model and reasoning controls enabled for the next input', () => {
     const html = renderToStaticMarkup(
       createElement(FloatingComposer, {
         input: 'hello',
@@ -1439,7 +1439,10 @@ describe('FloatingComposer capability controls', () => {
         composerModel: 'deepseek-v4-pro',
         composerPickList: ['deepseek-v4-pro'],
         composerModelGroups: [DEEPSEEK_PROVIDER_GROUP],
+        composerReasoningEffort: 'high',
+        modelControlVariant: 'split',
         onComposerModelChange: () => undefined,
+        onComposerReasoningEffortChange: () => undefined,
         queuedMessages: [],
         onRemoveQueuedMessage: () => undefined,
         onSend: () => undefined,
@@ -1451,6 +1454,12 @@ describe('FloatingComposer capability controls', () => {
 
     expect(html).toContain('deepseek-v4-pro')
     expect(html).toContain('Stop')
+    const modelTrigger = html.match(/<button[^>]*aria-label="Model"[^>]*>/)?.[0]
+    const reasoningTrigger = html.match(/<button[^>]*aria-label="Reasoning: High"[^>]*>/)?.[0]
+    expect(modelTrigger).toBeDefined()
+    expect(modelTrigger).not.toContain('disabled=""')
+    expect(reasoningTrigger).toBeDefined()
+    expect(reasoningTrigger).not.toContain('disabled=""')
     expect(html).not.toContain('Stop and discard')
     expect(html).not.toContain('lucide-trash-2')
     expect(html).not.toContain('lucide-zap')

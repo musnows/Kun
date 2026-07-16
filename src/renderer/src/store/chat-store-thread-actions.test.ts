@@ -89,6 +89,27 @@ describe('chat-store-thread-actions queued messages', () => {
     vi.unstubAllGlobals()
   })
 
+  it('snapshots active-turn model and reasoning selections into the next queued input', async () => {
+    const { actions, state } = buildHarness()
+    state.composerModel = 'deepseek-v4-flash'
+    state.composerProviderId = 'deepseek'
+
+    await expect(actions.sendMessage('use these next-turn settings', 'agent', {
+      reasoningEffort: 'high'
+    })).resolves.toBe(true)
+
+    expect(state.queuedMessages).toHaveLength(1)
+    expect(state.queuedMessages[0]).toMatchObject({
+      text: 'use these next-turn settings',
+      model: 'deepseek-v4-flash',
+      providerId: 'deepseek',
+      reasoningEffort: 'high'
+    })
+
+    state.composerModel = 'deepseek-v4-pro'
+    expect(state.queuedMessages[0]?.model).toBe('deepseek-v4-flash')
+  })
+
   it('does not queue GUI plan messages while another turn is active', async () => {
     const { actions, state } = buildHarness()
     const guiPlan: GuiPlanMessageContext = {
