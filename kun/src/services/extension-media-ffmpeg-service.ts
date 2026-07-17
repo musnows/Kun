@@ -4,6 +4,9 @@ import { basename, dirname, extname, isAbsolute, join, sep } from 'node:path'
 import type { ExtensionPrincipal } from './extension-agent-service.js'
 import {
   ExtensionMediaHandleService,
+  fileIdentityFromStat,
+  identifiesSameFile,
+  matchesFileIdentity,
   ExtensionMediaHandleError,
   type CompletedMediaOutputRecovery,
   type MediaOutputCompletionTransaction,
@@ -1151,9 +1154,7 @@ function sameStatIdentity(
   info: Awaited<ReturnType<typeof lstat>>,
   identity: NonNullable<PendingMediaOutputTransaction['originalIdentity']>
 ): boolean {
-  return info.size === identity.size && info.mtimeMs === identity.mtimeMs &&
-    Math.max(0, Number(info.dev)) === identity.device &&
-    Math.max(0, Number(info.ino)) === identity.inode
+  return matchesFileIdentity(identity, fileIdentityFromStat(info))
 }
 
 function safeStagingExtension(path: string): string {
@@ -1182,7 +1183,7 @@ function assertNoAliases(inputs: ResolvedMediaHandle[], outputs: ResolvedMediaHa
 
 function sameFile(left: ResolvedMediaHandle, right: ResolvedMediaHandle): boolean {
   return left.absolutePath === right.absolutePath ||
-    Boolean(left.identity && right.identity && sameIdentity(left.identity, right.identity))
+    Boolean(left.identity && right.identity && identifiesSameFile(left.identity, right.identity))
 }
 
 function sameIdentity(
@@ -1190,8 +1191,7 @@ function sameIdentity(
   right: ResolvedMediaHandle['identity']
 ): boolean {
   if (!left || !right) return left === right
-  return left.device === right.device && left.inode === right.inode &&
-    left.size === right.size && left.mtimeMs === right.mtimeMs
+  return matchesFileIdentity(left, right)
 }
 
 function outputTransaction(input: {
@@ -1271,12 +1271,10 @@ async function promoteAll(outputs: PreparedOutput[]): Promise<PromotedOutput[]> 
         if (!target.isFile() || target.isSymbolicLink()) {
           throw new ExtensionMediaFfmpegError('invalid_output', 'Media export target is no longer a regular file')
         }
-        if (!output.target.identity || !sameIdentity(output.target.identity, {
-          device: Math.max(0, target.dev),
-          inode: Math.max(0, target.ino),
-          size: target.size,
-          mtimeMs: target.mtimeMs
-        })) {
+        if (!output.target.identity || !sameIdentity(
+          output.target.identity,
+          fileIdentityFromStat(target)
+        )) {
           throw new ExtensionMediaFfmpegError('invalid_output', 'Media export target changed before promotion')
         }
         await rename(output.target.absolutePath, output.backupPath)

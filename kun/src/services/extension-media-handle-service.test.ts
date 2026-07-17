@@ -5,7 +5,10 @@ import { afterEach, describe, expect, it } from 'vitest'
 import type { ExtensionPrincipal } from './extension-agent-service.js'
 import {
   ExtensionMediaHandleError,
-  ExtensionMediaHandleService
+  ExtensionMediaHandleService,
+  fileIdentityFromStat,
+  identifiesSameFile,
+  matchesFileIdentity
 } from './extension-media-handle-service.js'
 import { extensionWorkspaceKey } from '../extensions/paths.js'
 
@@ -33,6 +36,24 @@ async function fixture() {
 }
 
 describe('ExtensionMediaHandleService', () => {
+  it('omits filesystem identifiers that cannot be safely persisted in JSON', () => {
+    const identity = fileIdentityFromStat({
+      size: 128,
+      mtimeMs: 1_700_000_000_000,
+      dev: Number.MAX_SAFE_INTEGER + 2,
+      ino: Number.MAX_SAFE_INTEGER + 4
+    })
+
+    expect(identity).toEqual({ size: 128, mtimeMs: 1_700_000_000_000 })
+    expect(matchesFileIdentity(identity, {
+      size: 128,
+      mtimeMs: 1_700_000_000_000,
+      device: 42,
+      inode: 99
+    })).toBe(true)
+    expect(identifiesSameFile(identity, identity)).toBe(false)
+  })
+
   it('registers workspace media without projecting an absolute path', async () => {
     const { workspace, dataDir, principal } = await fixture()
     const service = new ExtensionMediaHandleService({ dataDir })

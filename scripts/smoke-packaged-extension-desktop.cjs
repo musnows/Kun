@@ -185,13 +185,9 @@ async function main() {
       () => processState(desktopProcess)
     )
     const workbenchSession = await attachToTarget(cdp, workbenchTarget.targetId)
-    await synchronizeWorkbenchContributionDiscovery({
+    await replayWorkbenchContributionDiscovery({
       cdp,
       sessionId: workbenchSession,
-      workspaceRoot,
-      contributionId: CONTRIBUTION_ID,
-      timeoutMs,
-      processState: () => processState(desktopProcess)
     })
     await waitForContributionAndClick({
       cdp,
@@ -805,59 +801,19 @@ async function attachToTarget(cdp, targetId) {
   return attached.sessionId
 }
 
-function hasWorkbenchContribution(response, contributionId) {
-  if (!response || response.ok !== true || typeof response.body !== 'string') return false
-  try {
-    const snapshot = JSON.parse(response.body)
-    return Array.isArray(snapshot?.extensions) && snapshot.extensions.some((extension) =>
-      extension?.id === EXTENSION_ID &&
-      Array.isArray(extension?.contributes?.['views.rightSidebar']) &&
-      extension.contributes['views.rightSidebar'].some(
-        (view) => `extension:${extension.id}/${view?.id}` === contributionId
-      )
-    )
-  } catch {
-    return false
-  }
-}
+const WORKBENCH_DISCOVERY_RETRY_DELAYS_MS = [0, 250, 1_000, 3_000, 10_000]
 
-async function synchronizeWorkbenchContributionDiscovery({
-  cdp,
-  sessionId,
-  workspaceRoot,
-  contributionId,
-  timeoutMs,
-  processState: readProcessState
-}) {
-  // The renderer starts contribution discovery asynchronously after its first
-  // committed Workbench render. Confirm that the trusted bridge can already
-  // see the installed, workspace-granted extension, then replay the normal
-  // extension-change signal a few times so the committed listener cannot miss
-  // it during a cold packaged launch.
-  await pollUntil(async () => {
-    assertDesktopProcessRunning(readProcessState())
-    const evaluated = await cdp.send('Runtime.evaluate', {
-      expression: `(async () => {
-        const bridge = globalThis.kunGui
-        if (!bridge || typeof bridge.extensionGetWorkbench !== 'function') return null
-        return bridge.extensionGetWorkbench({ workspaceRoot: ${JSON.stringify(workspaceRoot)} })
-      })()`,
-      awaitPromise: true,
-      returnByValue: true
-    }, sessionId)
-    const response = evaluationValue(evaluated, 'reading the packaged workbench contribution snapshot')
-    return hasWorkbenchContribution(response, contributionId) ? response : undefined
-  }, { timeoutMs, description: `packaged workbench discovery for ${contributionId}` })
-
+async function replayWorkbenchContributionDiscovery({ cdp, sessionId }) {
+  // Workbench contribution discovery starts after the first committed render.
+  // Queue retries up front so a cold packaged renderer cannot miss the one
+  // signal that asks it to retry after the local runtime becomes ready.
   await cdp.send('Runtime.evaluate', {
-    expression: `(async () => {
-      for (const delayMs of [0, 250, 1_000]) {
-        if (delayMs > 0) await new Promise((resolvePromise) => setTimeout(resolvePromise, delayMs))
-        window.dispatchEvent(new Event('kun:extensions-changed'))
+    expression: `(() => {
+      for (const delayMs of ${JSON.stringify(WORKBENCH_DISCOVERY_RETRY_DELAYS_MS)}) {
+        window.setTimeout(() => window.dispatchEvent(new Event('kun:extensions-changed')), delayMs)
       }
       return true
     })()`,
-    awaitPromise: true,
     returnByValue: true
   }, sessionId)
 }
@@ -1908,7 +1864,8 @@ module.exports = {
   resolvedDesktopResourceCandidates,
   desktopUserDataCandidates,
   findUnexpectedPopupTargets,
-  hasWorkbenchContribution,
+  WORKBENCH_DISCOVERY_RETRY_DELAYS_MS,
+  replayWorkbenchContributionDiscovery,
   isExtensionGuestTarget,
   isWorkbenchTarget,
   platformDesktopArguments,

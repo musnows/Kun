@@ -13,8 +13,11 @@ const MediaHandleLifecycleSchema = z.enum(['persistent', 'cache'])
 const FileIdentitySchema = z.strictObject({
   size: z.number().int().nonnegative(),
   mtimeMs: z.number().nonnegative(),
-  device: z.number().int().nonnegative(),
-  inode: z.number().int().nonnegative()
+  // Windows can report NTFS identifiers above Number.MAX_SAFE_INTEGER. They
+  // are useful hardening signals, but must not make a valid media handle
+  // impossible to persist in JSON.
+  device: z.number().int().nonnegative().optional(),
+  inode: z.number().int().nonnegative().optional()
 })
 const StoredMediaHandleSchema = z.strictObject({
   id: z.string().min(1),
@@ -45,7 +48,7 @@ type StoredMediaHandle = z.infer<typeof StoredMediaHandleSchema>
 type MediaHandleMode = z.infer<typeof MediaHandleModeSchema>
 type MediaHandleSource = z.infer<typeof MediaHandleSourceSchema>
 type MediaHandleLifecycle = z.infer<typeof MediaHandleLifecycleSchema>
-type FileIdentity = z.infer<typeof FileIdentitySchema>
+export type FileIdentity = z.infer<typeof FileIdentitySchema>
 
 export type MediaHandleProjection = {
   id: string
@@ -658,7 +661,7 @@ export class ExtensionMediaHandleService {
           candidate.mode === 'read' &&
           candidate.reservationId === reservationId &&
           candidate.absolutePath === record.absolutePath &&
-          candidate.identity !== undefined && sameIdentity(candidate.identity, record.identity!)
+          candidate.identity !== undefined && matchesFileIdentity(candidate.identity, record.identity!)
         )
         if (generated.length !== 1) {
           throw new ExtensionMediaHandleError(
@@ -1005,15 +1008,37 @@ async function canonicalOutput(path: string): Promise<string> {
   }
 }
 
+export function fileIdentityFromStat(info: {
+  size: number | bigint
+  mtimeMs: number | bigint
+  dev: number | bigint
+  ino: number | bigint
+}): FileIdentity {
+  const device = serializableFileSystemIdentifier(info.dev)
+  const inode = serializableFileSystemIdentifier(info.ino)
+  return {
+    size: statNumber(info.size),
+    mtimeMs: statNumber(info.mtimeMs),
+    ...(device === undefined ? {} : { device }),
+    ...(inode === undefined ? {} : { inode })
+  }
+}
+
+function serializableFileSystemIdentifier(value: number | bigint): number | undefined {
+  if (typeof value === 'bigint') {
+    return value >= 0n && value <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(value) : undefined
+  }
+  return Number.isSafeInteger(value) && value >= 0 ? value : undefined
+}
+
+function statNumber(value: number | bigint): number {
+  return typeof value === 'bigint' ? Number(value) : value
+}
+
 async function readIdentity(path: string): Promise<FileIdentity> {
   const info = await stat(path)
   if (!info.isFile()) throw new ExtensionMediaHandleError('not_regular_file', 'Media input is not a regular file')
-  return {
-    size: info.size,
-    mtimeMs: info.mtimeMs,
-    device: Math.max(0, info.dev),
-    inode: Math.max(0, info.ino)
-  }
+  return fileIdentityFromStat(info)
 }
 
 async function refreshIdentity(record: StoredMediaHandle): Promise<StoredMediaHandle> {
@@ -1027,7 +1052,7 @@ async function refreshIdentity(record: StoredMediaHandle): Promise<StoredMediaHa
     }
   }
   const current = await readIdentity(record.absolutePath)
-  if (record.identity && !sameIdentity(record.identity, current)) {
+  if (record.identity && !matchesFileIdentity(record.identity, current)) {
     throw new ExtensionMediaHandleError('file_changed', 'Media file identity changed')
   }
   return { ...record, identity: current }
@@ -1065,8 +1090,15 @@ function assertOwnedRecordIncludingRevoked(
   }
 }
 
-function sameIdentity(left: FileIdentity, right: FileIdentity): boolean {
+export function matchesFileIdentity(left: FileIdentity, right: FileIdentity): boolean {
   return left.size === right.size && left.mtimeMs === right.mtimeMs &&
+    (left.device === undefined || right.device === undefined || left.device === right.device) &&
+    (left.inode === undefined || right.inode === undefined || left.inode === right.inode)
+}
+
+export function identifiesSameFile(left: FileIdentity, right: FileIdentity): boolean {
+  return left.device !== undefined && right.device !== undefined &&
+    left.inode !== undefined && right.inode !== undefined &&
     left.device === right.device && left.inode === right.inode
 }
 
@@ -1109,7 +1141,7 @@ function completionIdentity(record: StoredMediaHandle): string {
   const identity = record.identity
   if (!identity) return ''
   return createHash('sha256')
-    .update(`${record.id}\0${identity.device}\0${identity.inode}\0${identity.size}\0${identity.mtimeMs}`)
+    .update(`${record.id}\0${identity.device ?? ''}\0${identity.inode ?? ''}\0${identity.size}\0${identity.mtimeMs}`)
     .digest('base64url')
 }
 

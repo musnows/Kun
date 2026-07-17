@@ -1016,7 +1016,7 @@ function sourceEvidence(input: ResolvedMediaHandle): ExtensionAudioSourceEvidenc
     handleId: input.id,
     fingerprint: createHash('sha256')
       .update(
-        `${input.identity.device}\0${input.identity.inode}\0${input.identity.size}\0${input.identity.mtimeMs}`
+        `${input.identity.device ?? ''}\0${input.identity.inode ?? ''}\0${input.identity.size}\0${input.identity.mtimeMs}`
       )
       .digest('hex'),
     fingerprintAlgorithm: 'sha256-file-identity-v1'

@@ -31,7 +31,8 @@ const {
   desktopSmokeWorkspaceParent,
   desktopUserDataCandidates,
   findUnexpectedPopupTargets,
-  hasWorkbenchContribution,
+  WORKBENCH_DISCOVERY_RETRY_DELAYS_MS,
+  replayWorkbenchContributionDiscovery,
   isExtensionGuestTarget,
   isWorkbenchTarget,
   platformDesktopArguments,
@@ -425,27 +426,24 @@ test('recognizes the workbench and kun-extension guest CDP targets', () => {
   )
 })
 
-test('recognizes the installed smoke view in a trusted workbench bridge snapshot', () => {
-  const snapshot = {
-    schemaVersion: 1,
-    revision: 7,
-    extensions: [{
-      id: EXTENSION_ID,
-      contributes: {
-        'views.rightSidebar': [{ id: 'smoke' }]
-      }
-    }]
-  }
-  assert.equal(
-    hasWorkbenchContribution({ ok: true, status: 200, body: JSON.stringify(snapshot) }, CONTRIBUTION_ID),
-    true
-  )
-  assert.equal(
-    hasWorkbenchContribution({ ok: true, status: 200, body: JSON.stringify(snapshot) }, 'extension:other.example/smoke'),
-    false
-  )
-  assert.equal(hasWorkbenchContribution({ ok: false, status: 503, body: '' }, CONTRIBUTION_ID), false)
-  assert.equal(hasWorkbenchContribution({ ok: true, status: 200, body: 'not-json' }, CONTRIBUTION_ID), false)
+test('replays extension discovery through and beyond the cold renderer startup window', async () => {
+  assert.deepEqual(WORKBENCH_DISCOVERY_RETRY_DELAYS_MS, [0, 250, 1_000, 3_000, 10_000])
+  const calls = []
+  await replayWorkbenchContributionDiscovery({
+    cdp: { send: async (...args) => calls.push(args) },
+    sessionId: 'workbench-session'
+  })
+  assert.deepEqual(calls.map(([method, params, sessionId]) => ({ method, sessionId, params: {
+    awaitPromise: params.awaitPromise,
+    returnByValue: params.returnByValue
+  } })), [{
+    method: 'Runtime.evaluate',
+    sessionId: 'workbench-session',
+    params: { awaitPromise: undefined, returnByValue: true }
+  }])
+  const expression = calls[0][1].expression
+  assert.match(expression, /window\.setTimeout/)
+  assert.doesNotMatch(expression, /extensionGetWorkbench/)
 })
 
 test('routes flattened CDP commands and rejects protocol errors', async () => {

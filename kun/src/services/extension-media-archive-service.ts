@@ -14,6 +14,9 @@ import type { ExtensionPrincipal } from './extension-agent-service.js'
 import {
   ExtensionMediaHandleError,
   ExtensionMediaHandleService,
+  fileIdentityFromStat,
+  identifiesSameFile,
+  matchesFileIdentity,
   type CompletedMediaOutputRecovery,
   type MediaHandleProjection,
   type MediaOutputCompletionTransaction,
@@ -595,8 +598,7 @@ function assertNoAlias(inputs: ResolvedMediaHandle[], output: ResolvedMediaHandl
   for (const input of inputs) {
     if (input.absolutePath === output.absolutePath ||
       Boolean(input.identity && output.identity &&
-        input.identity.device === output.identity.device &&
-        input.identity.inode === output.identity.inode)) {
+        identifiesSameFile(input.identity, output.identity))) {
       throw new ExtensionMediaArchiveError(
         'output_alias',
         'Project package output cannot alias an input'
@@ -609,18 +611,14 @@ function sameIdentity(
   info: Awaited<ReturnType<typeof lstat>>,
   identity: NonNullable<ResolvedMediaHandle['identity']>
 ): boolean {
-  return info.size === identity.size && info.mtimeMs === identity.mtimeMs &&
-    Math.max(0, Number(info.dev)) === identity.device &&
-    Math.max(0, Number(info.ino)) === identity.inode
+  return matchesFileIdentity(identity, fileIdentityFromStat(info))
 }
 
 function sameStatIdentity(
   info: Awaited<ReturnType<typeof lstat>>,
   identity: NonNullable<PendingMediaOutputTransaction['originalIdentity']>
 ): boolean {
-  return info.size === identity.size && info.mtimeMs === identity.mtimeMs &&
-    Math.max(0, Number(info.dev)) === identity.device &&
-    Math.max(0, Number(info.ino)) === identity.inode
+  return matchesFileIdentity(identity, fileIdentityFromStat(info))
 }
 
 async function lstatIfPresent(path: string): Promise<Awaited<ReturnType<typeof lstat>> | undefined> {
