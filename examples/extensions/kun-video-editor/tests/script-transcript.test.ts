@@ -41,6 +41,18 @@ describe('timeline.md and transcripts', () => {
       .toThrowError(/digest/u)
   })
 
+  it('keeps literal backslashes and table delimiters deterministic in projections', () => {
+    const project = makeProject()
+    const text = String.raw`path\segment \| delimiter`
+    project.captions[0] = { ...project.captions[0]!, text }
+    project.sequences[0]!.captions = structuredClone(project.captions)
+
+    const script = generateTimelineMarkdown(project)
+    expect(script).toContain(`path${'\\'.repeat(2)}segment ${'\\'.repeat(3)}| delimiter`)
+    expect(validateTimelineMarkdown(project, script)).toMatchObject({ projectId: project.id })
+    expect(generateTimelineMarkdown(project)).toBe(script)
+  })
+
   it('imports SRT, VTT, and timed JSON and rejects invalid timing', () => {
     const asset = makeProject().assets[0]!
     const srt = importTranscript(

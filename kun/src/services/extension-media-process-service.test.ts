@@ -127,6 +127,34 @@ describe('ExtensionMediaProcessService', { timeout: MEDIA_PROCESS_TEST_TIMEOUT_M
     })
   })
 
+  it('reads a successful FFmpeg filter inventory from stderr', async () => {
+    const test = await fixture(`
+      const args = process.argv.slice(2)
+      if (args.includes('-version')) process.stdout.write('ffmpeg version 8.0-stderr-inventory\\n')
+      else if (args.includes('-encoders')) process.stdout.write(' V..... libx264 H.264\\n A..... aac AAC\\n')
+      else if (args.includes('-filters')) process.stderr.write(' T.C drawtext V->V Draw text\\n')
+      else if (args.includes('-muxers')) process.stdout.write('  E mp4 MP4\\n')
+    `)
+    const service = new ExtensionMediaProcessService({
+      handleService: test.handles,
+      ffmpegPath: test.bin,
+      pathEnv: process.env.PATH
+    })
+
+    await expect(service.capabilities(test.principal)).resolves.toMatchObject({
+      ffmpeg: {
+        name: 'ffmpeg',
+        available: true,
+        features: expect.arrayContaining([
+          'libx264-encoder',
+          'aac-encoder',
+          'drawtext-filter',
+          'mp4-muxer'
+        ])
+      }
+    })
+  })
+
   it('uses a fixed ffprobe profile and returns normalized bounded metadata', async () => {
     const payload = {
       format: {

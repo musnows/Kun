@@ -50,7 +50,7 @@ export function escapeSubtitleText(value: string): string {
       )
     })
     .join('')
-    .replace(/-->/gu, '→')
+    .replaceAll('-->', '→')
     .replace(/&/gu, '&amp;')
     .replace(/</gu, '&lt;')
     .replace(/>/gu, '&gt;')

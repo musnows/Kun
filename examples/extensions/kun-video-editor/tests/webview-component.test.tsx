@@ -1558,7 +1558,22 @@ function textForOpeningTag(html: string, tag: string): string {
   if (start < 0 || !elementName) return ''
   const end = html.indexOf(`</${elementName}>`, start + tag.length)
   if (end < 0) return ''
-  return html.slice(start + tag.length, end).replace(/<[^>]+>/gu, '').trim()
+  return textFromStaticMarkup(html.slice(start + tag.length, end)).trim()
+}
+
+function textFromStaticMarkup(markup: string): string {
+  let text = ''
+  let insideTag = false
+  for (const character of markup) {
+    if (insideTag) {
+      if (character === '>') insideTag = false
+    } else if (character === '<') {
+      insideTag = true
+    } else {
+      text += character
+    }
+  }
+  return text
 }
 
 function textContent(node: ReactTestInstance): string {

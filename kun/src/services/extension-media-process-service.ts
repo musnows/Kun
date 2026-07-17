@@ -782,9 +782,14 @@ async function inspectFfmpegFeatures(
       })
     ])
     if (encoders.exitCode !== 0 || filters.exitCode !== 0 || muxers.exitCode !== 0) return []
-    const encoderText = encoders.stdout.toString('utf8')
-    const filterText = filters.stdout.toString('utf8')
-    const muxerText = muxers.stdout.toString('utf8')
+    // FFmpeg variants do not consistently send capability inventories to the
+    // same stream. In particular, Homebrew's full macOS build can print the
+    // filter inventory on stderr even after a successful exit. Both streams
+    // are independently bounded by the caller, so combine them only for the
+    // local, token-based capability probe.
+    const encoderText = capabilityInventoryText(encoders)
+    const filterText = capabilityInventoryText(filters)
+    const muxerText = capabilityInventoryText(muxers)
     const features: NonNullable<MediaCapability['features']> = []
     if (/^\s*[A-Z.]{6}\s+libx264\s/mu.test(encoderText)) features.push('libx264-encoder')
     if (/^\s*[A-Z.]{6}\s+libx265\s/mu.test(encoderText)) features.push('libx265-encoder')
@@ -810,6 +815,10 @@ async function inspectFfmpegFeatures(
   } catch {
     return []
   }
+}
+
+function capabilityInventoryText(result: RunResult): string {
+  return Buffer.concat([result.stdout, Buffer.from('\n'), result.stderr]).toString('utf8')
 }
 
 type DiscoveredExecutable = { path: string; source: 'configured' | 'path' }

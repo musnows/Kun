@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   escapeDrawtextText,
+  escapeSubtitleText,
   generateRenderPlan,
   generateSubtitles,
   type FfmpegRenderStep,
@@ -42,6 +43,10 @@ describe('subtitles and render plans', () => {
     expect(srt).not.toContain('\u0000')
     const vtt = generateSubtitles(project.captions, project.fps, 'vtt')
     expect(vtt.startsWith('WEBVTT\n\nfirst\n')).toBe(true)
+  })
+
+  it('keeps non-cue --!> text escaped rather than treating it as markup', () => {
+    expect(escapeSubtitleText('A --> B --!> <tag>')).toBe('A → B --!&gt; &lt;tag&gt;')
   })
 
   it('generates a revision-bound proof-frame plan with opaque placeholders', () => {

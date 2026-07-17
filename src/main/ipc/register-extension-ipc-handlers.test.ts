@@ -1,5 +1,6 @@
 import { ExtensionManifestSchema } from '@kun/extension-api'
 import { createHash } from 'node:crypto'
+import { join, resolve } from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ExtensionViewSessionRegistry } from '../extensions/extension-view-sessions'
 import {
@@ -547,6 +548,7 @@ describe('extension IPC security bridge', () => {
   it('attaches bounded View context through the owning workbench with Host provenance', async () => {
     const state = fixture()
     const workspaceRoot = '/tmp/workspace'
+    const canonicalWorkspaceRoot = resolve(workspaceRoot)
     const record = state.viewSessions.create({
       sessionId: 'view_12345678-1234-1234-1234-123456789abc',
       runtimeSessionId: 'view_12345678-1234-1234-1234-123456789abc',
@@ -590,7 +592,7 @@ describe('extension IPC security bridge', () => {
       }
     )
 
-    const workspaceId = createHash('sha256').update(workspaceRoot).digest('hex')
+    const workspaceId = createHash('sha256').update(canonicalWorkspaceRoot).digest('hex')
     expect(response).toMatchObject({
       schemaVersion: 1,
       title: 'Interview selection',
@@ -605,7 +607,7 @@ describe('extension IPC security bridge', () => {
     expect(JSON.stringify(response)).not.toContain(workspaceRoot)
     expect(state.mainContents.send).toHaveBeenCalledWith(
       'extension:composer-context-attached',
-      expect.objectContaining({ workspaceRoot, attachment: response })
+      expect.objectContaining({ workspaceRoot: canonicalWorkspaceRoot, attachment: response })
     )
     expect(state.runtimeRequest).not.toHaveBeenCalled()
   })
@@ -936,6 +938,8 @@ describe('extension IPC security bridge', () => {
 
   it('opens and reveals owned artifacts from the authenticated View binding without exposing paths', async () => {
     const state = fixture()
+    const workspaceRoot = '/tmp/workspace'
+    const canonicalWorkspaceRoot = resolve(workspaceRoot)
     const record = state.viewSessions.create({
       sessionId: 'view_12345678-1234-1234-1234-123456789abc',
       runtimeSessionId: 'view_12345678-1234-1234-1234-123456789abc',
@@ -943,7 +947,7 @@ describe('extension IPC security bridge', () => {
       extensionId: 'acme.example',
       extensionVersion: '1.0.0',
       contributionId: 'extension:acme.example/issues',
-      workspaceRoot: '/tmp/workspace',
+      workspaceRoot,
       entryPath: 'dist/index.html',
       parentWebContentsId: 1
     })
@@ -983,8 +987,8 @@ describe('extension IPC security bridge', () => {
       artifactId: 'artifact_subtitle_1234567890',
       ownerExtensionId: record.extensionId,
       ownerExtensionVersion: record.extensionVersion,
-      workspaceId: createHash('sha256').update('/tmp/workspace').digest('hex'),
-      workspaceRoot: '/tmp/workspace'
+      workspaceId: createHash('sha256').update(canonicalWorkspaceRoot).digest('hex'),
+      workspaceRoot: canonicalWorkspaceRoot
     })
     expect(JSON.stringify(await invoke('open'))).not.toContain('/private/generated')
 
@@ -1436,13 +1440,14 @@ describe('extension IPC security bridge', () => {
 
   it('registers a save target without returning or creating the selected path', async () => {
     const state = fixture()
+    const workspaceRoot = '/tmp/workspace'
     const record = state.viewSessions.create({
       sessionId: 'view_12345678-1234-1234-1234-123456789abc',
       nonce: 'n'.repeat(43),
       extensionId: 'acme.example',
       extensionVersion: '1.0.0',
       contributionId: 'extension:acme.example/issues',
-      workspaceRoot: '/tmp/workspace',
+      workspaceRoot,
       entryPath: 'dist/index.html',
       parentWebContentsId: 1
     })
@@ -1492,7 +1497,7 @@ describe('extension IPC security bridge', () => {
       expect.anything(),
       expect.objectContaining({
         title: 'Choose export destination for acme.example',
-        defaultPath: '/tmp/workspace/final.mp4',
+        defaultPath: join(workspaceRoot, 'final.mp4'),
         filters: [{ name: 'MP4', extensions: ['mp4'] }]
       })
     )

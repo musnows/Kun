@@ -726,8 +726,24 @@ export function escapeDrawtextText(value: string): string {
   // FFmpeg applies one escaping layer to the drawtext option and a second to
   // the enclosing filtergraph. This is an argv element, so there is no shell
   // escaping layer. Keep expansion=none so percent sequences stay literal.
-  const optionEscaped = normalized.replace(/[\\':]/gu, '\\$&')
-  return optionEscaped.replace(/[\\'[\],;]/gu, '\\$&')
+  return [...normalized].map(escapeDrawtextCharacter).join('')
+}
+
+/** Apply drawtext-option escaping before filtergraph escaping for one input character. */
+function escapeDrawtextCharacter(character: string): string {
+  const optionEscaped = requiresDrawtextOptionEscape(character) ? `\\${character}` : character
+  return [...optionEscaped]
+    .map((part) => requiresFiltergraphEscape(part) ? `\\${part}` : part)
+    .join('')
+}
+
+function requiresDrawtextOptionEscape(character: string): boolean {
+  return character === '\\' || character === "'" || character === ':'
+}
+
+function requiresFiltergraphEscape(character: string): boolean {
+  return character === '\\' || character === "'" || character === '[' ||
+    character === ']' || character === ',' || character === ';'
 }
 
 function safeCaptionColor(value: string | undefined, fallback: string): string {

@@ -31,6 +31,7 @@ const {
   desktopSmokeWorkspaceParent,
   desktopUserDataCandidates,
   findUnexpectedPopupTargets,
+  hasWorkbenchContribution,
   isExtensionGuestTarget,
   isWorkbenchTarget,
   platformDesktopArguments,
@@ -422,6 +423,29 @@ test('recognizes the workbench and kun-extension guest CDP targets', () => {
     }),
     false
   )
+})
+
+test('recognizes the installed smoke view in a trusted workbench bridge snapshot', () => {
+  const snapshot = {
+    schemaVersion: 1,
+    revision: 7,
+    extensions: [{
+      id: EXTENSION_ID,
+      contributes: {
+        'views.rightSidebar': [{ id: 'smoke' }]
+      }
+    }]
+  }
+  assert.equal(
+    hasWorkbenchContribution({ ok: true, status: 200, body: JSON.stringify(snapshot) }, CONTRIBUTION_ID),
+    true
+  )
+  assert.equal(
+    hasWorkbenchContribution({ ok: true, status: 200, body: JSON.stringify(snapshot) }, 'extension:other.example/smoke'),
+    false
+  )
+  assert.equal(hasWorkbenchContribution({ ok: false, status: 503, body: '' }, CONTRIBUTION_ID), false)
+  assert.equal(hasWorkbenchContribution({ ok: true, status: 200, body: 'not-json' }, CONTRIBUTION_ID), false)
 })
 
 test('routes flattened CDP commands and rejects protocol errors', async () => {

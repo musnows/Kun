@@ -139,14 +139,14 @@ export class ExtensionJobStore {
       const current = await this.loadUnlocked()
       const existingId = input.idempotency === undefined
         ? undefined
-        : current.idempotency[idempotencyScope(input.snapshot, input.idempotency)]
+        : ownRecordValue(current.idempotency, idempotencyScope(input.snapshot, input.idempotency))
       if (existingId !== undefined) {
-        const existing = current.jobs[existingId]
+        const existing = ownRecordValue(current.jobs, existingId)
         if (existing !== undefined) {
           return { snapshot: structuredClone(existing.snapshot), created: false }
         }
       }
-      if (current.jobs[input.snapshot.id] !== undefined) {
+      if (ownRecordValue(current.jobs, input.snapshot.id) !== undefined) {
         throw new Error(`Extension job ID already exists: ${input.snapshot.id}`)
       }
 
@@ -183,9 +183,9 @@ export class ExtensionJobStore {
         retainedEventBytes: bytes
       }
       const next = structuredClone(current)
-      next.jobs[snapshot.id] = stored
+      setOwnRecordValue(next.jobs, snapshot.id, stored)
       if (input.idempotency !== undefined) {
-        next.idempotency[idempotencyScope(snapshot, input.idempotency)] = snapshot.id
+        setOwnRecordValue(next.idempotency, idempotencyScope(snapshot, input.idempotency), snapshot.id)
       }
       this.pruneDocument(next)
       await this.persist(next)
@@ -198,14 +198,14 @@ export class ExtensionJobStore {
 
   async get(jobId: string): Promise<ExtensionJobSnapshot | undefined> {
     return this.serialize(async () => {
-      const stored = (await this.loadUnlocked()).jobs[jobId]
+      const stored = ownRecordValue((await this.loadUnlocked()).jobs, jobId)
       return stored === undefined ? undefined : structuredClone(stored.snapshot)
     })
   }
 
   async getStored(jobId: string): Promise<StoredExtensionJob | undefined> {
     return this.serialize(async () => {
-      const stored = (await this.loadUnlocked()).jobs[jobId]
+      const stored = ownRecordValue((await this.loadUnlocked()).jobs, jobId)
       return stored === undefined ? undefined : structuredClone(stored)
     })
   }
@@ -226,8 +226,8 @@ export class ExtensionJobStore {
   ): Promise<ExtensionJobSnapshot | undefined> {
     return this.serialize(async () => {
       const document = await this.loadUnlocked()
-      const jobId = document.idempotency[idempotencyScope(owner, idempotency)]
-      const stored = jobId === undefined ? undefined : document.jobs[jobId]
+      const jobId = ownRecordValue(document.idempotency, idempotencyScope(owner, idempotency))
+      const stored = jobId === undefined ? undefined : ownRecordValue(document.jobs, jobId)
       return stored === undefined ? undefined : structuredClone(stored.snapshot)
     })
   }
@@ -239,7 +239,7 @@ export class ExtensionJobStore {
     let emitted: { snapshot: ExtensionJobSnapshot; event: ExtensionJobEvent } | undefined
     const result = await this.serialize(async () => {
       const current = await this.loadUnlocked()
-      const record = current.jobs[jobId]
+      const record = ownRecordValue(current.jobs, jobId)
       if (record === undefined) return undefined
       const mutation = mutate(structuredClone(record))
       if (mutation === undefined) {
@@ -247,7 +247,7 @@ export class ExtensionJobStore {
       }
 
       const next = structuredClone(current)
-      const nextRecord = next.jobs[jobId]
+      const nextRecord = ownRecordValue(next.jobs, jobId)
       if (nextRecord === undefined) return undefined
       if (mutation.snapshot !== undefined) nextRecord.snapshot = structuredClone(mutation.snapshot)
       if (mutation.checkpoint === null) delete nextRecord.checkpoint
@@ -302,7 +302,7 @@ export class ExtensionJobStore {
 
   async replay(jobId: string, cursor?: string): Promise<ExtensionJobStoreReplay | undefined> {
     return this.serialize(async () => {
-      const record = (await this.loadUnlocked()).jobs[jobId]
+      const record = ownRecordValue((await this.loadUnlocked()).jobs, jobId)
       if (record === undefined) return undefined
       let sequence = 0
       let gap = false
@@ -395,10 +395,12 @@ export class ExtensionJobStore {
     })
     const overLimit = terminal.slice(0, Math.max(0, terminal.length - this.maxTerminalRecords))
     for (const job of new Set([...expired, ...overLimit])) {
-      delete document.jobs[job.snapshot.id]
+      deleteOwnRecordValue(document.jobs, job.snapshot.id)
     }
     for (const [scope, jobId] of Object.entries(document.idempotency)) {
-      if (document.jobs[jobId] === undefined) delete document.idempotency[scope]
+      if (ownRecordValue(document.jobs, jobId) === undefined) {
+        deleteOwnRecordValue(document.idempotency, scope)
+      }
     }
   }
 
@@ -427,6 +429,29 @@ function emptyDocument(now: () => Date): ExtensionJobStoreDocument {
     jobs: {},
     idempotency: {}
   }
+}
+
+/**
+ * Job IDs are extension-controlled opaque strings, so they can legally be
+ * names such as `__proto__`. Persisted maps are ordinary JSON objects; always
+ * access their own data properties so an inherited Object.prototype member
+ * cannot be mistaken for a job record or mutated by a subsequent update.
+ */
+function ownRecordValue<T>(record: Record<string, T>, key: string): T | undefined {
+  return Object.hasOwn(record, key) ? record[key] : undefined
+}
+
+function setOwnRecordValue<T>(record: Record<string, T>, key: string, value: T): void {
+  Object.defineProperty(record, key, {
+    value,
+    enumerable: true,
+    configurable: true,
+    writable: true
+  })
+}
+
+function deleteOwnRecordValue<T>(record: Record<string, T>, key: string): void {
+  if (Object.hasOwn(record, key)) delete record[key]
 }
 
 function latestSequence(record: StoredExtensionJob): number {
@@ -497,7 +522,7 @@ function validateJobStoreDocument(value: unknown): ExtensionJobStoreDocument {
   const document = structuredClone(value) as ExtensionJobStoreDocument
   for (const [jobId, job] of Object.entries(document.jobs)) validateStoredJob(jobId, job)
   for (const [scope, jobId] of Object.entries(document.idempotency)) {
-    if (scope.length === 0 || typeof jobId !== 'string' || document.jobs[jobId] === undefined) {
+    if (scope.length === 0 || typeof jobId !== 'string' || ownRecordValue(document.jobs, jobId) === undefined) {
       throw new Error('Invalid extension job idempotency index')
     }
   }

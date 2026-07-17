@@ -187,7 +187,11 @@ function escapeTableText(segment: TranscriptSegment): string {
 }
 
 function escapeTableValue(value: string): string {
-  return value.replace(/\r?\n/gu, ' ').replace(/\|/gu, '\\|').trim()
+  return value
+    .replace(/\\/gu, '\\\\')
+    .replace(/\r?\n/gu, ' ')
+    .replace(/\|/gu, '\\|')
+    .trim()
 }
 
 function escapeMarkdown(value: string): string {

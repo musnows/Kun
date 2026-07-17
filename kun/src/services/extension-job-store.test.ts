@@ -100,6 +100,32 @@ describe('ExtensionJobStore', () => {
     }
   })
 
+  it('treats prototype-named job IDs as own persisted records', async () => {
+    const path = await jobStorePath()
+    const now = new Date('2026-07-13T00:00:00.000Z')
+    const store = new ExtensionJobStore({ path, now: () => now })
+    const created = await store.create({
+      snapshot: queuedSnapshot('__proto__', now),
+      workspaceRoot: WORKSPACE_ROOT,
+      permissionsSnapshot: []
+    })
+
+    expect(Object.hasOwn((await store.load()).jobs, '__proto__')).toBe(true)
+    expect(await store.get('__proto__')).toEqual(created.snapshot)
+    await store.mutate('__proto__', () => ({
+      checkpoint: { schemaVersion: 1, data: { safe: true } },
+      cancellationReason: 'user requested cancellation'
+    }))
+
+    expect(Object.hasOwn(Object.prototype, 'checkpoint')).toBe(false)
+    expect(Object.hasOwn(Object.prototype, 'cancellationReason')).toBe(false)
+    const restarted = new ExtensionJobStore({ path, now: () => now })
+    expect(await restarted.getStored('__proto__')).toMatchObject({
+      checkpoint: { schemaVersion: 1, data: { safe: true } },
+      cancellationReason: 'user requested cancellation'
+    })
+  })
+
   it('expires only deterministic terminal records and preserves active jobs', async () => {
     const path = await jobStorePath()
     const now = new Date('2026-07-13T00:00:00.000Z')
