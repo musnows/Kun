@@ -34,6 +34,7 @@ try {
     title: 'Kun PPT',
     entry: 'dist/webview/index.html',
     icon: 'assets/presentation-studio.svg',
+    showInRightRail: true,
     order: 40,
     multiple: false,
     localResourceRoots: ['dist/webview']
