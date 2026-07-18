@@ -373,7 +373,7 @@
   "providerModelContextLabel": "上下文窗口（tokens）",
   "providerModelContextPlaceholder": "如 128k、1m 或 200000",
   "providerModelContextParsed": "≈ {{tokens}} tokens",
-  "providerModelContextHint": "决定何时自动压缩对话上下文，建议按官方文档填写。留空时按 24K 保守处理。",
+  "providerModelContextHint": "决定何时自动压缩对话上下文，建议按官方文档填写。留空时默认按 256K 处理。",
   "providerModelMaxOutputLabel": "最大输出（tokens）",
   "providerModelMaxOutputPlaceholder": "如 8k 或 32000",
   "providerModelMaxOutputParsed": "≈ {{tokens}} tokens",

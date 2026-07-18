@@ -32,7 +32,7 @@ const CODE_WORKSPACE_ROOTS_STORAGE_KEY = 'kun.codeWorkspaceRoots.v1'
 export const MAX_CODE_WORKSPACE_ROOTS = 30
 export const MAX_THREAD_COMPOSER_SELECTIONS = 500
 export const MAX_TURN_MODEL_LABELS = 500
-export const DEFAULT_COMPOSER_CONTEXT_WINDOW_TOKENS = 128_000
+export const DEFAULT_COMPOSER_CONTEXT_WINDOW_TOKENS = 256_000
 
 export type ComposerPlanMode = 'plan' | 'agent'
 

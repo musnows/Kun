@@ -546,8 +546,8 @@ describe('syncGuiManagedKunConfig', () => {
       maxBytes: DEFAULT_TOOL_OUTPUT_MAX_BYTES
     })
     expect(parsed.contextCompaction).toMatchObject({
-      defaultSoftThreshold: 96000,
-      defaultHardThreshold: 108800,
+      defaultSoftThreshold: 192000,
+      defaultHardThreshold: 217600,
       summaryMode: 'model'
     })
     expect(parsed.models.profiles['deepseek-v4-pro']).toMatchObject({

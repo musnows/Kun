@@ -373,7 +373,7 @@
   "providerModelContextLabel": "Context window (tokens)",
   "providerModelContextPlaceholder": "e.g. 128k, 1m or 200000",
   "providerModelContextParsed": "≈ {{tokens}} tokens",
-  "providerModelContextHint": "Controls when conversation context is auto-compacted; copy the value from the provider docs. Empty falls back to a conservative 24K.",
+  "providerModelContextHint": "Controls when conversation context is auto-compacted; copy the value from the provider docs. Empty defaults to 256K.",
   "providerModelMaxOutputLabel": "Max output (tokens)",
   "providerModelMaxOutputPlaceholder": "e.g. 8k or 32000",
   "providerModelMaxOutputParsed": "≈ {{tokens}} tokens",

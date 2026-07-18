@@ -273,7 +273,7 @@ describe('chat-store Claw helpers', () => {
     expect(resolveComposerContextWindowTokens(modelGroups, 'glm-4.5', 'zhipu')).toBe(200_000)
   })
 
-  it('falls back to 128k when the selected model lacks a configured window', () => {
+  it('falls back to 256k when the selected model lacks a configured window', () => {
     const modelGroups: ModelProviderModelGroup[] = [
       {
         providerId: 'custom',

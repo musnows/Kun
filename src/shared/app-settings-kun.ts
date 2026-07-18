@@ -337,8 +337,8 @@ export function defaultKunStorageSettings(): KunStorageSettingsV1 {
 
 export function defaultKunContextCompactionSettings(): KunContextCompactionSettingsV1 {
   return {
-    defaultSoftThreshold: 96_000,
-    defaultHardThreshold: 108_800,
+    defaultSoftThreshold: 192_000,
+    defaultHardThreshold: 217_600,
     // Default to model-generated summaries (codex-style): the model writes a
     // structured recap of the folded turns instead of a mechanical item list.
     // Falls back to the heuristic summary automatically on timeout/failure.
