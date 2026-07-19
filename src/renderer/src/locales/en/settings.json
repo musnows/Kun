@@ -808,6 +808,8 @@
   "kunCompactionSummaryTimeout": "Summary timeout ms",
   "kunCompactionSummaryMaxTokens": "Summary max tokens",
   "kunCompactionSummaryInputBytes": "Summary input bytes",
+  "kunMaxWallTime": "Maximum turn duration (ms)",
+  "kunMaxWallTimeDesc": "Hard wall-clock limit for one turn, including model responses and tool work. Default and maximum: 86400000 (24 hours).",
   "kunStreamIdleTimeout": "Stream idle timeout (ms)",
   "kunStreamIdleTimeoutDesc": "Fail the turn if the model sends no data for this many milliseconds. Raise it for local LLM servers that stay silent while prefilling a large prompt; set 0 to disable the limit. Default 45000.",
   "kunToolStorm": "Repeated tool-call protection",

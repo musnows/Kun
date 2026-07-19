@@ -311,6 +311,7 @@ describe('kun defaults', () => {
         summaryInputMaxBytes: 98304
       },
       runtimeTuning: {
+        maxWallTimeMs: 86400000,
         streamIdleTimeoutMs: 450000,
         toolStorm: {
           enabled: true,
@@ -879,7 +880,28 @@ describe('mergeKunRuntimeSettings', () => {
     expect(next.runtimeTuning.toolStorm.windowSize).toBe(current.runtimeTuning.toolStorm.windowSize)
     expect(next.runtimeTuning.toolStorm.threshold).toBe(5)
     expect(next.runtimeTuning.toolArgumentRepair).toEqual(current.runtimeTuning.toolArgumentRepair)
+    expect(next.runtimeTuning.maxWallTimeMs).toBe(current.runtimeTuning.maxWallTimeMs)
     expect(next.runtimeTuning.streamIdleTimeoutMs).toBe(current.runtimeTuning.streamIdleTimeoutMs)
+  })
+
+  it('normalizes the maximum turn duration', () => {
+    const current = defaultKunRuntimeSettings()
+    expect(current.runtimeTuning.maxWallTimeMs).toBe(86_400_000)
+
+    const set = mergeKunRuntimeSettings(current, {
+      runtimeTuning: { maxWallTimeMs: 7_200_000 }
+    })
+    expect(set.runtimeTuning.maxWallTimeMs).toBe(7_200_000)
+    expect(set.runtimeTuning.toolStorm).toEqual(current.runtimeTuning.toolStorm)
+
+    expect(
+      mergeKunRuntimeSettings(current, { runtimeTuning: { maxWallTimeMs: 0 } })
+        .runtimeTuning.maxWallTimeMs
+    ).toBe(86_400_000)
+    expect(
+      mergeKunRuntimeSettings(current, { runtimeTuning: { maxWallTimeMs: 999_999_999 } })
+        .runtimeTuning.maxWallTimeMs
+    ).toBe(86_400_000)
   })
 
   it('normalizes the stream idle timeout (0 disables, out-of-range clamps)', () => {

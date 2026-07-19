@@ -693,6 +693,28 @@ describe('app-ipc-schemas', () => {
     expect(payload.agents?.kun?.runtimeTuning?.streamIdleTimeoutMs).toBe(300000)
   })
 
+  it('accepts a configurable maximum turn duration in runtime tuning patches', () => {
+    const payload = settingsPatchSchema.parse({
+      agents: {
+        kun: {
+          runtimeTuning: {
+            maxWallTimeMs: 7_200_000
+          }
+        }
+      }
+    })
+
+    expect(payload.agents?.kun?.runtimeTuning?.maxWallTimeMs).toBe(7_200_000)
+  })
+
+  it('rejects an out-of-range maximum turn duration', () => {
+    expect(() =>
+      settingsPatchSchema.parse({
+        agents: { kun: { runtimeTuning: { maxWallTimeMs: 86_400_001 } } }
+      })
+    ).toThrow()
+  })
+
   it('rejects an out-of-range stream idle timeout', () => {
     expect(() =>
       settingsPatchSchema.parse({
