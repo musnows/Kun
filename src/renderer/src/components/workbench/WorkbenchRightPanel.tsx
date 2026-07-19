@@ -40,9 +40,6 @@ const WorkspaceFilePreviewPanel = lazy(() =>
     default: module.WorkspaceFilePreviewPanel
   }))
 )
-const TodoPanel = lazy(() =>
-  import('../todo/TodoPanel').then((module) => ({ default: module.TodoPanel }))
-)
 const CodeCanvasPanel = lazy(() =>
   import('../design/canvas/CodeCanvasPanel').then((module) => ({ default: module.CodeCanvasPanel }))
 )
@@ -65,7 +62,6 @@ const McpSkillsPanel = lazy(() =>
 type WriteAssistantPanelProps = ComponentProps<typeof WriteAssistantPanel>
 type SddAssistantPanelProps = ComponentProps<typeof SddAssistantPanel>
 type ChangeInspectorProps = ComponentProps<typeof ChangeInspector>
-type TodoPanelProps = ComponentProps<typeof TodoPanel>
 type DevBrowserPanelProps = ComponentProps<typeof DevBrowserPanel>
 type CodeCanvasPanelProps = ComponentProps<typeof CodeCanvasPanel>
 type WorkspaceFilePreviewPanelProps = ComponentProps<typeof WorkspaceFilePreviewPanel>
@@ -94,7 +90,6 @@ export type WorkbenchRightPanelProps = {
     draft: SddAssistantPanelProps['draft'] | null
   }
   changes: Omit<ChangeInspectorProps, 'className'>
-  todo: Omit<TodoPanelProps, 'className'>
   browser: Omit<DevBrowserPanelProps, 'className'>
   planPanel: ReactElement
   canvas: Omit<CodeCanvasPanelProps, 'className'>
@@ -119,7 +114,6 @@ export function WorkbenchRightPanel({
   write,
   sdd,
   changes,
-  todo,
   browser,
   planPanel,
   canvas,
@@ -139,7 +133,6 @@ export function WorkbenchRightPanel({
         onBeginResize={onBeginResize}
         code={code}
         changes={changes}
-        todo={todo}
         browser={browser}
         planPanel={planPanel}
         canvas={canvas}
@@ -171,8 +164,6 @@ export function WorkbenchRightPanel({
             <SubagentDetailPanel className="h-full max-h-full w-full" onCollapse={onCollapse} />
           ) : rightPanelMode === BUILTIN_RIGHT_PANEL_IDS.changes ? (
             <ChangeInspector {...changes} className="h-full max-h-full w-full flex-col" />
-          ) : rightPanelMode === BUILTIN_RIGHT_PANEL_IDS.todo ? (
-            <TodoPanel {...todo} className="h-full max-h-full w-full" />
           ) : rightPanelMode === BUILTIN_RIGHT_PANEL_IDS.browser ? (
             <DevBrowserPanel {...browser} className="h-full max-h-full w-full flex-col" />
           ) : rightPanelMode === BUILTIN_RIGHT_PANEL_IDS.plan ? (
@@ -202,7 +193,6 @@ function CodeRightPanelWorkspace({
   onBeginResize,
   code,
   changes,
-  todo,
   browser,
   planPanel,
   canvas,
@@ -216,7 +206,6 @@ function CodeRightPanelWorkspace({
   | 'width'
   | 'onBeginResize'
   | 'changes'
-  | 'todo'
   | 'browser'
   | 'planPanel'
   | 'canvas'
@@ -262,9 +251,6 @@ function CodeRightPanelWorkspace({
     }
     if (id === BUILTIN_RIGHT_PANEL_IDS.changes) {
       return <ChangeInspector {...changes} className="h-full max-h-full w-full flex-col" />
-    }
-    if (id === BUILTIN_RIGHT_PANEL_IDS.todo) {
-      return <TodoPanel {...todo} className="h-full max-h-full w-full" />
     }
     if (id === BUILTIN_RIGHT_PANEL_IDS.browser) {
       return (

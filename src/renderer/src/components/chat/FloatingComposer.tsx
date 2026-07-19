@@ -121,6 +121,15 @@ import {
 export type { ComposerFileReference } from '../../lib/composer-file-references'
 export type { ComposerExecutionSettings } from './FloatingComposerExecutionPicker'
 
+export function returnQueuedMessageToComposer(
+  message: QueuedComposerMessage,
+  onRemove: (id: string) => void,
+  setInput: (value: string) => void
+): void {
+  onRemove(message.id)
+  setInput(message.displayText ?? message.text)
+}
+
 export function shouldSurfaceComposerUserInput(route: AppRoute, compact: boolean): boolean {
   // Write owns a single compact composer in its assistant rail, so it must
   // surface the same runtime gate there. Other compact composers mirror a main
@@ -1072,14 +1081,11 @@ export function FloatingComposer({
         ? 'ds-floating-composer ds-no-drag pointer-events-auto w-full pb-0 pt-0'
         : 'ds-floating-composer ds-no-drag ds-chat-column-inset ds-chat-content-max-width pointer-events-auto w-full pb-3 pt-0'}
     >
-      <FloatingComposerQueuedMessages
-        messages={queuedMessages}
-        onRemove={onRemoveQueuedMessage}
-        onGuide={onGuideQueuedMessage}
-      />
-
-      <div className="relative">
-        <div className="pointer-events-none absolute inset-x-0 bottom-full z-30 mb-2 flex flex-col items-center gap-2">
+      <div className="relative" data-composer-stack>
+        <div
+          data-composer-floaters
+          className="pointer-events-none absolute inset-x-0 bottom-full z-30 mb-2 flex flex-col items-center gap-2"
+        >
           {runtimeReady ? <BackgroundShellOverlay /> : null}
           {showGoalFloater && activeThreadGoal && !pendingUserInputBlock ? (
             <div className="pointer-events-auto flex min-h-11 w-full max-w-[46rem] items-center gap-2 rounded-full border border-ds-border bg-white px-3 py-1.5 text-ds-muted shadow-[0_12px_34px_rgba(20,47,95,0.10)] backdrop-blur-xl dark:bg-ds-card">
@@ -1141,6 +1147,16 @@ export function FloatingComposer({
             <FloatingComposerTodoProgress todos={activeThreadTodos} />
           ) : null}
         </div>
+
+        <FloatingComposerQueuedMessages
+          messages={queuedMessages}
+          onRemove={onRemoveQueuedMessage}
+          onGuide={onGuideQueuedMessage}
+          onEdit={(message) => {
+            returnQueuedMessageToComposer(message, onRemoveQueuedMessage, setInput)
+            draft.focusComposer()
+          }}
+        />
 
         {composerMenuOpen && slashQuery == null ? (
           <div

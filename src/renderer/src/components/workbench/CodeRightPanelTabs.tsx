@@ -11,7 +11,6 @@ import {
   FileEdit,
   Files,
   Globe2,
-  ListTodo,
   MessageCircleMore,
   PanelRightClose,
   Puzzle,
@@ -77,7 +76,6 @@ export function CodeRightPanelTabs({
       label: t('rightPanelSideConversations'),
       icon: MessageCircleMore
     },
-    { id: BUILTIN_RIGHT_PANEL_IDS.todo, label: t('rightPanelTodoTool'), icon: ListTodo },
     { id: BUILTIN_RIGHT_PANEL_IDS.plan, label: t('rightPanelPlan'), icon: ClipboardList },
     { id: BUILTIN_RIGHT_PANEL_IDS.changes, label: t('rightPanelChangesReview'), icon: FileEdit },
     { id: BUILTIN_RIGHT_PANEL_IDS.canvas, label: t('rightPanelWhiteboard'), icon: Shapes },

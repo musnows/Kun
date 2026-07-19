@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
+import { act, create as createRenderer } from 'react-test-renderer'
 import {
   FloatingComposer,
   buildResearchPrompt,
@@ -15,6 +16,7 @@ import {
   parseNewCommand,
   parseResearchCommand,
   parseReviewCommand,
+  returnQueuedMessageToComposer,
   shouldCaptureFileMentionCommitKey,
   shouldShowGoalFloater,
   shouldSurfaceComposerUserInput
@@ -42,7 +44,11 @@ import {
   FloatingComposerExecutionPicker,
   calculateExecutionMenuPlacement
 } from './FloatingComposerExecutionPicker'
-import { FloatingComposerQueuedMessages } from './FloatingComposerQueuedMessages'
+import {
+  FloatingComposerQueuedMessages,
+  calculateQueuedMessageMenuPlacement,
+  canEditQueuedComposerMessage
+} from './FloatingComposerQueuedMessages'
 import { getGoalPanelDraftObjective } from './floating-composer-commands'
 import { useChatStore } from '../../store/chat-store'
 import i18n from '../../i18n'
@@ -97,6 +103,138 @@ describe('FloatingComposer queued guidance', () => {
     } finally {
       await i18n.changeLanguage(previousLanguage)
     }
+  })
+
+  it('returns a plain-text queued message through the edit action', async () => {
+    const previousLanguage = i18n.language
+    await i18n.changeLanguage('en')
+    const message = {
+      id: 'q-edit',
+      text: 'use compact logo',
+      displayText: 'Use compact logo',
+      guidanceEligible: true
+    }
+    const onRemove = vi.fn()
+    const setInput = vi.fn()
+    const onEdit = (queuedMessage: Parameters<typeof returnQueuedMessageToComposer>[0]): void => {
+      returnQueuedMessageToComposer(queuedMessage, onRemove, setInput)
+    }
+    let renderer: ReturnType<typeof createRenderer>
+
+    try {
+      await act(async () => {
+        renderer = createRenderer(createElement(FloatingComposerQueuedMessages, {
+          messages: [message],
+          onEdit,
+          onRemove
+        }))
+      })
+
+      const moreButton = renderer!.root.findAllByType('button').find(
+        (button) => button.props['aria-label'] === 'More queued message actions'
+      )
+      expect(moreButton).toBeDefined()
+
+      await act(async () => {
+        moreButton!.props.onClick()
+      })
+      const menu = renderer!.root.findByProps({ role: 'menu' })
+      expect(menu.props['data-queued-message-menu']).toBe(true)
+      expect(menu.props.className).toContain('fixed z-[1000]')
+      const editButton = renderer!.root.findByProps({ role: 'menuitem' })
+      expect(editButton.findByType('span').children).toContain('Edit message')
+
+      await act(async () => {
+        editButton.props.onClick()
+      })
+      expect(onRemove).toHaveBeenCalledWith(message.id)
+      expect(setInput).toHaveBeenCalledWith(message.displayText)
+      expect(renderer!.root.findAllByProps({ role: 'menu' })).toHaveLength(0)
+    } finally {
+      renderer!.unmount()
+      await i18n.changeLanguage(previousLanguage)
+    }
+  })
+
+  it('places the queued message menu in the viewport and flips above near the bottom', () => {
+    expect(calculateQueuedMessageMenuPlacement({
+      anchorRect: { bottom: 152, right: 1900, top: 120 },
+      viewportHeight: 900,
+      viewportWidth: 1960
+    })).toEqual({ left: 1724, top: 158, width: 176 })
+
+    expect(calculateQueuedMessageMenuPlacement({
+      anchorRect: { bottom: 1764, right: 3800, top: 1700 },
+      viewportHeight: 1800,
+      viewportWidth: 3920,
+      coordinateScale: 2
+    })).toEqual({ left: 1724, top: 796, width: 176 })
+  })
+
+  it('does not dequeue structured queued payloads into a text-only editor', () => {
+    expect(canEditQueuedComposerMessage({
+      id: 'q-text',
+      text: 'continue',
+      guidanceEligible: true
+    })).toBe(true)
+    expect(canEditQueuedComposerMessage({
+      id: 'q-file',
+      text: 'inspect this',
+      attachments: [{}]
+    })).toBe(false)
+    expect(canEditQueuedComposerMessage({
+      id: 'q-plan',
+      text: 'build the plan',
+      mode: 'plan'
+    })).toBe(false)
+  })
+
+  it('anchors todo progress above the queue instead of over it', () => {
+    useChatStore.setState({
+      activeThreadId: 'thread-layout',
+      activeThreadGoal: null,
+      activeThreadTodos: {
+        threadId: 'thread-layout',
+        items: [{
+          id: 'todo-layout',
+          content: 'Keep the queue readable',
+          status: 'in_progress',
+          createdAt: '2026-07-19T00:00:00.000Z',
+          updatedAt: '2026-07-19T00:00:00.000Z'
+        }],
+        updatedAt: '2026-07-19T00:00:00.000Z'
+      },
+      route: 'chat',
+      workspaceRoot: '/workspace/deepseek-gui',
+      threads: []
+    })
+
+    const html = renderToStaticMarkup(createElement(FloatingComposer, {
+      input: '',
+      setInput: () => undefined,
+      mode: 'agent',
+      setMode: () => undefined,
+      busy: true,
+      runtimeReady: false,
+      hasActiveThread: true,
+      composerModel: '',
+      composerPickList: [],
+      onComposerModelChange: () => undefined,
+      queuedMessages: [{ id: 'q-layout', text: 'Continue with the layout' }],
+      onRemoveQueuedMessage: () => undefined,
+      onSend: () => undefined,
+      onInterrupt: () => undefined
+    }))
+
+    const stackIndex = html.indexOf('data-composer-stack')
+    const floatersIndex = html.indexOf('data-composer-floaters')
+    const queueIndex = html.indexOf('data-composer-queue')
+    const composerIndex = html.indexOf('ds-composer-shell')
+    expect(stackIndex).toBeGreaterThanOrEqual(0)
+    expect(floatersIndex).toBeGreaterThan(stackIndex)
+    expect(queueIndex).toBeGreaterThan(floatersIndex)
+    expect(composerIndex).toBeGreaterThan(queueIndex)
+    expect(html.slice(floatersIndex, queueIndex)).toContain('bottom-full')
   })
 })
 

@@ -2,6 +2,7 @@ import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, s
 import { builtinModules, createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import sharp from 'sharp'
 import { afterEach, describe, expect, it } from 'vitest'
 
 const require = createRequire(import.meta.url)
@@ -43,6 +44,45 @@ function forbiddenPreloadImports(source: string): string[] {
         builtins.has(moduleName) ||
         builtins.has(moduleName.split('/')[0] ?? moduleName)
     })
+}
+
+async function visiblePixelBounds(path: string): Promise<{
+  left: number
+  top: number
+  right: number
+  bottom: number
+  width: number
+  height: number
+} | undefined> {
+  const { data, info } = await sharp(path)
+    .ensureAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true })
+  let left = info.width
+  let top = info.height
+  let right = -1
+  let bottom = -1
+
+  for (let y = 0; y < info.height; y += 1) {
+    for (let x = 0; x < info.width; x += 1) {
+      const alpha = data[(y * info.width + x) * info.channels + 3] ?? 0
+      if (alpha === 0) continue
+      left = Math.min(left, x)
+      top = Math.min(top, y)
+      right = Math.max(right, x)
+      bottom = Math.max(bottom, y)
+    }
+  }
+
+  if (right < left || bottom < top) return undefined
+  return {
+    left,
+    top,
+    right,
+    bottom,
+    width: right - left + 1,
+    height: bottom - top + 1
+  }
 }
 
 function loadBuilderConfigWithEnv(env: Record<string, string | undefined>): typeof builderConfig {
@@ -181,6 +221,25 @@ describe('electron-builder Kun packaging', () => {
     // instead of downscaling a single 1024px PNG (#222). The .ico still carries
     // the rounded Kun artwork — it is derived from kun_mac.png.
     expect(builderConfig.win.icon).toBe('./build/icon.ico')
+  })
+
+  it('keeps the macOS Dock icon inside the platform artwork safe area', async () => {
+    const iconPath = join(process.cwd(), 'src/asset/img/kun_mac.png')
+
+    expect(builderConfig.mac.icon).toBe('./src/asset/img/kun_mac.png')
+    await expect(sharp(iconPath).metadata()).resolves.toMatchObject({
+      width: 1024,
+      height: 1024,
+      hasAlpha: true
+    })
+    await expect(visiblePixelBounds(iconPath)).resolves.toEqual({
+      left: 100,
+      top: 100,
+      right: 923,
+      bottom: 923,
+      width: 824,
+      height: 824
+    })
   })
 
   it('uses a process-tree shutdown guard for Windows overwrite installs', () => {

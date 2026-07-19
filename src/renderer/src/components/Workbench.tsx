@@ -951,7 +951,6 @@ export function Workbench(): ReactElement {
       }
     },
     changes: { blocks },
-    todo: { onOpenPlan: openGuiPlanPanel },
     browser: { blocks: devPreviewBlocks, preferredUrl: latestDevPreviewUrl },
     canvas: { workspaceRoot: activeCodeCanvasWorkspace, activeThreadId },
     file: {

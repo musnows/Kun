@@ -229,7 +229,6 @@ const REQUIRED_PERMISSIONS: Readonly<Record<WorkbenchContributionPoint, readonly
 }
 
 const BUILTIN_PANEL_DEFINITIONS: readonly [string, string][] = [
-  [BUILTIN_RIGHT_PANEL_IDS.todo, 'Todo'],
   [BUILTIN_RIGHT_PANEL_IDS.plan, 'Plan'],
   [BUILTIN_RIGHT_PANEL_IDS.changes, 'Changes'],
   [BUILTIN_RIGHT_PANEL_IDS.browser, 'Preview'],

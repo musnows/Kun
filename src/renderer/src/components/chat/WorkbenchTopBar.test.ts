@@ -98,7 +98,6 @@ describe('WorkbenchSideRail', () => {
 
     for (const label of [
       'Open branch conversation',
-      'Todo',
       'Plan',
       'Changes',
       'Preview',
@@ -110,6 +109,8 @@ describe('WorkbenchSideRail', () => {
       expect(html).toContain(`aria-label="${label}"`)
       expect(html).not.toContain(`title="${label}"`)
     }
+
+    expect(html).not.toContain('data-tooltip="Todo"')
 
     expect(html).toContain('data-tooltip="Issues"')
     expect(html).toContain('data-tooltip="MCP &amp; Skills"')

@@ -1,7 +1,6 @@
 import { ContributionIdSchema } from '@kun/extension-api'
 
 export const BUILTIN_RIGHT_PANEL_IDS = {
-  todo: 'builtin:right-panel-todo',
   plan: 'builtin:right-panel-plan',
   changes: 'builtin:right-panel-changes',
   browser: 'builtin:right-panel-browser',
@@ -23,7 +22,6 @@ export type RightPanelMode = RightPanelContributionId | null
 const BUILTIN_RIGHT_PANEL_ID_SET = new Set<string>(Object.values(BUILTIN_RIGHT_PANEL_IDS))
 
 const LEGACY_RIGHT_PANEL_IDS: Readonly<Record<string, BuiltinRightPanelId>> = {
-  todo: BUILTIN_RIGHT_PANEL_IDS.todo,
   plan: BUILTIN_RIGHT_PANEL_IDS.plan,
   changes: BUILTIN_RIGHT_PANEL_IDS.changes,
   browser: BUILTIN_RIGHT_PANEL_IDS.browser,

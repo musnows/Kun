@@ -15,7 +15,6 @@ import {
   Folders,
   FolderOpen,
   Globe2,
-  ListTodo,
   LockKeyhole,
   Loader2,
   MessageCircleMore,
@@ -399,7 +398,6 @@ export function WorkbenchSideRail({
 }: Props): ReactElement {
   const { t } = useTranslation(['common', 'settings'])
   const items = [
-    { mode: BUILTIN_RIGHT_PANEL_IDS.todo, label: t('rightPanelTodo'), icon: ListTodo },
     ...(planPanelEnabled ? [{ mode: BUILTIN_RIGHT_PANEL_IDS.plan, label: t('rightPanelPlan'), icon: ClipboardList }] : []),
     { mode: BUILTIN_RIGHT_PANEL_IDS.changes, label: t('rightPanelChanges'), icon: FileEdit },
     { mode: BUILTIN_RIGHT_PANEL_IDS.browser, label: t('rightPanelBrowser'), icon: Globe2 },
