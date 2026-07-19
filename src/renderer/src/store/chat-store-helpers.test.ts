@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ClawImChannelV1 } from '@shared/app-settings'
 import type { ModelProviderModelGroup } from '@shared/kun-gui-api'
-import { CLAW_MANAGED_INSTRUCTIONS_HEADING } from '@shared/app-settings'
+import { CLAW_MANAGED_INSTRUCTIONS_HEADING, MODEL_REASONING_EFFORTS } from '@shared/app-settings'
 import {
+  MAX_COMPOSER_REASONING_EFFORTS,
   MAX_TURN_MODEL_LABELS,
   MAX_THREAD_COMPOSER_SELECTIONS,
   MAX_CODE_WORKSPACE_ROOTS,
@@ -20,6 +21,10 @@ import {
   readThreadComposerSelection,
   reconcileCodeWorkspaceRoots,
   composerModeForThread,
+  composerReasoningEffortForSelection,
+  normalizeComposerReasoningEffortMap,
+  persistComposerReasoningEffort,
+  readStoredComposerReasoningEffort,
   rememberThreadComposerMode,
   readThreadComposerMode,
   rememberThreadComposerSelection,
@@ -29,6 +34,7 @@ import {
 
 const TURN_MODEL_STORAGE_KEY = 'kun.turnModelLabel'
 const THREAD_COMPOSER_SELECTION_STORAGE_KEY = 'kun.threadComposerSelection.v1'
+const COMPOSER_REASONING_EFFORT_STORAGE_KEY = 'kun.composerReasoningEffortByModel.v1'
 
 function createMemoryStorage(): Storage {
   const items = new Map<string, string>()
@@ -370,6 +376,73 @@ describe('chat-store Claw helpers', () => {
 
     expect(readThreadComposerMode('thread-a')).toBe('plan')
     expect(readThreadComposerMode('thread-b')).toBe('agent')
+  })
+
+  it('persists every reasoning effort independently per provider and model', () => {
+    for (const effort of MODEL_REASONING_EFFORTS) {
+      persistComposerReasoningEffort(`model-${effort}`, 'provider-a', effort)
+    }
+    persistComposerReasoningEffort('shared-model', 'provider-a', 'off')
+    persistComposerReasoningEffort('shared-model', 'provider-b', 'high')
+
+    for (const effort of MODEL_REASONING_EFFORTS) {
+      expect(readStoredComposerReasoningEffort(`MODEL-${effort}`, 'PROVIDER-A')).toBe(effort)
+    }
+    expect(readStoredComposerReasoningEffort('shared-model', 'provider-a')).toBe('off')
+    expect(readStoredComposerReasoningEffort('shared-model', 'provider-b')).toBe('high')
+  })
+
+  it('falls back safely for missing, malformed, and unknown reasoning preferences', () => {
+    expect(readStoredComposerReasoningEffort('missing-model', 'provider-a')).toBe('max')
+
+    localStorage.setItem(COMPOSER_REASONING_EFFORT_STORAGE_KEY, '{not-json')
+    expect(readStoredComposerReasoningEffort('broken-model', 'provider-a')).toBe('max')
+
+    localStorage.setItem(COMPOSER_REASONING_EFFORT_STORAGE_KEY, JSON.stringify({
+      '["provider-a","unknown-model"]': 'turbo'
+    }))
+    expect(readStoredComposerReasoningEffort('unknown-model', 'provider-a')).toBe('max')
+    expect(normalizeComposerReasoningEffortMap({ valid: ' OFF ', invalid: 'turbo' })).toEqual({
+      valid: 'off'
+    })
+  })
+
+  it('normalizes unsupported stored reasoning to the model default and writes it back', () => {
+    persistComposerReasoningEffort('reasoning-model', 'provider-a', 'high')
+    const groups: ModelProviderModelGroup[] = [{
+      providerId: 'provider-a',
+      label: 'Provider A',
+      modelIds: ['reasoning-model'],
+      modelProfiles: {
+        'reasoning-model': {
+          inputModalities: ['text'],
+          outputModalities: ['text'],
+          supportsToolCalling: true,
+          messageParts: ['text'],
+          reasoning: {
+            supportedEfforts: ['off', 'medium'],
+            defaultEffort: 'medium',
+            requestProtocol: 'none'
+          }
+        }
+      }
+    }]
+
+    expect(composerReasoningEffortForSelection(groups, 'reasoning-model', 'provider-a')).toBe('medium')
+    expect(readStoredComposerReasoningEffort('reasoning-model', 'provider-a')).toBe('medium')
+  })
+
+  it('caps the stored reasoning preference registry', () => {
+    for (let index = 0; index < MAX_COMPOSER_REASONING_EFFORTS + 5; index += 1) {
+      persistComposerReasoningEffort(`model-${index}`, 'provider-a', 'off')
+    }
+
+    const stored = JSON.parse(
+      localStorage.getItem(COMPOSER_REASONING_EFFORT_STORAGE_KEY) ?? '{}'
+    ) as Record<string, string>
+    expect(Object.keys(stored)).toHaveLength(MAX_COMPOSER_REASONING_EFFORTS)
+    expect(readStoredComposerReasoningEffort('model-0', 'provider-a')).toBe('max')
+    expect(readStoredComposerReasoningEffort('model-504', 'provider-a')).toBe('off')
   })
 
   it('resolves composer mode from stored selection before thread metadata', () => {

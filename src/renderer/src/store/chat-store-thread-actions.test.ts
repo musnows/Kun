@@ -545,14 +545,14 @@ describe('chat-store-thread-actions queued messages', () => {
     const { actions, state } = buildHarness()
     state.busy = false
 
-    await expect(actions.sendMessage('think carefully', 'agent', {
-      reasoningEffort: 'high'
+    await expect(actions.sendMessage('disable reasoning', 'agent', {
+      reasoningEffort: 'off'
     })).resolves.toBe(true)
 
     expect(provider.sendUserMessage).toHaveBeenCalledWith(
       'thr_existing',
-      'think carefully',
-      expect.objectContaining({ reasoningEffort: 'high' })
+      'disable reasoning',
+      expect.objectContaining({ reasoningEffort: 'off' })
     )
   })
 

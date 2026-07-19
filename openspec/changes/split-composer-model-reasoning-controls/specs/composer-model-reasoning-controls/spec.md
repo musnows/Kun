@@ -109,16 +109,24 @@ The Code controls SHALL remain understandable without visible trigger frames or 
 - **WHEN** the available Code composer width is constrained
 - **THEN** the model label truncates independently while the reasoning label, voice, optimize, send, and stop controls remain unobstructed
 
-### Requirement: Preserve existing runtime semantics
-Changing the composer UI SHALL preserve existing session reasoning state and turn request behavior.
+### Requirement: Preserve runtime semantics and model-scoped preference
+Changing the composer UI SHALL preserve turn request behavior and SHALL persist reasoning choices independently for each provider/model pair.
 
 #### Scenario: Submit after reasoning change
 - **WHEN** the user selects a supported effort and sends the next turn
 - **THEN** the existing turn submission path receives that named `reasoningEffort` value without any new runtime or IPC field
 
-#### Scenario: Session state
-- **WHEN** the user changes reasoning effort in Code chat
-- **THEN** the existing Workbench session state supplies that effort to the next turn without adding persistence or a runtime contract field
+#### Scenario: Restore a model preference
+- **WHEN** the user selects a reasoning effort for a provider/model pair and later restarts the app or returns to that model
+- **THEN** the chat store restores that pair's most recently selected effort, including `off`, without adding a runtime contract field
+
+#### Scenario: Keep model preferences independent
+- **WHEN** the user assigns different reasoning efforts to two provider/model pairs
+- **THEN** switching between them restores each pair's own effort without overwriting the other
+
+#### Scenario: Invalid or unsupported persisted effort
+- **WHEN** a stored effort is malformed, unknown, or unsupported by the selected model profile
+- **THEN** the composer falls back safely to `max` and then to the model's declared default when required, persisting the resulting valid effort
 
 #### Scenario: Change settings during an active turn
 - **WHEN** the user changes the model or reasoning effort while a turn is in progress

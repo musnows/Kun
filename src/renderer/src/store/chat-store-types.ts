@@ -20,7 +20,8 @@ import type {
   ClawImPlatformCredentialV1,
   ClawImProvider,
   ClawImSettingsV1,
-  ClawModel
+  ClawModel,
+  ModelReasoningEffort
 } from '@shared/app-settings'
 import type { ModelProviderModelGroup } from '@shared/kun-gui-api'
 import type { ComposerContextAttachment } from '@kun/extension-api'
@@ -232,6 +233,7 @@ export type ChatState = {
   composerMode: 'plan' | 'agent'
   composerModel: string
   composerProviderId: string
+  composerReasoningEffort: ModelReasoningEffort
   composerPickList: string[]
   composerModelGroups: ModelProviderModelGroup[]
   /**
@@ -257,6 +259,7 @@ export type ChatState = {
   setError: (message: string | null) => void
   setComposerMode: (mode: 'plan' | 'agent') => void
   setComposerModel: (modelId: string, providerId?: string) => void
+  setComposerReasoningEffort: (effort: ModelReasoningEffort) => void
   setComposerAgentId: (agentId: string) => void
   loadComposerModels: () => Promise<void>
   setRoute: (r: AppRoute) => void

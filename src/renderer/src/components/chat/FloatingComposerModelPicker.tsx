@@ -724,19 +724,12 @@ export function FloatingComposerModelPicker({
                         : <ModelCapabilityBadge kind="text" label={t('composerModelTextOnly')} />
                     }
                     onClick={() => {
-                      const nextReasoning = normalizeComposerReasoningEffort(
-                        composerReasoningEffort,
-                        targetProfile
-                      )
                       onComposerModelChange(
                         id,
                         activeProviderGroup.providerId === UNGROUPED_MODEL_PROVIDER_ID
                           ? undefined
                           : activeProviderGroup.providerId
                       )
-                      if (nextReasoning !== currentReasoning) {
-                        onComposerReasoningEffortChange?.(nextReasoning)
-                      }
                       setReasoningPopoverOpen(false)
                       setMenuOpen(false)
                     }}

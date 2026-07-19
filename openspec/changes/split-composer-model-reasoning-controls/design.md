@@ -1,6 +1,6 @@
 ## Context
 
-`FloatingComposerModelPicker` currently owns both model selection and reasoning effort. Its trigger concatenates the model label and effort label, while the menu opens a reasoning submenu beside the provider/model hierarchy. The underlying data path is already separate: model profiles declare supported reasoning efforts and a default, Workbench keeps `reasoningEffort` in session state, and turn submission captures the selected model and reasoning value before sending them through the existing Kun runtime contract.
+`FloatingComposerModelPicker` currently owns both model selection and reasoning effort. Its trigger concatenates the model label and effort label, while the menu opens a reasoning submenu beside the provider/model hierarchy. The underlying data path is already separate: model profiles declare supported reasoning efforts and a default, the chat store keeps the active provider/model reasoning preference, and turn submission captures the selected model and reasoning value before sending them through the existing Kun runtime contract.
 
 The change is renderer-focused and intentionally limited to Code chat. It must preserve the one-Kun-runtime architecture, existing provider capability rules, non-Code composer variants, light/dark themes, and next-turn request semantics while a turn is busy.
 
@@ -12,6 +12,7 @@ The change is renderer-focused and intentionally limited to Code chat. It must p
 - Give reasoning a direct, minimal energy-rail interaction without pretending that provider efforts are continuous numeric values.
 - Reuse model-declared supported efforts, default fallback, and the current turn request field.
 - Allow model and reasoning selection during an active turn while keeping the in-flight request immutable.
+- Restore the last valid reasoning choice independently for each provider/model pair across app restarts.
 - Produce a responsive, keyboard-accessible, reduced-motion-safe interaction consistent with Kun's blue/violet accent and borderless toolbar controls.
 
 **Non-Goals:**
@@ -19,7 +20,7 @@ The change is renderer-focused and intentionally limited to Code chat. It must p
 - Add or change a provider reasoning protocol, request body, HTTP route, preload bridge, or SSE event.
 - Add a second agent/runtime or an agent provider switcher.
 - Invent unsupported intermediate effort values or alter provider model profiles.
-- Change how a reasoning choice is stored or applied to turns already in progress.
+- Add per-thread, cross-device, or app-settings synchronization for composer reasoning preferences.
 - Change Design, Write, SDD, or Connect composer visuals.
 
 ## Decisions
@@ -64,6 +65,12 @@ The model and reasoning triggers preserve the existing profile fallback behavior
 
 Colors use existing design tokens for surface, ink, muted text, hover, and focus. The rail uses the Kun accent family (blue into blue-violet) with theme-specific opacity rather than hard-coded white-only surfaces. Focus rings remain available to keyboard users even though the toolbar controls have no visible resting frame.
 
+### 7. Persist reasoning preferences per provider/model
+
+Move `composerReasoningEffort` from Workbench-local React state into the chat Zustand store. Store preferences in a renderer-local, versioned registry keyed by the normalized provider id and model id so identically named models from different providers do not overwrite each other. Every declared effort, including `off`, is a valid stored value; missing, malformed, or unknown entries resolve to `max` before the selected model profile applies its supported-effort/default normalization.
+
+Changing the model or selecting a thread restores that provider/model pair's stored value before rendering the picker. The picker's existing normalization callback persists the model-declared default when the stored value is unsupported. The runtime request continues to receive the resulting named effort, including the explicit string `off`. A single global effort was rejected because models expose different reasoning capabilities and users expect each model to retain its own selection.
+
 ## Risks / Trade-offs
 
 - [Two controls consume more horizontal space] -> Use independent truncation and existing composer breakpoints; never combine their text.
@@ -78,9 +85,9 @@ Colors use existing design tokens for surface, ink, muted text, hover, and focus
 1. Add the Code-only presentation prop and pure rail helpers with characterization tests.
 2. Keep the combined branch unchanged; add model-only and reasoning-only controls in the split branch.
 3. Add borderless toolbar and energy-rail styles, motion, and accessibility behavior.
-4. Run component/unit tests and typecheck, then manually verify Code light/dark, narrow layouts, active-turn model/reasoning changes, provider setup, model switch, keyboard, pointer drag, zoom, and reduced motion.
+4. Add the versioned per-model reasoning registry and chat-store state, then run component/unit tests and typecheck. Manually verify persistence across restart, independent model choices, Code light/dark, narrow layouts, active-turn model/reasoning changes, provider setup, keyboard, pointer drag, zoom, and reduced motion.
 
-Rollback is renderer-only: restore the combined picker while leaving state and runtime contracts untouched. No persisted-data migration is required.
+Rollback is renderer-only: remove the preference registry and restore the Workbench-local state while leaving runtime contracts untouched. No existing-data migration is required; absent or invalid registry entries fall back safely.
 
 ## Open Questions
 

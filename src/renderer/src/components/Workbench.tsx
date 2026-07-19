@@ -3,7 +3,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useChatStore } from '../store/chat-store'
 import type { RightPanelMode } from './chat/WorkbenchTopBar'
-import { type ComposerReasoningEffort } from './chat/FloatingComposerModelPicker'
 import { WorkbenchLeftSidebar } from './workbench/WorkbenchLeftSidebar'
 import { WorkbenchStageRouter } from './workbench/WorkbenchStageRouter'
 import { useWorkbenchComposerCapabilities } from './workbench/useWorkbenchComposerCapabilities'
@@ -117,8 +116,9 @@ export function Workbench(): ReactElement {
     appendLocalClawTurn, setError, sendMessage, reviewActiveThread, queuedMessages,
     extensionComposerContexts, attachExtensionComposerContext, removeExtensionComposerContext,
     removeQueuedMessage, guideQueuedMessage, interrupt, probeRuntime, composerModel, composerProviderId,
-    composerPickList, composerModelGroups, disabledSkillIds, composerMode, setComposerMode,
-    setComposerModel, setThreadSearch, renameThread, pinThread, archiveThread, deleteThread,
+    composerPickList, composerModelGroups, composerReasoningEffort, disabledSkillIds,
+    composerMode, setComposerMode, setComposerModel, setComposerReasoningEffort,
+    setThreadSearch, renameThread, pinThread, archiveThread, deleteThread,
     clearActiveThreadSelection, spawnSideConversation, openSideConversationDraft, selectSideConversation, setSidePanelOpen,
     sideConversations, sidePanel
   } = useWorkbenchChatStoreState()
@@ -152,8 +152,6 @@ export function Workbench(): ReactElement {
   const [input, setInput] = useState('')
   const [useWorktreePool, setUseWorktreePool] = useState(false)
   const [worktreeBranch, setWorktreeBranch] = useState('')
-  const [composerReasoningEffort, setComposerReasoningEffort] =
-    useState<ComposerReasoningEffort>('max')
   const [connectPhoneSidebarOpen, setConnectPhoneSidebarOpen] = useState(false)
   const designDocuments = useDesignWorkspaceStore((s) => s.documents)
   const { focusModeEnabled, runtimeLogPath, toggleTheme, uiModeCameosEnabled, updateFocusMode } =

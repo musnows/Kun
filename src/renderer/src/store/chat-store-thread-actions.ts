@@ -50,6 +50,7 @@ import {
   accountIdForComposerSelection,
   activeClawChannel,
   compactCodeWorkspaceRoots,
+  composerReasoningEffortForSelection,
   forgetCodeWorkspaceRoot,
   hydrateBlockModelLabels,
   isClawThread,
@@ -524,7 +525,12 @@ export function createThreadActions(
         ...(composerSelection
           ? {
               composerModel: composerSelection.model,
-              composerProviderId: composerSelection.providerId
+              composerProviderId: composerSelection.providerId,
+              composerReasoningEffort: composerReasoningEffortForSelection(
+                get().composerModelGroups,
+                composerSelection.model,
+                composerSelection.providerId
+              )
             }
           : {})
       })

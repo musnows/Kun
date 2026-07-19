@@ -47,6 +47,7 @@ export function createInitialChatStoreState(workingDirectoryLabel: string) {
     composerMode: readStoredComposerMode(),
     composerModel: '',
     composerProviderId: '',
+    composerReasoningEffort: 'max' as const,
     composerAgentId: '',
     composerPickList: mergeComposerPickList(false, []),
     composerModelGroups: [],

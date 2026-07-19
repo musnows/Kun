@@ -6,8 +6,10 @@ import {
   mergeComposerPickList,
   persistComposerMode,
   persistComposerModel,
+  persistComposerReasoningEffort,
   rememberThreadComposerMode,
-  readStoredComposerModel
+  readStoredComposerModel,
+  readStoredComposerReasoningEffort
 } from './chat-store-helpers'
 import { createAppActions } from './chat-store-app-actions'
 
@@ -49,6 +51,7 @@ function buildHarness(fetchModelsResult: FetchModelsResult): {
     composerMode: 'agent',
     composerModel: '',
     composerProviderId: '',
+    composerReasoningEffort: 'max',
     composerPickList: mergeComposerPickList(false, []),
     composerModelGroups: []
   } as unknown as ChatState
@@ -74,6 +77,7 @@ function buildHarness(fetchModelsResult: FetchModelsResult): {
       i18n: { t: (key: string) => key, changeLanguage: vi.fn(async () => undefined) } as unknown as typeof i18next,
       persistComposerModel,
       persistComposerMode,
+      persistComposerReasoningEffort,
       rememberThreadComposerMode,
       readStoredComposerModel,
       mergeComposerPickList,
@@ -150,6 +154,41 @@ describe('chat-store app actions composer model loading', () => {
     expect(window.kunGui.saveSettingsSilent).toHaveBeenCalledWith({
       agents: { kun: { model: 'MiniMax-M2', providerId: 'minimax' } }
     })
+  })
+
+  it('restores and updates reasoning preferences independently for each model', async () => {
+    persistComposerReasoningEffort('model-a', 'provider-a', 'off')
+    persistComposerReasoningEffort('model-b', 'provider-b', 'low')
+    const { actions, state } = buildHarness({
+      ok: true,
+      modelIds: ['model-a', 'model-b'],
+      defaultModelId: 'model-a',
+      modelGroups: [
+        {
+          providerId: 'provider-a',
+          label: 'Provider A',
+          modelIds: ['model-a']
+        },
+        {
+          providerId: 'provider-b',
+          label: 'Provider B',
+          modelIds: ['model-b']
+        }
+      ]
+    })
+
+    await actions.loadComposerModels()
+    expect(state.composerModel).toBe('model-a')
+    expect(state.composerReasoningEffort).toBe('off')
+
+    actions.setComposerModel('model-b', 'provider-b')
+    expect(state.composerReasoningEffort).toBe('low')
+    actions.setComposerReasoningEffort('high')
+    expect(readStoredComposerReasoningEffort('model-b', 'provider-b')).toBe('high')
+    expect(readStoredComposerReasoningEffort('model-a', 'provider-a')).toBe('off')
+
+    actions.setComposerModel('model-a', 'provider-a')
+    expect(state.composerReasoningEffort).toBe('off')
   })
 
   it('keeps active-thread plan mode changes out of the global composer default', () => {
