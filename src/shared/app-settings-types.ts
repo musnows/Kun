@@ -674,6 +674,10 @@ export type KunToolArgumentRepairSettingsV1 = {
 
 export type KunRuntimeTuningSettingsV1 = {
   /**
+   * 单轮代理任务的总运行时长上限（毫秒），包含模型响应和工具执行。
+   */
+  maxWallTimeMs: number
+  /**
    * Max idle gap (ms) between streaming chunks before a turn fails with
    * `stream_idle_timeout`. `0` disables the guard — useful for local LLM
    * servers that stay silent while prefilling a very large prompt.
@@ -696,6 +700,7 @@ export type KunSettingsEnvelopeV1 = {
 export type AgentRuntimeSettingsMapV1 = KunSettingsEnvelopeV1
 
 export type KunRuntimeTuningSettingsPatchV1 = {
+  maxWallTimeMs?: number
   streamIdleTimeoutMs?: number
   toolStorm?: Partial<KunToolStormSettingsV1>
   toolArgumentRepair?: Partial<KunToolArgumentRepairSettingsV1>

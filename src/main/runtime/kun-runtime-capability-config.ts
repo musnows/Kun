@@ -104,6 +104,10 @@ export function runtimeTuningConfigForRuntime(
 ): Record<string, unknown> {
   return {
     ...existing,
+    turnLimits: {
+      ...objectValue(existing.turnLimits),
+      maxWallTimeMs: value.maxWallTimeMs
+    },
     streamIdleTimeoutMs: value.streamIdleTimeoutMs,
     toolStorm: {
       ...objectValue(existing.toolStorm),

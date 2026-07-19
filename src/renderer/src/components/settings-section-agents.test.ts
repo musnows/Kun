@@ -150,6 +150,10 @@ const labels: Record<string, string> = {
   kunCompactionSummaryTimeout: 'Summary timeout',
   kunCompactionSummaryMaxTokens: 'Summary max tokens',
   kunCompactionSummaryInputBytes: 'Summary input bytes',
+  kunMaxWallTime: 'Maximum turn duration',
+  kunMaxWallTimeDesc: 'Maximum turn duration description',
+  kunStreamIdleTimeout: 'Stream idle timeout',
+  kunStreamIdleTimeoutDesc: 'Stream idle timeout description',
   kunToolStorm: 'Tool storm',
   kunToolStormDesc: 'Tool storm description',
   kunToolStormLimits: 'Tool storm limits',
@@ -667,6 +671,8 @@ describe('AgentsSettingsSection Kun diagnostics smoke', () => {
 
     expect(html).toContain('Assistant advanced settings')
     expect(html).toContain('Storage, model context, and tool guards')
+    expect(html).toContain('Maximum turn duration')
+    expect(html).toContain('value="86400000"')
     expect(html).toContain('MCP advanced settings')
     expect(html).not.toContain('<details open')
   })

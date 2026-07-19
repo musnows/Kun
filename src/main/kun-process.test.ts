@@ -566,6 +566,7 @@ describe('syncGuiManagedKunConfig', () => {
       }
     })
     expect(parsed.runtime.streamIdleTimeoutMs).toBe(450000)
+    expect(parsed.runtime.turnLimits).toMatchObject({ maxWallTimeMs: 86400000 })
     expect(parsed.runtime.toolStorm).toMatchObject({ enabled: true, windowSize: 8, threshold: 3 })
     expect(parsed.runtime.toolArgumentRepair).toMatchObject({ maxStringBytes: 524288 })
     expect(parsed.capabilities.attachments).toMatchObject({ enabled: true })
@@ -1205,6 +1206,7 @@ describe('syncGuiManagedKunConfig', () => {
           summaryInputMaxBytes: 131072
         },
         runtimeTuning: {
+          maxWallTimeMs: 7_200_000,
           streamIdleTimeoutMs: 120000,
           toolStorm: {
             enabled: false,
@@ -1306,6 +1308,7 @@ describe('syncGuiManagedKunConfig', () => {
     expect(parsed.runtime.toolStorm.customStormFlag).toBeUndefined()
     expect(parsed.runtime.customRuntimeFlag).toBeUndefined()
     expect(parsed.runtime.toolArgumentRepair).toMatchObject({ maxStringBytes: 262144 })
+    expect(parsed.runtime.turnLimits).toMatchObject({ maxWallTimeMs: 7_200_000 })
     expect(parsed.runtime.streamIdleTimeoutMs).toBe(120000)
     expect(parsed.capabilities.attachments).toMatchObject({ enabled: true })
     expect(parsed.capabilities.mcp.servers.github.command).toBe('github-mcp')

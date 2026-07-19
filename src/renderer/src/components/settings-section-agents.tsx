@@ -288,6 +288,7 @@ export function AgentsSettingsSection({ ctx }: { ctx: Record<string, any> }): Re
     fallbackHardThreshold: contextCompaction.defaultHardThreshold
   })
   const runtimeTuning = kun.runtimeTuning ?? {
+    maxWallTimeMs: 86400000,
     streamIdleTimeoutMs: 45000,
     toolStorm: {
       enabled: true,
@@ -1625,6 +1626,23 @@ export function AgentsSettingsSection({ ctx }: { ctx: Record<string, any> }): Re
                           />
                         </label>
                       </div>
+                    }
+                  />
+                  <SettingRow
+                    title={t('kunMaxWallTime')}
+                    description={t('kunMaxWallTimeDesc')}
+                    control={
+                      <input
+                        type="number"
+                        min={1000}
+                        max={86400000}
+                        step={60000}
+                        className="w-40 rounded-xl border border-ds-border bg-ds-card px-3 py-2 text-[14px] text-ds-ink shadow-sm focus:border-accent/40 focus:outline-none focus:ring-1 focus:ring-accent/30"
+                        value={runtimeTuning.maxWallTimeMs}
+                        onChange={(e) =>
+                          updateRuntimeTuning({ maxWallTimeMs: Number(e.target.value) })
+                        }
+                      />
                     }
                   />
                   <SettingRow
