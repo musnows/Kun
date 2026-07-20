@@ -1,4 +1,11 @@
-import { useEffect, useRef, useState, type ReactElement, type ReactNode } from 'react'
+import {
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type ReactElement,
+  type ReactNode
+} from 'react'
 import type {
   AppSettingsPatch,
   ImageGenerationProtocol,
@@ -41,7 +48,9 @@ import {
 import type { ModelProviderPreset } from '@shared/model-provider-presets'
 import type { ModelProviderProbeResult } from '@shared/kun-gui-api'
 import {
+  AlertCircle,
   AudioLines,
+  CheckCircle2,
   ChevronDown,
   Clapperboard,
   Download,
@@ -55,14 +64,14 @@ import {
   Music2,
   PlugZap,
   Plus,
+  Search,
+  SlidersHorizontal,
   Trash2,
   X
 } from 'lucide-react'
 import {
   InlineNoticeView,
   SecretInput,
-  SettingsCard,
-  SettingRow,
   Toggle,
   type InlineNotice
 } from './settings-controls'
@@ -105,6 +114,16 @@ const MUSIC_GENERATION_PROTOCOL_LABEL_KEYS: Record<MusicGenerationProtocol, stri
 const VIDEO_GENERATION_PROTOCOL_LABEL_KEYS: Record<VideoGenerationProtocol, string> = {
   'minimax-video': 'videoGenerationProtocolMiniMax'
 }
+
+type ProviderTaskTab = 'connection' | 'models' | 'capabilities' | 'advanced'
+type ProviderCapability = 'image' | 'speech' | 'tts' | 'music' | 'video'
+
+const PROVIDER_TASK_TABS: Array<{ id: ProviderTaskTab; labelKey: string }> = [
+  { id: 'connection', labelKey: 'modelProviderTabConnection' },
+  { id: 'models', labelKey: 'modelProviderTabModels' },
+  { id: 'capabilities', labelKey: 'modelProviderTabCapabilities' },
+  { id: 'advanced', labelKey: 'modelProviderTabAdvanced' }
+]
 
 export function modelProvidersSettingsPatch(input: {
   provider: ModelProviderSettingsV1
@@ -319,6 +338,12 @@ function providerPresetRequiresApiKey(provider: ModelProviderProfileV1): boolean
 
 function isCodexProvider(id: string): boolean {
   return id === 'codex'
+}
+
+function providerRequiresApiKey(provider: ModelProviderProfileV1): boolean {
+  if (isAgentSdkProvider(provider)) return false
+  if (provider.id === DEFAULT_MODEL_PROVIDER_ID || isCodexProvider(provider.id)) return true
+  return providerPresetRequiresApiKey(provider)
 }
 
 function parseCodexEmail(apiKey: string): string | undefined {
@@ -665,6 +690,120 @@ function DetailSection({
   )
 }
 
+function StatusPill({
+  tone,
+  icon,
+  children,
+  title
+}: {
+  tone: 'success' | 'warning' | 'error' | 'muted'
+  icon?: ReactNode
+  children: ReactNode
+  title?: string
+}): ReactElement {
+  const toneClass =
+    tone === 'success'
+      ? 'border-emerald-300/70 bg-emerald-50 text-emerald-700 dark:border-emerald-800/70 dark:bg-emerald-950/30 dark:text-emerald-300'
+      : tone === 'warning'
+        ? 'border-amber-300/70 bg-amber-50 text-amber-700 dark:border-amber-800/70 dark:bg-amber-950/30 dark:text-amber-300'
+        : tone === 'error'
+          ? 'border-red-300/70 bg-red-50 text-red-700 dark:border-red-800/70 dark:bg-red-950/30 dark:text-red-300'
+          : 'border-ds-border-muted bg-ds-main/50 text-ds-muted'
+  return (
+    <span
+      title={title}
+      className={`inline-flex h-6 shrink-0 items-center gap-1 rounded-full border px-2 text-[11px] font-medium ${toneClass}`}
+    >
+      {icon}
+      {children}
+    </span>
+  )
+}
+
+function CapabilitySection({
+  capabilityId,
+  icon,
+  title,
+  description,
+  enabled,
+  invalid,
+  expanded,
+  modelCountLabel,
+  configureLabel,
+  collapseLabel,
+  enabledLabel,
+  disabledLabel,
+  needsConfigurationLabel,
+  onToggle,
+  onExpandedChange,
+  children
+}: {
+  capabilityId: ProviderCapability
+  icon: ReactNode
+  title: string
+  description: string
+  enabled: boolean
+  invalid?: boolean
+  expanded: boolean
+  modelCountLabel?: string
+  configureLabel: string
+  collapseLabel: string
+  enabledLabel: string
+  disabledLabel: string
+  needsConfigurationLabel: string
+  onToggle: (enabled: boolean) => void
+  onExpandedChange: (expanded: boolean) => void
+  children: ReactNode
+}): ReactElement {
+  return (
+    <section className={`rounded-2xl border bg-ds-card transition ${
+      enabled ? 'border-ds-border shadow-sm' : 'border-ds-border-muted'
+    }`}>
+      <div className="flex flex-wrap items-start justify-between gap-3 px-4 py-3.5">
+        <div className="flex min-w-0 flex-1 items-start gap-3">
+          <span className={`mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-xl ${
+            enabled ? 'bg-accent/10 text-accent' : 'bg-ds-main text-ds-faint'
+          }`}>
+            {icon}
+          </span>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="text-[13px] font-semibold text-ds-ink">{title}</h3>
+              <StatusPill tone={invalid ? 'warning' : enabled ? 'success' : 'muted'}>
+                {invalid ? needsConfigurationLabel : enabled ? enabledLabel : disabledLabel}
+              </StatusPill>
+              {modelCountLabel ? (
+                <span className="text-[11.5px] text-ds-faint">{modelCountLabel}</span>
+              ) : null}
+            </div>
+            <p className="mt-1 text-[12px] leading-5 text-ds-faint">{description}</p>
+          </div>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <button
+            type="button"
+            disabled={!enabled}
+            aria-expanded={enabled && expanded}
+            aria-controls={`provider-capability-${capabilityId}`}
+            aria-label={`${expanded ? collapseLabel : configureLabel}: ${title}`}
+            onClick={() => onExpandedChange(!expanded)}
+            className="inline-flex h-8 items-center gap-1.5 rounded-full border border-ds-border bg-ds-card px-3 text-[12px] font-medium text-ds-muted transition hover:bg-ds-hover hover:text-ds-ink disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <SlidersHorizontal className="h-3.5 w-3.5" strokeWidth={1.9} />
+            {expanded ? collapseLabel : configureLabel}
+          </button>
+          <Toggle checked={enabled} onChange={onToggle} ariaLabel={title} />
+        </div>
+      </div>
+      {enabled && expanded ? (
+        <div id={`provider-capability-${capabilityId}`} className="border-t border-ds-border-muted px-4 py-4">
+          {children}
+        </div>
+      ) : null}
+    </section>
+  )
+}
+
 function ProviderBadge({
   tone,
   children
@@ -794,7 +933,9 @@ export function ProvidersSettingsSection({ ctx }: { ctx: Record<string, any> }):
     update,
     showApiKey,
     setShowApiKey,
-    selectControlClass
+    selectControlClass,
+    saveStatus,
+    saveError
   } = ctx
   const provider = providerFromContext ?? defaultModelProviderSettings()
   const modelProviders = provider.providers as ModelProviderProfileV1[]
@@ -802,23 +943,26 @@ export function ProvidersSettingsSection({ ctx }: { ctx: Record<string, any> }):
     kun.providerId?.trim() || modelProviders[0]?.id || DEFAULT_MODEL_PROVIDER_ID
   )
   const [addMenuOpen, setAddMenuOpen] = useState(false)
-  const addMenuRef = useRef<HTMLDivElement>(null)
-  // 点击菜单外部或按 Esc 关闭「添加供应商」下拉。用监听器代替全屏遮罩:全屏 fixed 遮罩会吞掉滚轮事件,
-  // 导致下拉打开时整个设置页无法滚动(用户反馈的 bug)。
+  const [addProviderQuery, setAddProviderQuery] = useState('')
+  const [providerListQuery, setProviderListQuery] = useState('')
+  const [activeTab, setActiveTab] = useState<ProviderTaskTab>('connection')
+  const [expandedCapabilities, setExpandedCapabilities] = useState<Set<ProviderCapability>>(new Set())
+  const addProviderButtonRef = useRef<HTMLButtonElement>(null)
+  const addProviderDialogRef = useRef<HTMLElement>(null)
+  const previousProviderSelectionRef = useRef<string | null>(null)
   useEffect(() => {
     if (!addMenuOpen) return
-    const onPointerDown = (event: PointerEvent): void => {
-      const target = event.target
-      if (target instanceof Node && addMenuRef.current?.contains(target)) return
-      setAddMenuOpen(false)
-    }
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
     const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') setAddMenuOpen(false)
+      if (event.key === 'Escape') {
+        setAddMenuOpen(false)
+        addProviderButtonRef.current?.focus()
+      }
     }
-    window.addEventListener('pointerdown', onPointerDown)
     window.addEventListener('keydown', onKeyDown)
     return () => {
-      window.removeEventListener('pointerdown', onPointerDown)
+      document.body.style.overflow = previousOverflow
       window.removeEventListener('keydown', onKeyDown)
     }
   }, [addMenuOpen])
@@ -856,6 +1000,63 @@ export function ProvidersSettingsSection({ ctx }: { ctx: Record<string, any> }):
         }
       }
     })
+  }
+
+  const setCapabilityExpanded = (capability: ProviderCapability, expanded: boolean): void => {
+    setExpandedCapabilities((current) => {
+      const next = new Set(current)
+      if (expanded) next.add(capability)
+      else next.delete(capability)
+      return next
+    })
+  }
+
+  const openAddProviderDialog = (): void => {
+    setAddProviderQuery('')
+    setAddMenuOpen(true)
+  }
+
+  const closeAddProviderDialog = (): void => {
+    setAddMenuOpen(false)
+    window.setTimeout(() => addProviderButtonRef.current?.focus(), 0)
+  }
+
+  const handleAddProviderDialogKeyDown = (event: ReactKeyboardEvent<HTMLElement>): void => {
+    if (event.key !== 'Tab' || !addProviderDialogRef.current) return
+    const focusable = Array.from(addProviderDialogRef.current.querySelectorAll<HTMLElement>([
+      'button:not([disabled])',
+      'input:not([disabled])',
+      'select:not([disabled])',
+      'a[href]'
+    ].join(','))).filter((element) => element.getClientRects().length > 0)
+    if (focusable.length === 0) return
+    const first = focusable[0]
+    const last = focusable[focusable.length - 1]
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault()
+      last.focus()
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault()
+      first.focus()
+    }
+  }
+
+  const handleProviderTabKeyDown = (
+    event: ReactKeyboardEvent<HTMLButtonElement>,
+    currentTab: ProviderTaskTab
+  ): void => {
+    const currentIndex = PROVIDER_TASK_TABS.findIndex((tab) => tab.id === currentTab)
+    let nextIndex = currentIndex
+    if (event.key === 'ArrowRight') nextIndex = (currentIndex + 1) % PROVIDER_TASK_TABS.length
+    else if (event.key === 'ArrowLeft') nextIndex = (currentIndex - 1 + PROVIDER_TASK_TABS.length) % PROVIDER_TASK_TABS.length
+    else if (event.key === 'Home') nextIndex = 0
+    else if (event.key === 'End') nextIndex = PROVIDER_TASK_TABS.length - 1
+    else return
+
+    event.preventDefault()
+    setActiveTab(PROVIDER_TASK_TABS[nextIndex].id)
+    const tabs = event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]')
+    tabs?.[nextIndex]?.focus()
   }
 
   const confirmAction = async (options: {
@@ -1027,8 +1228,10 @@ export function ProvidersSettingsSection({ ctx }: { ctx: Record<string, any> }):
   }
 
   const startProviderDraft = (profile: ModelProviderProfileV1): void => {
+    previousProviderSelectionRef.current = selectedProviderId
     setDraftProvider(profile)
     setSelectedProviderId(profile.id)
+    setActiveTab('connection')
   }
 
   const commitProviderDraft = (): void => {
@@ -1040,14 +1243,24 @@ export function ProvidersSettingsSection({ ctx }: { ctx: Record<string, any> }):
         ? { providerId: draftProvider.id, model: draftProvider.models[0] ?? kun.model }
         : undefined
     )
+    previousProviderSelectionRef.current = null
     setDraftProvider(null)
     setSelectedProviderId(draftProvider.id)
   }
 
   const cancelProviderDraft = (): void => {
     if (!draftProvider) return
+    const previousProviderId = previousProviderSelectionRef.current
+    const fallbackProviderId = modelProviders.some((item) => item.id === activeKunProviderId)
+      ? activeKunProviderId
+      : modelProviders[0]?.id ?? DEFAULT_MODEL_PROVIDER_ID
     setDraftProvider(null)
-    setSelectedProviderId(activeKunProviderId)
+    setSelectedProviderId(
+      previousProviderId && modelProviders.some((item) => item.id === previousProviderId)
+        ? previousProviderId
+        : fallbackProviderId
+    )
+    previousProviderSelectionRef.current = null
   }
 
   const addModelProvider = (): void => {
@@ -1223,7 +1436,7 @@ export function ProvidersSettingsSection({ ctx }: { ctx: Record<string, any> }):
       }))
       return
     }
-    if (providerPresetRequiresApiKey(target) && !target.apiKey.trim()) {
+    if (providerRequiresApiKey(target) && !target.apiKey.trim()) {
       setProbeStates((prev) => ({
         ...prev,
         [target.id]: {
@@ -1385,41 +1598,53 @@ export function ProvidersSettingsSection({ ctx }: { ctx: Record<string, any> }):
   const activeVideoBaseUrlInvalid = Boolean(
     activeProvider?.video && !isAcceptableHttpUrl(activeProvider.video.baseUrl)
   )
+  const activeMissingCredential = Boolean(
+    activeProvider &&
+    providerRequiresApiKey(activeProvider) &&
+    !activeProvider.apiKey.trim()
+  )
+  const activeProbeBlocked = activeBaseUrlInvalid || activeMissingCredential
   const activeTokenPlanRegions = activeProvider
     ? tokenPlanPresetForProfileId(activeProvider.id)?.tokenPlan?.regions ?? []
     : []
 
-  const planProviders = displayProviders.filter((item) => isSubscriptionProviderId(item.id))
-  const apiProviders = displayProviders.filter((item) => !isSubscriptionProviderId(item.id))
+  const normalizedProviderListQuery = providerListQuery.trim().toLowerCase()
+  const filteredProviders = normalizedProviderListQuery
+    ? displayProviders.filter((item) =>
+        `${item.name} ${item.id}`.toLowerCase().includes(normalizedProviderListQuery)
+      )
+    : displayProviders
+  const planProviders = filteredProviders.filter((item) => isSubscriptionProviderId(item.id))
+  const apiProviders = filteredProviders.filter((item) => !isSubscriptionProviderId(item.id))
   // 只要存在任一套餐类供应商就分组展示;否则(通常只有默认 DeepSeek)保持单一平铺列表。
-  const grouped = planProviders.length > 0
+  const grouped = displayProviders.some((item) => isSubscriptionProviderId(item.id))
 
   const renderProviderButton = (item: ModelProviderProfileV1): ReactElement => {
     const selected = activeProvider?.id === item.id
     const isDraft = draftProvider?.id === item.id
     const inUse = !isDraft && activeKunProviderId === item.id
-    const missingKey = !item.apiKey.trim()
+    const missingKey = providerRequiresApiKey(item) && !item.apiKey.trim()
     return (
       <button
         key={item.id}
         type="button"
         aria-pressed={selected}
         onClick={() => setSelectedProviderId(item.id)}
-        className={`w-full rounded-xl border px-3 py-2.5 text-left transition ${
+        className={`w-full min-w-0 overflow-hidden rounded-xl border px-3 py-2.5 text-left transition ${
           selected
             ? 'border-accent/60 bg-ds-main/45 ring-1 ring-accent/30'
             : 'border-ds-border bg-ds-card hover:bg-ds-hover'
         }`}
       >
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span className="min-w-0 truncate text-[13.5px] font-semibold text-ds-ink">
+        <div className="flex min-w-0 items-center gap-1.5">
+          <span className="min-w-0 flex-1 truncate text-[13.5px] font-semibold text-ds-ink">
             {item.name.trim() || item.id}
           </span>
           {isDraft ? <ProviderBadge tone="warning">{t('modelProviderDraftBadge')}</ProviderBadge> : null}
           {inUse ? <ProviderBadge tone="accent">{t('modelProviderInUse')}</ProviderBadge> : null}
           {!isDraft && missingKey ? <ProviderBadge tone="warning">{t('modelProviderMissingKey')}</ProviderBadge> : null}
         </div>
-        <div className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[12px] text-ds-faint">
+        <div className="mt-1 flex min-w-0 items-center gap-x-1.5 overflow-hidden whitespace-nowrap text-[12px] text-ds-faint">
           <span>{t('modelProviderModelCount', { total: providerModelCount(item) })}</span>
           <span aria-hidden="true">·</span>
           <span>{providerKindLabel(item)}</span>
@@ -1464,29 +1689,37 @@ export function ProvidersSettingsSection({ ctx }: { ctx: Record<string, any> }):
     }
     return entries
   })
-  const planAddEntries = addMenuEntries.filter((entry) => entry.group === 'subscription')
-  const apiAddEntries = addMenuEntries.filter((entry) => entry.group === 'api')
+  const normalizedAddProviderQuery = addProviderQuery.trim().toLowerCase()
+  const visibleAddEntries = normalizedAddProviderQuery
+    ? addMenuEntries.filter((entry) =>
+        `${entry.label} ${entry.profileId}`.toLowerCase().includes(normalizedAddProviderQuery)
+      )
+    : addMenuEntries
+  const planAddEntries = visibleAddEntries.filter((entry) => entry.group === 'subscription')
+  const apiAddEntries = visibleAddEntries.filter((entry) => entry.group === 'api')
   const renderAddEntry = (entry: (typeof addMenuEntries)[number]): ReactElement => {
     const exists = modelProviders.some((item) => item.id === entry.profileId)
     return (
       <button
         key={entry.profileId}
         type="button"
-        role="menuitem"
         onClick={() => {
-          setAddMenuOpen(false)
+          closeAddProviderDialog()
           void addPresetModelProvider(entry.preset, entry.mode)
         }}
-        className="flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left text-[13px] text-ds-ink transition hover:bg-ds-hover"
+        className="group grid min-h-20 w-full gap-2 rounded-xl border border-ds-border bg-ds-card px-3.5 py-3 text-left transition hover:border-accent/45 hover:bg-ds-hover"
       >
-        <span>{entry.label}</span>
-        <span className="text-[11px] text-ds-faint">
-          {exists
-            ? t('modelProviderPresetUpdateTag')
-            : entry.group === 'subscription'
-              ? t('modelProviderPlanBadge')
-              : t('modelProviderPresetBadge')}
+        <span className="flex min-w-0 items-start justify-between gap-2">
+          <span className="truncate text-[13.5px] font-semibold text-ds-ink">{entry.label}</span>
+          <StatusPill tone={exists ? 'warning' : 'muted'}>
+            {exists
+              ? t('modelProviderPresetUpdateTag')
+              : entry.group === 'subscription'
+                ? t('modelProviderPlanBadge')
+                : t('modelProviderPresetBadge')}
+          </StatusPill>
         </span>
+        <span className="truncate font-mono text-[11.5px] text-ds-faint">{entry.profileId}</span>
       </button>
     )
   }
@@ -1497,85 +1730,124 @@ export function ProvidersSettingsSection({ ctx }: { ctx: Record<string, any> }):
 
   return (
     <>
-    <SettingsCard title={t('providers')}>
-      <SettingRow
-        title={t('providers')}
-        description={t('providersDesc')}
-        wideControl
-        control={
-          <div className="grid gap-4 lg:grid-cols-[280px_minmax(0,1fr)]">
-            <div className="flex flex-col gap-3">
+      <section className="overflow-hidden rounded-2xl border border-ds-border bg-ds-card/95 shadow-sm shadow-black/5 dark:shadow-black/25">
+        <header className="flex flex-wrap items-start justify-between gap-4 border-b border-ds-border-muted px-5 py-4">
+          <div className="min-w-0">
+            <h2 className="text-[16px] font-semibold text-ds-ink">{t('providers')}</h2>
+            <p className="mt-1 max-w-3xl text-[13px] leading-5 text-ds-muted">{t('providersDesc')}</p>
+          </div>
+          <button
+            ref={addProviderButtonRef}
+            type="button"
+            aria-haspopup="dialog"
+            aria-expanded={addMenuOpen}
+            onClick={openAddProviderDialog}
+            className="inline-flex h-9 shrink-0 items-center gap-2 rounded-full bg-accent px-4 text-[12.5px] font-semibold text-white shadow-sm transition hover:opacity-90"
+          >
+            <Plus className="h-3.5 w-3.5" strokeWidth={2} />
+            {t('modelProviderAdd')}
+          </button>
+        </header>
+        <div className="grid gap-4 p-4">
+          <label className="grid gap-1.5 lg:hidden">
+            <span className="text-[12px] font-semibold text-ds-muted">{t('modelProviderCompactSelect')}</span>
+            <select
+              className={selectControlClass}
+              value={activeProvider?.id ?? ''}
+              onChange={(event) => setSelectedProviderId(event.target.value)}
+            >
+              {displayProviders.map((item) => (
+                <option key={item.id} value={item.id}>{item.name.trim() || item.id}</option>
+              ))}
+            </select>
+          </label>
+          <div className="grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
+            <aside className="hidden min-w-0 content-start gap-3 lg:grid">
+              {displayProviders.length > 5 ? (
+                <label className="relative block">
+                  <Search
+                    className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ds-faint"
+                    strokeWidth={1.9}
+                  />
+                  <input
+                    value={providerListQuery}
+                    onChange={(event) => setProviderListQuery(event.target.value)}
+                    placeholder={t('modelProviderSearchPlaceholder')}
+                    aria-label={t('modelProviderSearchPlaceholder')}
+                    className="w-full rounded-xl border border-ds-border bg-ds-card py-2 pl-9 pr-3 text-[12.5px] text-ds-ink shadow-sm focus:border-accent/40 focus:outline-none focus:ring-1 focus:ring-accent/30"
+                  />
+                </label>
+              ) : null}
               {grouped ? (
                 <>
-                  <ProviderListGroup label={t('modelProviderGroupPlans')} count={planProviders.length}>
-                    {planProviders.map(renderProviderButton)}
-                  </ProviderListGroup>
-                  <ProviderListGroup label={t('modelProviderGroupApi')} count={apiProviders.length}>
-                    {apiProviders.map(renderProviderButton)}
-                  </ProviderListGroup>
+                  {planProviders.length > 0 ? (
+                    <ProviderListGroup label={t('modelProviderGroupPlans')} count={planProviders.length}>
+                      {planProviders.map(renderProviderButton)}
+                    </ProviderListGroup>
+                  ) : null}
+                  {apiProviders.length > 0 ? (
+                    <ProviderListGroup label={t('modelProviderGroupApi')} count={apiProviders.length}>
+                      {apiProviders.map(renderProviderButton)}
+                    </ProviderListGroup>
+                  ) : null}
                 </>
               ) : (
-                <div className="grid gap-2">{displayProviders.map(renderProviderButton)}</div>
+                <div className="grid gap-2">{apiProviders.map(renderProviderButton)}</div>
               )}
-              <div ref={addMenuRef} className="relative">
-                <button
-                  type="button"
-                  aria-haspopup="menu"
-                  aria-expanded={addMenuOpen}
-                  onClick={() => setAddMenuOpen((value) => !value)}
-                  className="inline-flex h-9 w-full items-center justify-center gap-2 rounded-full border border-ds-border bg-ds-card px-3 text-[12.5px] font-medium text-ds-muted shadow-sm transition hover:bg-ds-hover hover:text-ds-ink"
-                >
-                  <Plus className="h-3.5 w-3.5" strokeWidth={1.9} />
-                  {t('modelProviderAdd')}
-                  <ChevronDown className="h-3.5 w-3.5" strokeWidth={1.9} />
-                </button>
-                {addMenuOpen ? (
-                  <div
-                    role="menu"
-                    className="absolute left-0 right-0 z-20 mt-1 max-h-[min(60vh,420px)] overflow-y-auto rounded-xl border border-ds-border bg-ds-card p-1 shadow-lg"
-                  >
-                    <div className="px-2.5 pb-1 pt-1 text-[11px] font-semibold text-ds-faint">
-                      {t('modelProviderGroupPlans')}
-                    </div>
-                    {planAddEntries.map(renderAddEntry)}
-                    <div className="my-1 border-t border-ds-border-muted" />
-                    <div className="px-2.5 pb-1 text-[11px] font-semibold text-ds-faint">
-                      {t('modelProviderGroupApi')}
-                    </div>
-                    {apiAddEntries.map(renderAddEntry)}
-                    <div className="my-1 border-t border-ds-border-muted" />
-                    <button
-                      type="button"
-                      role="menuitem"
-                      onClick={() => {
-                        setAddMenuOpen(false)
-                        addModelProvider()
-                      }}
-                      className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[13px] text-ds-ink transition hover:bg-ds-hover"
-                    >
-                      {t('modelProviderAddMenuCustom')}
-                    </button>
-                  </div>
-                ) : null}
-              </div>
-            </div>
+              {filteredProviders.length === 0 ? (
+                <p className="rounded-xl border border-dashed border-ds-border-muted px-3 py-6 text-center text-[12px] text-ds-faint">
+                  {t('modelProviderSearchEmpty', { query: providerListQuery.trim() })}
+                </p>
+              ) : null}
+            </aside>
             {activeProvider ? (
-              <div className="grid content-start gap-3 rounded-xl border border-ds-border-muted bg-ds-main/35 p-4">
-                <div className="flex flex-wrap items-start justify-between gap-2">
-                  <div className="flex min-w-0 items-center gap-2">
-                    <span className="min-w-0 truncate text-[14px] font-semibold text-ds-ink">
-                      {activeProvider.name.trim() || activeProvider.id}
-                    </span>
-                    <span className="font-mono text-[12px] text-ds-faint">{activeProvider.id}</span>
-                    {!canEditActiveProviderId ? (
-                      <span title={t('modelProviderIdLocked')} className="text-ds-faint">
-                        <Lock className="h-3.5 w-3.5" strokeWidth={1.9} />
+              <div className="grid min-w-0 content-start gap-4 rounded-2xl border border-ds-border-muted bg-ds-main/30 p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <span className="min-w-0 truncate text-[15px] font-semibold text-ds-ink">
+                        {activeProvider.name.trim() || activeProvider.id}
                       </span>
-                    ) : null}
+                      <span className="truncate font-mono text-[11.5px] text-ds-faint">{activeProvider.id}</span>
+                    </div>
+                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                      {isDraftActive ? (
+                        <StatusPill tone="warning">{t('modelProviderDraftBadge')}</StatusPill>
+                      ) : activeKunProviderId === activeProvider.id ? (
+                        <StatusPill tone="success" icon={<CheckCircle2 className="h-3 w-3" strokeWidth={2} />}>
+                          {t('modelProviderInUse')}
+                        </StatusPill>
+                      ) : null}
+                      <StatusPill
+                        tone={activeProbeBlocked ? 'warning' : 'success'}
+                        icon={activeProbeBlocked ? <AlertCircle className="h-3 w-3" /> : undefined}
+                      >
+                        {activeProbeBlocked ? t('modelProviderNeedsConfiguration') : t('modelProviderReady')}
+                      </StatusPill>
+                      {!isDraftActive ? (
+                        <StatusPill
+                          tone={saveStatus === 'error' ? 'error' : saveStatus === 'saved' ? 'success' : 'muted'}
+                          title={saveStatus === 'error' ? saveError : undefined}
+                        >
+                          {saveStatus === 'saving'
+                            ? t('applying')
+                            : saveStatus === 'error'
+                              ? t('applyFailed')
+                              : saveStatus === 'saved'
+                                ? t('applied')
+                                : t('autoApplyHint')}
+                        </StatusPill>
+                      ) : null}
+                    </div>
                   </div>
                   <button
                     type="button"
-                    disabled={probeBusy}
+                    disabled={probeBusy || activeProbeBlocked}
+                    title={activeMissingCredential
+                      ? t('modelProviderPresetMissingKeyForProbe')
+                      : activeBaseUrlInvalid
+                        ? t('modelProviderInvalidUrl')
+                        : undefined}
                     onClick={() => void runProbe(activeProvider, 'test')}
                     className="inline-flex h-8 items-center gap-1.5 rounded-full border border-ds-border bg-ds-card px-3 text-[12px] font-medium text-ds-muted shadow-sm transition hover:bg-ds-hover hover:text-ds-ink disabled:cursor-not-allowed disabled:opacity-60"
                   >
@@ -1585,9 +1857,45 @@ export function ProvidersSettingsSection({ ctx }: { ctx: Record<string, any> }):
                     {t('modelProviderTestConnection')}
                   </button>
                 </div>
+                <div
+                  role="tablist"
+                  aria-label={t('modelProviderWorkspaceTabs')}
+                  className="flex min-w-0 gap-1 overflow-x-auto rounded-xl border border-ds-border-muted bg-ds-card/70 p-1"
+                >
+                  {PROVIDER_TASK_TABS.map((tab) => {
+                    const selected = activeTab === tab.id
+                    return (
+                      <button
+                        key={tab.id}
+                        id={`provider-settings-tab-${tab.id}`}
+                        type="button"
+                        role="tab"
+                        aria-selected={selected}
+                        aria-controls={`provider-settings-panel-${tab.id}`}
+                        tabIndex={selected ? 0 : -1}
+                        onClick={() => setActiveTab(tab.id)}
+                        onKeyDown={(event) => handleProviderTabKeyDown(event, tab.id)}
+                        className={`h-8 min-w-fit flex-1 rounded-lg px-3 text-[12.5px] font-medium transition ${
+                          selected
+                            ? 'bg-ds-card text-ds-ink shadow-sm ring-1 ring-ds-border-muted'
+                            : 'text-ds-muted hover:bg-ds-hover hover:text-ds-ink'
+                        }`}
+                      >
+                        {t(tab.labelKey)}
+                      </button>
+                    )
+                  })}
+                </div>
                 {probeNotice ? <InlineNoticeView notice={probeNotice} /> : null}
+                {activeTab === 'connection' ? (
+                  <div
+                    id="provider-settings-panel-connection"
+                    role="tabpanel"
+                    aria-labelledby="provider-settings-tab-connection"
+                    className="grid gap-4"
+                  >
                 <DetailSection title={t('modelProviderSectionBasics')}>
-                  <div className="grid gap-3 md:grid-cols-2">
+                  <div className="grid gap-3">
                     <label className={fieldLabelClass}>
                       {t('modelProviderName')}
                       <input
@@ -1595,30 +1903,6 @@ export function ProvidersSettingsSection({ ctx }: { ctx: Record<string, any> }):
                         value={activeProvider.name}
                         onChange={(e) => updateModelProvider(activeProvider.id, { name: e.target.value })}
                       />
-                    </label>
-                    <label className={fieldLabelClass}>
-                      {t('modelProviderId')}
-                      <span className="relative block">
-                        <input
-                          className={`w-full min-w-0 rounded-xl border border-ds-border bg-ds-card px-3 py-2 font-mono text-[13px] font-normal shadow-sm ${
-                            canEditActiveProviderId
-                              ? 'text-ds-ink focus:border-accent/40 focus:outline-none focus:ring-1 focus:ring-accent/30'
-                              : 'pr-9 text-ds-faint'
-                          }`}
-                          value={activeProvider.id}
-                          readOnly={!canEditActiveProviderId}
-                          spellCheck={false}
-                          onChange={(e) => updateModelProviderId(activeProvider.id, e.target.value)}
-                        />
-                        {!canEditActiveProviderId ? (
-                          <span
-                            title={t('modelProviderIdLocked')}
-                            className="absolute right-3 top-1/2 -translate-y-1/2 text-ds-faint"
-                          >
-                            <Lock className="h-3.5 w-3.5" strokeWidth={1.9} />
-                          </span>
-                        ) : null}
-                      </span>
                     </label>
                   </div>
                 </DetailSection>
@@ -1737,10 +2021,49 @@ export function ProvidersSettingsSection({ ctx }: { ctx: Record<string, any> }):
                     </p>
                   ) : null}
                 </DetailSection>
+                  </div>
+                ) : null}
+                {activeTab === 'advanced' ? (
+                  <div
+                    id="provider-settings-panel-advanced"
+                    role="tabpanel"
+                    aria-labelledby="provider-settings-tab-advanced"
+                    className="grid gap-4"
+                  >
+                    <DetailSection title={t('modelProviderIdentitySection')}>
+                      <label className={fieldLabelClass}>
+                        {t('modelProviderId')}
+                        <span className="relative block">
+                          <input
+                            className={`w-full min-w-0 rounded-xl border border-ds-border bg-ds-card px-3 py-2 font-mono text-[13px] font-normal shadow-sm ${
+                              canEditActiveProviderId
+                                ? 'text-ds-ink focus:border-accent/40 focus:outline-none focus:ring-1 focus:ring-accent/30'
+                                : 'pr-9 text-ds-faint'
+                            }`}
+                            value={activeProvider.id}
+                            readOnly={!canEditActiveProviderId}
+                            spellCheck={false}
+                            onChange={(e) => updateModelProviderId(activeProvider.id, e.target.value)}
+                          />
+                          {!canEditActiveProviderId ? (
+                            <span
+                              title={t('modelProviderIdLocked')}
+                              className="absolute right-3 top-1/2 -translate-y-1/2 text-ds-faint"
+                            >
+                              <Lock className="h-3.5 w-3.5" strokeWidth={1.9} />
+                            </span>
+                          ) : null}
+                        </span>
+                        <span className="text-[12px] font-normal leading-5 text-ds-faint">
+                          {t('modelProviderIdentityHint')}
+                        </span>
+                      </label>
+                    </DetailSection>
                 <DetailSection
                   title={t('modelProviderRetrySection')}
                   action={
                     <Toggle
+                      ariaLabel={t('modelProviderRetrySection')}
                       checked={activeRetry.maxAttempts > 0}
                       onChange={(enabled) => updateModelProvider(activeProvider.id, {
                         retry: {
@@ -1808,12 +2131,21 @@ export function ProvidersSettingsSection({ ctx }: { ctx: Record<string, any> }):
                     </div>
                   ) : null}
                 </DetailSection>
+                  </div>
+                ) : null}
+                {activeTab === 'models' ? (
+                  <div
+                    id="provider-settings-panel-models"
+                    role="tabpanel"
+                    aria-labelledby="provider-settings-tab-models"
+                    className="grid gap-4"
+                  >
                 <DetailSection
                   title={`${t('modelProviderModels')} · ${providerModelCount(activeProvider)}`}
                   action={
                     <button
                       type="button"
-                      disabled={probeBusy}
+                      disabled={probeBusy || activeProbeBlocked}
                       onClick={() => void runProbe(activeProvider, 'fetch')}
                       className="inline-flex h-7 items-center gap-1.5 rounded-full border border-ds-border bg-ds-card px-2.5 text-[12px] font-medium text-ds-muted shadow-sm transition hover:bg-ds-hover hover:text-ds-ink disabled:cursor-not-allowed disabled:opacity-60"
                     >
@@ -1832,24 +2164,44 @@ export function ProvidersSettingsSection({ ctx }: { ctx: Record<string, any> }):
                     onChange={(next) => patchProviderProfile(activeProvider, () => next)}
                   />
                 </DetailSection>
-                <DetailSection
+                  </div>
+                ) : null}
+                {activeTab === 'capabilities' ? (
+                  <div
+                    id="provider-settings-panel-capabilities"
+                    role="tabpanel"
+                    aria-labelledby="provider-settings-tab-capabilities"
+                    className="grid gap-3"
+                  >
+                <CapabilitySection
+                  capabilityId="image"
+                  icon={<ImageIcon className="h-4 w-4" strokeWidth={1.9} />}
                   title={t('modelProviderImageCapability')}
-                  action={
-                    <Toggle
-                      checked={Boolean(activeProvider.image)}
-                      onChange={(value) => {
-                        if (value) {
-                          updateModelProvider(activeProvider.id, {
-                            image: presetImageCapability(activeProvider.id) ?? defaultImageCapability(activeProvider.baseUrl)
-                          })
-                        } else {
-                          removeModelProviderImage(activeProvider.id)
-                        }
-                      }}
-                    />
-                  }
+                  description={t('modelProviderImageCapabilityDesc')}
+                  enabled={Boolean(activeProvider.image)}
+                  invalid={activeImageBaseUrlInvalid}
+                  expanded={expandedCapabilities.has('image')}
+                  modelCountLabel={activeProvider.image?.models.length
+                    ? t('modelProviderModelCount', { total: activeProvider.image.models.length })
+                    : undefined}
+                  configureLabel={t('modelProviderCapabilityConfigure')}
+                  collapseLabel={t('modelProviderCapabilityCollapse')}
+                  enabledLabel={t('modelProviderCapabilityEnabled')}
+                  disabledLabel={t('modelProviderCapabilityDisabled')}
+                  needsConfigurationLabel={t('modelProviderNeedsConfiguration')}
+                  onExpandedChange={(expanded) => setCapabilityExpanded('image', expanded)}
+                  onToggle={(value) => {
+                    if (value) {
+                      updateModelProvider(activeProvider.id, {
+                        image: presetImageCapability(activeProvider.id) ?? defaultImageCapability(activeProvider.baseUrl)
+                      })
+                      setCapabilityExpanded('image', true)
+                    } else {
+                      removeModelProviderImage(activeProvider.id)
+                      setCapabilityExpanded('image', false)
+                    }
+                  }}
                 >
-                  <p className="text-[12px] leading-5 text-ds-faint">{t('modelProviderImageCapabilityDesc')}</p>
                   {activeProvider.image ? (
                     <div className="grid gap-3 md:grid-cols-2">
                       <label className={fieldLabelClass}>
@@ -1894,25 +2246,36 @@ export function ProvidersSettingsSection({ ctx }: { ctx: Record<string, any> }):
                       </label>
                     </div>
                   ) : null}
-                </DetailSection>
-                <DetailSection
+                </CapabilitySection>
+                <CapabilitySection
+                  capabilityId="speech"
+                  icon={<Mic className="h-4 w-4" strokeWidth={1.9} />}
                   title={t('modelProviderSpeechCapability')}
-                  action={
-                    <Toggle
-                      checked={Boolean(activeProvider.speech)}
-                      onChange={(value) => {
-                        if (value) {
-                          updateModelProvider(activeProvider.id, {
-                            speech: presetSpeechCapability(activeProvider) ?? defaultSpeechCapability(activeProvider.baseUrl)
-                          })
-                        } else {
-                          removeModelProviderSpeech(activeProvider.id)
-                        }
-                      }}
-                    />
-                  }
+                  description={t('modelProviderSpeechCapabilityDesc')}
+                  enabled={Boolean(activeProvider.speech)}
+                  invalid={activeSpeechBaseUrlInvalid}
+                  expanded={expandedCapabilities.has('speech')}
+                  modelCountLabel={activeProvider.speech?.models.length
+                    ? t('modelProviderModelCount', { total: activeProvider.speech.models.length })
+                    : undefined}
+                  configureLabel={t('modelProviderCapabilityConfigure')}
+                  collapseLabel={t('modelProviderCapabilityCollapse')}
+                  enabledLabel={t('modelProviderCapabilityEnabled')}
+                  disabledLabel={t('modelProviderCapabilityDisabled')}
+                  needsConfigurationLabel={t('modelProviderNeedsConfiguration')}
+                  onExpandedChange={(expanded) => setCapabilityExpanded('speech', expanded)}
+                  onToggle={(value) => {
+                    if (value) {
+                      updateModelProvider(activeProvider.id, {
+                        speech: presetSpeechCapability(activeProvider) ?? defaultSpeechCapability(activeProvider.baseUrl)
+                      })
+                      setCapabilityExpanded('speech', true)
+                    } else {
+                      removeModelProviderSpeech(activeProvider.id)
+                      setCapabilityExpanded('speech', false)
+                    }
+                  }}
                 >
-                  <p className="text-[12px] leading-5 text-ds-faint">{t('modelProviderSpeechCapabilityDesc')}</p>
                   {activeProvider.speech ? (
                     <div className="grid gap-3 md:grid-cols-2">
                       <label className={fieldLabelClass}>
@@ -1957,26 +2320,37 @@ export function ProvidersSettingsSection({ ctx }: { ctx: Record<string, any> }):
                       </label>
                     </div>
                   ) : null}
-                </DetailSection>
-                <DetailSection
+                </CapabilitySection>
+                <CapabilitySection
+                  capabilityId="tts"
+                  icon={<AudioLines className="h-4 w-4" strokeWidth={1.9} />}
                   title={t('modelProviderTextToSpeechCapability')}
-                  action={
-                    <Toggle
-                      checked={Boolean(activeProvider.textToSpeech)}
-                      onChange={(value) => {
-                        if (value) {
-                          updateModelProvider(activeProvider.id, {
-                            textToSpeech: presetTextToSpeechCapability(activeProvider) ??
-                              defaultTextToSpeechCapability(activeProvider.baseUrl)
-                          })
-                        } else {
-                          removeModelProviderTextToSpeech(activeProvider.id)
-                        }
-                      }}
-                    />
-                  }
+                  description={t('modelProviderTextToSpeechCapabilityDesc')}
+                  enabled={Boolean(activeProvider.textToSpeech)}
+                  invalid={activeTextToSpeechBaseUrlInvalid}
+                  expanded={expandedCapabilities.has('tts')}
+                  modelCountLabel={activeProvider.textToSpeech?.models.length
+                    ? t('modelProviderModelCount', { total: activeProvider.textToSpeech.models.length })
+                    : undefined}
+                  configureLabel={t('modelProviderCapabilityConfigure')}
+                  collapseLabel={t('modelProviderCapabilityCollapse')}
+                  enabledLabel={t('modelProviderCapabilityEnabled')}
+                  disabledLabel={t('modelProviderCapabilityDisabled')}
+                  needsConfigurationLabel={t('modelProviderNeedsConfiguration')}
+                  onExpandedChange={(expanded) => setCapabilityExpanded('tts', expanded)}
+                  onToggle={(value) => {
+                    if (value) {
+                      updateModelProvider(activeProvider.id, {
+                        textToSpeech: presetTextToSpeechCapability(activeProvider) ??
+                          defaultTextToSpeechCapability(activeProvider.baseUrl)
+                      })
+                      setCapabilityExpanded('tts', true)
+                    } else {
+                      removeModelProviderTextToSpeech(activeProvider.id)
+                      setCapabilityExpanded('tts', false)
+                    }
+                  }}
                 >
-                  <p className="text-[12px] leading-5 text-ds-faint">{t('modelProviderTextToSpeechCapabilityDesc')}</p>
                   {activeProvider.textToSpeech ? (
                     <div className="grid gap-3 md:grid-cols-2">
                       <label className={fieldLabelClass}>
@@ -2021,25 +2395,36 @@ export function ProvidersSettingsSection({ ctx }: { ctx: Record<string, any> }):
                       </label>
                     </div>
                   ) : null}
-                </DetailSection>
-                <DetailSection
+                </CapabilitySection>
+                <CapabilitySection
+                  capabilityId="music"
+                  icon={<Music2 className="h-4 w-4" strokeWidth={1.9} />}
                   title={t('modelProviderMusicCapability')}
-                  action={
-                    <Toggle
-                      checked={Boolean(activeProvider.music)}
-                      onChange={(value) => {
-                        if (value) {
-                          updateModelProvider(activeProvider.id, {
-                            music: presetMusicCapability(activeProvider) ?? defaultMusicCapability(activeProvider.baseUrl)
-                          })
-                        } else {
-                          removeModelProviderMusic(activeProvider.id)
-                        }
-                      }}
-                    />
-                  }
+                  description={t('modelProviderMusicCapabilityDesc')}
+                  enabled={Boolean(activeProvider.music)}
+                  invalid={activeMusicBaseUrlInvalid}
+                  expanded={expandedCapabilities.has('music')}
+                  modelCountLabel={activeProvider.music?.models.length
+                    ? t('modelProviderModelCount', { total: activeProvider.music.models.length })
+                    : undefined}
+                  configureLabel={t('modelProviderCapabilityConfigure')}
+                  collapseLabel={t('modelProviderCapabilityCollapse')}
+                  enabledLabel={t('modelProviderCapabilityEnabled')}
+                  disabledLabel={t('modelProviderCapabilityDisabled')}
+                  needsConfigurationLabel={t('modelProviderNeedsConfiguration')}
+                  onExpandedChange={(expanded) => setCapabilityExpanded('music', expanded)}
+                  onToggle={(value) => {
+                    if (value) {
+                      updateModelProvider(activeProvider.id, {
+                        music: presetMusicCapability(activeProvider) ?? defaultMusicCapability(activeProvider.baseUrl)
+                      })
+                      setCapabilityExpanded('music', true)
+                    } else {
+                      removeModelProviderMusic(activeProvider.id)
+                      setCapabilityExpanded('music', false)
+                    }
+                  }}
                 >
-                  <p className="text-[12px] leading-5 text-ds-faint">{t('modelProviderMusicCapabilityDesc')}</p>
                   {activeProvider.music ? (
                     <div className="grid gap-3 md:grid-cols-2">
                       <label className={fieldLabelClass}>
@@ -2084,25 +2469,36 @@ export function ProvidersSettingsSection({ ctx }: { ctx: Record<string, any> }):
                       </label>
                     </div>
                   ) : null}
-                </DetailSection>
-                <DetailSection
+                </CapabilitySection>
+                <CapabilitySection
+                  capabilityId="video"
+                  icon={<Clapperboard className="h-4 w-4" strokeWidth={1.9} />}
                   title={t('modelProviderVideoCapability')}
-                  action={
-                    <Toggle
-                      checked={Boolean(activeProvider.video)}
-                      onChange={(value) => {
-                        if (value) {
-                          updateModelProvider(activeProvider.id, {
-                            video: presetVideoCapability(activeProvider) ?? defaultVideoCapability(activeProvider.baseUrl)
-                          })
-                        } else {
-                          removeModelProviderVideo(activeProvider.id)
-                        }
-                      }}
-                    />
-                  }
+                  description={t('modelProviderVideoCapabilityDesc')}
+                  enabled={Boolean(activeProvider.video)}
+                  invalid={activeVideoBaseUrlInvalid}
+                  expanded={expandedCapabilities.has('video')}
+                  modelCountLabel={activeProvider.video?.models.length
+                    ? t('modelProviderModelCount', { total: activeProvider.video.models.length })
+                    : undefined}
+                  configureLabel={t('modelProviderCapabilityConfigure')}
+                  collapseLabel={t('modelProviderCapabilityCollapse')}
+                  enabledLabel={t('modelProviderCapabilityEnabled')}
+                  disabledLabel={t('modelProviderCapabilityDisabled')}
+                  needsConfigurationLabel={t('modelProviderNeedsConfiguration')}
+                  onExpandedChange={(expanded) => setCapabilityExpanded('video', expanded)}
+                  onToggle={(value) => {
+                    if (value) {
+                      updateModelProvider(activeProvider.id, {
+                        video: presetVideoCapability(activeProvider) ?? defaultVideoCapability(activeProvider.baseUrl)
+                      })
+                      setCapabilityExpanded('video', true)
+                    } else {
+                      removeModelProviderVideo(activeProvider.id)
+                      setCapabilityExpanded('video', false)
+                    }
+                  }}
                 >
-                  <p className="text-[12px] leading-5 text-ds-faint">{t('modelProviderVideoCapabilityDesc')}</p>
                   {activeProvider.video ? (
                     <div className="grid gap-3 md:grid-cols-2">
                       <label className={fieldLabelClass}>
@@ -2147,33 +2543,10 @@ export function ProvidersSettingsSection({ ctx }: { ctx: Record<string, any> }):
                       </label>
                     </div>
                   ) : null}
-                </DetailSection>
-                {isDraftActive ? (
-                  <DetailSection title={t('modelProviderDraftSection')}>
-                    <div className="flex flex-wrap items-center gap-3">
-                      <button
-                        type="button"
-                        onClick={commitProviderDraft}
-                        className="inline-flex h-9 w-fit items-center gap-2 rounded-full bg-accent px-4 text-[12.5px] font-semibold text-white shadow-sm transition hover:opacity-90"
-                      >
-                        <Plus className="h-3.5 w-3.5" strokeWidth={2} />
-                        {t('modelProviderDraftConfirm')}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={cancelProviderDraft}
-                        className="inline-flex h-9 w-fit items-center gap-2 rounded-full border border-ds-border bg-ds-card px-3 text-[12.5px] font-medium text-ds-muted shadow-sm transition hover:bg-ds-hover hover:text-ds-ink"
-                      >
-                        {t('modelProviderDraftDiscard')}
-                      </button>
-                      <span className="text-[12px] text-ds-faint">
-                        {activeProvider.apiKey.trim()
-                          ? t('modelProviderDraftHintReady')
-                          : t('modelProviderDraftHintNoKey')}
-                      </span>
-                    </div>
-                  </DetailSection>
-                ) : activeProvider.id !== DEFAULT_MODEL_PROVIDER_ID ? (
+                </CapabilitySection>
+                  </div>
+                ) : null}
+                {!isDraftActive && activeTab === 'advanced' && activeProvider.id !== DEFAULT_MODEL_PROVIDER_ID ? (
                   <DetailSection title={t('modelProviderSectionDanger')}>
                     <div className="flex flex-wrap items-center gap-3">
                       <button
@@ -2188,19 +2561,58 @@ export function ProvidersSettingsSection({ ctx }: { ctx: Record<string, any> }):
                     </div>
                   </DetailSection>
                 ) : null}
+                {isDraftActive ? (
+                  <div className="sticky bottom-0 z-10 -mx-1 mt-2 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-accent/30 bg-ds-card/95 px-4 py-3 shadow-lg backdrop-blur">
+                    <div className="min-w-0">
+                      <div className="text-[12.5px] font-semibold text-ds-ink">{t('modelProviderDraftSection')}</div>
+                      <p className="mt-0.5 text-[12px] text-ds-faint">
+                        {activeProvider.apiKey.trim()
+                          ? t('modelProviderDraftHintReady')
+                          : t('modelProviderDraftHintNoKey')}
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={cancelProviderDraft}
+                        className="inline-flex h-9 items-center rounded-full border border-ds-border bg-ds-card px-3 text-[12.5px] font-medium text-ds-muted shadow-sm transition hover:bg-ds-hover hover:text-ds-ink"
+                      >
+                        {t('modelProviderDraftDiscard')}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={commitProviderDraft}
+                        className="inline-flex h-9 items-center gap-2 rounded-full bg-accent px-4 text-[12.5px] font-semibold text-white shadow-sm transition hover:opacity-90"
+                      >
+                        <Plus className="h-3.5 w-3.5" strokeWidth={2} />
+                        {t('modelProviderDraftConfirm')}
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
               </div>
             ) : null}
           </div>
-        }
-      />
-      <SettingRow
-        title={t('proxyUrl')}
-        description={t('proxyUrlDesc')}
-        control={
-          <div className="flex w-full min-w-0 flex-col gap-2 md:max-w-md">
+        </div>
+      </section>
+      <details className="group rounded-2xl border border-ds-border bg-ds-card/95 shadow-sm">
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-4 [&::-webkit-details-marker]:hidden">
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-[14px] font-semibold text-ds-ink">{t('modelProviderGlobalNetwork')}</h2>
+              <StatusPill tone={providerProxy.enabled ? 'success' : 'muted'}>
+                {providerProxy.enabled ? t('proxyEnabled') : t('modelProviderCapabilityDisabled')}
+              </StatusPill>
+            </div>
+            <p className="mt-1 text-[12.5px] leading-5 text-ds-muted">{t('proxyUrlDesc')}</p>
+          </div>
+          <ChevronDown className="h-4 w-4 shrink-0 text-ds-faint transition group-open:rotate-180" strokeWidth={1.9} />
+        </summary>
+        <div className="grid gap-3 border-t border-ds-border-muted px-5 py-4 md:grid-cols-[220px_minmax(0,1fr)]">
             <label className="flex items-center justify-between gap-3 rounded-xl border border-ds-border bg-ds-card px-3 py-2 text-[13px] text-ds-muted shadow-sm">
               <span>{t('proxyEnabled')}</span>
               <Toggle
+                ariaLabel={t('proxyEnabled')}
                 checked={providerProxy.enabled === true}
                 onChange={(enabled) => updateProviderProxy({ enabled })}
               />
@@ -2212,11 +2624,98 @@ export function ProvidersSettingsSection({ ctx }: { ctx: Record<string, any> }):
               spellCheck={false}
               onChange={(e) => updateProviderProxy({ url: e.target.value })}
             />
-          </div>
-        }
-      />
-    </SettingsCard>
-    {pendingImport && pendingImportProvider ? (
+        </div>
+      </details>
+      {addMenuOpen ? (
+        <div
+          className="ds-no-drag fixed inset-0 z-50 grid place-items-center overscroll-none bg-slate-950/40 p-4 backdrop-blur-md dark:bg-black/65"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="add-provider-dialog-title"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) closeAddProviderDialog()
+          }}
+        >
+          <section
+            ref={addProviderDialogRef}
+            onKeyDown={handleAddProviderDialogKeyDown}
+            className="grid max-h-[min(720px,calc(100vh-2rem))] w-full max-w-3xl grid-rows-[auto_auto_1fr] overflow-hidden rounded-2xl border border-ds-border bg-ds-card shadow-panel"
+          >
+            <header className="flex items-start justify-between gap-3 border-b border-ds-border px-5 py-4">
+              <div>
+                <h2 id="add-provider-dialog-title" className="text-[15px] font-semibold text-ds-ink">
+                  {t('modelProviderAddDialogTitle')}
+                </h2>
+                <p className="mt-1 text-[12.5px] text-ds-faint">{t('modelProviderAddDialogDesc')}</p>
+              </div>
+              <button
+                type="button"
+                aria-label={t('modelProviderAddDialogCancel')}
+                onClick={closeAddProviderDialog}
+                className="rounded-full p-1.5 text-ds-faint transition hover:bg-ds-hover hover:text-ds-ink"
+              >
+                <X className="h-4 w-4" strokeWidth={1.9} />
+              </button>
+            </header>
+            <div className="border-b border-ds-border px-5 py-3">
+              <label className="relative block">
+                <Search
+                  className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ds-faint"
+                  strokeWidth={1.9}
+                />
+                <input
+                  autoFocus
+                  value={addProviderQuery}
+                  onChange={(event) => setAddProviderQuery(event.target.value)}
+                  placeholder={t('modelProviderAddDialogSearch')}
+                  aria-label={t('modelProviderAddDialogSearch')}
+                  className="w-full rounded-xl border border-ds-border bg-ds-card py-2 pl-9 pr-3 text-[13px] text-ds-ink shadow-sm focus:border-accent/40 focus:outline-none focus:ring-1 focus:ring-accent/30"
+                />
+              </label>
+            </div>
+            <div className="overscroll-contain overflow-y-auto px-5 py-4">
+              <button
+                type="button"
+                onClick={() => {
+                  closeAddProviderDialog()
+                  addModelProvider()
+                }}
+                className="mb-4 flex w-full items-center justify-between gap-3 rounded-xl border border-dashed border-accent/45 bg-accent/5 px-4 py-3 text-left transition hover:bg-accent/10"
+              >
+                <span>
+                  <span className="block text-[13.5px] font-semibold text-ds-ink">{t('modelProviderAddMenuCustom')}</span>
+                  <span className="mt-0.5 block text-[12px] text-ds-faint">{t('modelProviderAddCustomDesc')}</span>
+                </span>
+                <Plus className="h-4 w-4 shrink-0 text-accent" strokeWidth={2} />
+              </button>
+              {planAddEntries.length > 0 ? (
+                <div className="mb-5 grid gap-2">
+                  <div className="flex items-center gap-2 px-1">
+                    <h3 className="text-[12px] font-semibold text-ds-muted">{t('modelProviderGroupPlans')}</h3>
+                    <span className="text-[11px] text-ds-faint">{planAddEntries.length}</span>
+                  </div>
+                  <div className="grid gap-2 sm:grid-cols-2">{planAddEntries.map(renderAddEntry)}</div>
+                </div>
+              ) : null}
+              {apiAddEntries.length > 0 ? (
+                <div className="grid gap-2">
+                  <div className="flex items-center gap-2 px-1">
+                    <h3 className="text-[12px] font-semibold text-ds-muted">{t('modelProviderGroupApi')}</h3>
+                    <span className="text-[11px] text-ds-faint">{apiAddEntries.length}</span>
+                  </div>
+                  <div className="grid gap-2 sm:grid-cols-2">{apiAddEntries.map(renderAddEntry)}</div>
+                </div>
+              ) : null}
+              {planAddEntries.length === 0 && apiAddEntries.length === 0 ? (
+                <p className="rounded-xl border border-dashed border-ds-border-muted px-4 py-8 text-center text-[12.5px] text-ds-faint">
+                  {t('modelProviderAddDialogEmpty', { query: addProviderQuery.trim() })}
+                </p>
+              ) : null}
+            </div>
+          </section>
+        </div>
+      ) : null}
+      {pendingImport && pendingImportProvider ? (
       <ProviderModelImportDialog
         provider={pendingImportProvider}
         fetchedModelIds={pendingImport.modelIds}

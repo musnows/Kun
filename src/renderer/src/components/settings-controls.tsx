@@ -300,16 +300,19 @@ export function AdvancedSettingsDisclosure({
 export function Toggle({
   checked,
   onChange,
-  disabled = false
+  disabled = false,
+  ariaLabel
 }: {
   checked: boolean
   onChange: (v: boolean) => void
   disabled?: boolean
+  ariaLabel?: string
 }): ReactElement {
   return (
     <button
       type="button"
       role="switch"
+      aria-label={ariaLabel}
       aria-checked={checked}
       aria-disabled={disabled}
       disabled={disabled}
