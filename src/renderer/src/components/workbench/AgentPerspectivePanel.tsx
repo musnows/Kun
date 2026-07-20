@@ -97,7 +97,7 @@ export function AgentPerspectivePanel({
   useEffect(() => setSection('semantic'), [selected?.id])
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-ds-sidebar text-ds-ink">
+    <div className="ds-no-drag flex h-full min-h-0 flex-col bg-ds-sidebar text-ds-ink">
       <header className="shrink-0 border-b border-ds-border-muted px-3 pb-2 pt-2.5">
         <div className="flex items-center gap-2">
           <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-accent/10 text-accent">
@@ -385,7 +385,12 @@ function SemanticRequestDetail({
               <span>{prompt.source}</span>
               <span>{prompt.text.length.toLocaleString()} chars</span>
             </div>
-            <pre className="max-h-56 overflow-auto whitespace-pre-wrap break-words font-sans text-[10px] leading-4 text-ds-ink">{prompt.text}</pre>
+            <ScrollablePre
+              ariaLabel={`${t('agentPerspectiveSystemPrompt')} ${index + 1}`}
+              className="max-h-56 whitespace-pre-wrap break-words font-sans text-[10px] leading-4 text-ds-ink"
+            >
+              {prompt.text}
+            </ScrollablePre>
           </article>
         )) : <SectionEmpty text="—" />}
       </SemanticSection>
@@ -425,9 +430,12 @@ function SemanticRequestDetail({
             </div>
             {tool.description ? <p className="mt-1 text-[9px] leading-4 text-ds-muted">{tool.description}</p> : null}
             {tool.inputSchema ? (
-              <pre className="mt-1.5 max-h-32 overflow-auto whitespace-pre-wrap rounded-md bg-ds-surface-subtle p-2 font-mono text-[8px] leading-3 text-ds-muted">
+              <ScrollablePre
+                ariaLabel={`${tool.name} ${t('agentPerspectiveToolDefinitions')}`}
+                className="mt-1.5 max-h-32 whitespace-pre-wrap rounded-md bg-ds-surface-subtle p-2 font-mono text-[8px] leading-3 text-ds-muted"
+              >
                 {JSON.stringify(tool.inputSchema, null, 2)}
-              </pre>
+              </ScrollablePre>
             ) : null}
           </article>
         )) : <SectionEmpty text={t('agentPerspectiveNoTools')} />}
@@ -439,14 +447,19 @@ function SemanticRequestDetail({
         icon={<MessageSquareText className="h-3 w-3" />}
         open
       >
-        {semantic.messages.length ? semantic.messages.map((message) => (
+        {semantic.messages.length ? semantic.messages.map((message, index) => (
           <article key={message.id} className="border-b border-ds-border-muted px-2.5 py-2 last:border-b-0">
             <div className="mb-1 flex items-center gap-1.5">
               <RoleBadge role={message.role} />
               {message.name ? <code className="text-[8px] text-ds-muted">{message.name}</code> : null}
               {message.callId ? <code className="ml-auto truncate text-[8px] text-ds-faint">{message.callId}</code> : null}
             </div>
-            <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words font-sans text-[10px] leading-4 text-ds-ink">{message.text || '—'}</pre>
+            <ScrollablePre
+              ariaLabel={`${t('agentPerspectiveMessages')} ${index + 1}`}
+              className="max-h-48 whitespace-pre-wrap break-words font-sans text-[10px] leading-4 text-ds-ink"
+            >
+              {message.text || '—'}
+            </ScrollablePre>
           </article>
         )) : <SectionEmpty text={t('agentPerspectiveNoMessages')} />}
       </SemanticSection>
@@ -492,7 +505,12 @@ function ToolCallDetail({ event }: { event: Extract<AgentPerspectiveEvent, { kin
       {event.result ? (
         <section>
           <SectionHeading title={t('agentPerspectiveToolResult')} copyValue={event.result.text} />
-          <pre className="max-h-96 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-ds-border-muted bg-ds-surface-subtle p-2.5 font-mono text-[9px] leading-4">{event.result.text || '—'}</pre>
+          <ScrollablePre
+            ariaLabel={t('agentPerspectiveToolResult')}
+            className="max-h-96 whitespace-pre-wrap break-words rounded-lg border border-ds-border-muted bg-ds-surface-subtle p-2.5 font-mono text-[9px] leading-4"
+          >
+            {event.result.text || '—'}
+          </ScrollablePre>
         </section>
       ) : <Notice text={t('agentPerspectiveToolResultPending')} />}
     </div>
@@ -633,8 +651,13 @@ function SemanticSection({
   open?: boolean
   children: ReactNode
 }): ReactElement {
+  const [expanded, setExpanded] = useState(open)
   return (
-    <details open={open} className="group overflow-hidden rounded-xl border border-ds-border-muted bg-ds-card">
+    <details
+      open={expanded}
+      onToggle={(event) => setExpanded(event.currentTarget.open)}
+      className="group overflow-hidden rounded-xl border border-ds-border-muted bg-ds-card"
+    >
       <summary className="flex cursor-pointer list-none items-center gap-2 px-2.5 py-2 text-[10px] font-semibold hover:bg-ds-hover [&::-webkit-details-marker]:hidden">
         <span className="text-ds-muted">{icon}</span>
         <span>{title}</span>
@@ -648,6 +671,26 @@ function SemanticSection({
 
 function SectionEmpty({ text }: { text: string }): ReactElement {
   return <div className="px-2.5 py-3 text-center text-[9px] text-ds-faint">{text}</div>
+}
+
+function ScrollablePre({
+  ariaLabel,
+  className,
+  children
+}: {
+  ariaLabel: string
+  className: string
+  children: ReactNode
+}): ReactElement {
+  return (
+    <pre
+      tabIndex={0}
+      aria-label={ariaLabel}
+      className={`overflow-auto outline-none focus-visible:ring-1 focus-visible:ring-accent/50 ${className}`}
+    >
+      {children}
+    </pre>
+  )
 }
 
 function MetaChip({ children }: { children: ReactNode }): ReactElement {
@@ -777,7 +820,12 @@ function JsonCard({ title, value }: { title: string; value: unknown }): ReactEle
   return (
     <section>
       <SectionHeading title={title} copyValue={text} />
-      <pre className="max-h-96 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-ds-border-muted bg-ds-surface-subtle p-2.5 font-mono text-[9px] leading-4">{text}</pre>
+      <ScrollablePre
+        ariaLabel={title}
+        className="max-h-96 whitespace-pre-wrap break-words rounded-lg border border-ds-border-muted bg-ds-surface-subtle p-2.5 font-mono text-[9px] leading-4"
+      >
+        {text}
+      </ScrollablePre>
     </section>
   )
 }
@@ -786,7 +834,12 @@ function TextCard({ title, value }: { title: string; value: string }): ReactElem
   return (
     <section>
       <SectionHeading title={title} copyValue={value} />
-      <pre className="max-h-96 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-ds-border-muted bg-ds-surface-subtle p-2.5 font-sans text-[10px] leading-4">{value}</pre>
+      <ScrollablePre
+        ariaLabel={title}
+        className="max-h-96 whitespace-pre-wrap break-words rounded-lg border border-ds-border-muted bg-ds-surface-subtle p-2.5 font-sans text-[10px] leading-4"
+      >
+        {value}
+      </ScrollablePre>
     </section>
   )
 }

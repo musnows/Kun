@@ -119,4 +119,43 @@ describe('AgentPerspectivePanel', () => {
     expect(renderedText).toContain('[REDACTED]')
     expect(renderedText).not.toContain('sk-secret')
   })
+
+  it('keeps the inspector interactive and long content keyboard scrollable', () => {
+    let renderer!: ReactTestRenderer
+    act(() => {
+      renderer = create(createElement(AgentPerspectivePanel, {
+        threadId: 'thread-1',
+        active: true,
+        threadRunning: false
+      }))
+    })
+
+    const panelRoot = renderer.root.findAllByType('div').find((node) =>
+      String(node.props.className).includes('bg-ds-sidebar text-ds-ink')
+    )
+    expect(panelRoot?.props.className).toContain('ds-no-drag')
+
+    const systemPrompt = renderer.root.findByProps({ 'aria-label': 'System prompt 1' })
+    expect(systemPrompt.type).toBe('pre')
+    expect(systemPrompt.props.tabIndex).toBe(0)
+    expect(systemPrompt.props.className).toContain('overflow-auto')
+    expect(systemPrompt.props.className).toContain('focus-visible:ring-1')
+
+    const semanticSections = renderer.root.findAllByType('details')
+    const systemSection = semanticSections.find((node) =>
+      textContent(node.findByType('summary')).includes('System prompt')
+    )
+    expect(systemSection?.props.open).toBe(true)
+    act(() => systemSection?.props.onToggle({ currentTarget: { open: false } }))
+    act(() => renderer.root.findByProps({ 'aria-label': 'Search steps' }).props.onClick())
+    const collapsedSystemSection = renderer.root.findAllByType('details').find((node) =>
+      textContent(node.findByType('summary')).includes('System prompt')
+    )
+    expect(collapsedSystemSection?.props.open).toBe(false)
+
+    for (const scrollable of renderer.root.findAllByType('pre')) {
+      expect(scrollable.props.tabIndex).toBe(0)
+      expect(scrollable.props['aria-label']).toBeTruthy()
+    }
+  })
 })
