@@ -46,7 +46,10 @@ import {
   tokenPlanProviderId
 } from '@shared/app-settings'
 import type { ModelProviderPreset } from '@shared/model-provider-presets'
-import type { ModelProviderProbeResult } from '@shared/kun-gui-api'
+import type {
+  ModelsDevCatalogResult,
+  ModelProviderProbeResult
+} from '@shared/kun-gui-api'
 import {
   AlertCircle,
   AudioLines,
@@ -82,6 +85,10 @@ import {
   ProviderModelImportDialog,
   type ProviderModelImportResult
 } from './provider-model-import-dialog'
+import {
+  enrichProviderModelProfiles,
+  mergeProviderModelIdsCaseInsensitive as mergeProviderModelIds
+} from './provider-model-import'
 
 const MODEL_ENDPOINT_FORMAT_LABEL_KEYS: Record<ModelEndpointFormat, string> = {
   chat_completions: 'modelEndpointChatCompletions',
@@ -170,15 +177,6 @@ function isAgentSdkProvider(provider: ModelProviderProfileV1): boolean {
 function isSubscriptionProviderId(id: string): boolean {
   if (tokenPlanPresetForProfileId(id)) return true
   return getModelProviderPreset(id)?.category === 'subscription'
-}
-
-function mergeProviderModelIds(primary: readonly string[], secondary: readonly string[]): string[] {
-  const ids = new Set<string>()
-  for (const model of [...primary, ...secondary]) {
-    const trimmed = model.trim()
-    if (trimmed) ids.add(trimmed)
-  }
-  return [...ids]
 }
 
 function addedModelCount(current: readonly string[], next: readonly string[]): number {
@@ -971,7 +969,12 @@ export function ProvidersSettingsSection({ ctx }: { ctx: Record<string, any> }):
   // the user to choose which ones to keep instead of dropping the whole list
   // into settings and forcing them to delete unwanted models one-by-one (#397).
   const [pendingImport, setPendingImport] = useState<
-    | { providerId: string; modelIds: string[]; latencyMs?: number }
+    | {
+        providerId: string
+        providerModelIds: string[]
+        catalogResult: ModelsDevCatalogResult
+        providerError?: string
+      }
     | null
   >(null)
   // 新增供应商先停留在本地草稿,点「添加」才写入设置,避免半配置状态被持久化。
@@ -1389,6 +1392,76 @@ export function ProvidersSettingsSection({ ctx }: { ctx: Record<string, any> }):
     update(patch)
   }
 
+  const fetchModelsDevCatalogFor = async (
+    target: ModelProviderProfileV1
+  ): Promise<ModelsDevCatalogResult> => {
+    if (typeof window.kunGui?.fetchModelsDevCatalog !== 'function') {
+      return { status: 'error', message: 'models.dev catalog bridge is unavailable.', models: [] }
+    }
+    try {
+      return await window.kunGui.fetchModelsDevCatalog({
+        providerId: target.id,
+        baseUrl: target.baseUrl
+      })
+    } catch (error) {
+      return {
+        status: 'error',
+        message: error instanceof Error ? error.message : String(error),
+        models: []
+      }
+    }
+  }
+
+  const openModelImport = (input: {
+    target: ModelProviderProfileV1
+    fingerprint: string
+    providerModelIds: string[]
+    catalogResult: ModelsDevCatalogResult
+    providerError?: string
+    latencyMs?: number
+  }): void => {
+    const catalogOnlyIds = input.catalogResult.status === 'ok' && input.catalogResult.matchMode === 'catalog'
+      ? input.catalogResult.models.map((model) => model.id)
+      : []
+    const total = mergeProviderModelIds(input.providerModelIds, catalogOnlyIds).length
+    const hasUsableEntries = input.providerModelIds.length > 0 || catalogOnlyIds.length > 0
+    if (!hasUsableEntries) {
+      const catalogMessage = input.catalogResult.status === 'error'
+        ? input.catalogResult.message
+        : input.catalogResult.status === 'unmapped'
+          ? t('providerModelImportCatalogUnmapped')
+          : t('modelProviderFetchEmpty')
+      const message = [input.providerError, catalogMessage].filter(Boolean).join(' · ')
+      setProbeStates((previous) => ({
+        ...previous,
+        [input.target.id]: {
+          fingerprint: input.fingerprint,
+          mode: 'fetch',
+          status: 'error',
+          message: message || t('modelProviderFetchEmpty')
+        }
+      }))
+      return
+    }
+
+    setProbeStates((previous) => ({
+      ...previous,
+      [input.target.id]: {
+        fingerprint: input.fingerprint,
+        mode: 'fetch',
+        status: 'ok',
+        latencyMs: input.latencyMs ?? 0,
+        total
+      }
+    }))
+    setPendingImport({
+      providerId: input.target.id,
+      providerModelIds: input.providerModelIds,
+      catalogResult: input.catalogResult,
+      ...(input.providerError ? { providerError: input.providerError } : {})
+    })
+  }
+
   const runProbe = async (target: ModelProviderProfileV1, mode: 'test' | 'fetch'): Promise<void> => {
     if (typeof window.kunGui?.probeModelProvider !== 'function') return
     const fingerprint = providerConnectionFingerprint(target)
@@ -1396,27 +1469,29 @@ export function ProvidersSettingsSection({ ctx }: { ctx: Record<string, any> }):
     // is delegated to the Claude Agent SDK. "Test" reports login readiness instead
     // of probing api.anthropic.com, which would 401 on the x-api-key header.
     if (isAgentSdkProvider(target)) {
-      setProbeStates((prev) => ({ ...prev, [target.id]: { fingerprint, mode, status: 'busy' } }))
+      setProbeStates((previous) => ({
+        ...previous,
+        [target.id]: { fingerprint, mode, status: 'busy' }
+      }))
       if (mode === 'fetch') {
-        // No HTTP /models endpoint — list the subscription's models via the SDK.
-        let modelIds: string[] = []
-        try {
-          modelIds = await window.kunGui.claudeSubscriptionModels(target.apiKey.trim() || undefined)
-        } catch {
-          modelIds = []
-        }
-        if (modelIds.length > 0) {
-          setProbeStates((prev) => ({
-            ...prev,
-            [target.id]: { fingerprint, mode, status: 'ok', latencyMs: 0, total: modelIds.length }
-          }))
-          setPendingImport({ providerId: target.id, modelIds: [...modelIds], latencyMs: 0 })
-        } else {
-          setProbeStates((prev) => ({
-            ...prev,
-            [target.id]: { fingerprint, mode, status: 'error', message: t('claudeSubProbeNotReady') }
-          }))
-        }
+        const [providerResult, catalogResult] = await Promise.all([
+          window.kunGui.claudeSubscriptionModels(target.apiKey.trim() || undefined)
+            .then((modelIds) => ({ modelIds, error: undefined as string | undefined }))
+            .catch((error: unknown) => ({
+              modelIds: [] as string[],
+              error: error instanceof Error ? error.message : String(error)
+            })),
+          fetchModelsDevCatalogFor(target)
+        ])
+        openModelImport({
+          target,
+          fingerprint,
+          providerModelIds: [...providerResult.modelIds],
+          catalogResult,
+          providerError: providerResult.error
+            ?? (providerResult.modelIds.length === 0 ? t('claudeSubProbeNotReady') : undefined),
+          latencyMs: 0
+        })
         return
       }
       // mode === 'test': report login/token readiness instead of an HTTP probe.
@@ -1428,8 +1503,8 @@ export function ProvidersSettingsSection({ ctx }: { ctx: Record<string, any> }):
           ready = false
         }
       }
-      setProbeStates((prev) => ({
-        ...prev,
+      setProbeStates((previous) => ({
+        ...previous,
         [target.id]: ready
           ? { fingerprint, mode, status: 'ok', latencyMs: 0, total: target.models.length }
           : { fingerprint, mode, status: 'error', message: t('claudeSubProbeNotReady') }
@@ -1437,8 +1512,8 @@ export function ProvidersSettingsSection({ ctx }: { ctx: Record<string, any> }):
       return
     }
     if (providerRequiresApiKey(target) && !target.apiKey.trim()) {
-      setProbeStates((prev) => ({
-        ...prev,
+      setProbeStates((previous) => ({
+        ...previous,
         [target.id]: {
           fingerprint,
           mode,
@@ -1448,44 +1523,51 @@ export function ProvidersSettingsSection({ ctx }: { ctx: Record<string, any> }):
       }))
       return
     }
-    setProbeStates((prev) => ({ ...prev, [target.id]: { fingerprint, mode, status: 'busy' } }))
-    let result: ModelProviderProbeResult
-    try {
-      result = await window.kunGui.probeModelProvider({
-        baseUrl: target.baseUrl,
-        apiKey: target.apiKey,
-        endpointFormat: target.endpointFormat
-      })
-    } catch (error) {
-      result = { ok: false, message: error instanceof Error ? error.message : String(error) }
+    setProbeStates((previous) => ({
+      ...previous,
+      [target.id]: { fingerprint, mode, status: 'busy' }
+    }))
+
+    const probe = async (): Promise<ModelProviderProbeResult> => {
+      try {
+        return await window.kunGui.probeModelProvider({
+          baseUrl: target.baseUrl,
+          apiKey: target.apiKey,
+          endpointFormat: target.endpointFormat
+        })
+      } catch (error) {
+        return { ok: false, message: error instanceof Error ? error.message : String(error) }
+      }
     }
+
+    if (mode === 'fetch') {
+      const [result, catalogResult] = await Promise.all([
+        probe(),
+        fetchModelsDevCatalogFor(target)
+      ])
+      openModelImport({
+        target,
+        fingerprint,
+        providerModelIds: result.ok ? [...result.modelIds] : [],
+        catalogResult,
+        providerError: result.ok
+          ? (result.modelIds.length === 0 ? t('providerModelImportProviderReturnedEmpty') : undefined)
+          : result.message,
+        latencyMs: result.ok ? result.latencyMs : 0
+      })
+      return
+    }
+
+    const result = await probe()
     if (!result.ok) {
-      setProbeStates((prev) => ({
-        ...prev,
+      setProbeStates((previous) => ({
+        ...previous,
         [target.id]: { fingerprint, mode, status: 'error', message: result.message }
       }))
       return
     }
-    if (mode === 'fetch') {
-      setProbeStates((prev) => ({
-        ...prev,
-        [target.id]: {
-          fingerprint,
-          mode,
-          status: 'ok',
-          latencyMs: result.latencyMs,
-          total: result.modelIds.length
-        }
-      }))
-      setPendingImport({
-        providerId: target.id,
-        modelIds: [...result.modelIds],
-        latencyMs: result.latencyMs
-      })
-      return
-    }
-    setProbeStates((prev) => ({
-      ...prev,
+    setProbeStates((previous) => ({
+      ...previous,
       [target.id]: {
         fingerprint,
         mode,
@@ -1513,6 +1595,11 @@ export function ProvidersSettingsSection({ ctx }: { ctx: Record<string, any> }):
     const nextVideoModels = target.video
       ? mergeProviderModelIds(target.video.models, picked.video)
       : picked.video
+    const nextModelProfiles = enrichProviderModelProfiles(
+      target,
+      picked.chat,
+      picked.catalogModels
+    )
     const added =
       addedModelCount(target.models, nextChatModels)
       + addedModelCount(target.image?.models ?? [], nextImageModels)
@@ -1520,10 +1607,11 @@ export function ProvidersSettingsSection({ ctx }: { ctx: Record<string, any> }):
       + addedModelCount(target.textToSpeech?.models ?? [], nextTextToSpeechModels)
       + addedModelCount(target.music?.models ?? [], nextMusicModels)
       + addedModelCount(target.video?.models ?? [], nextVideoModels)
-    if (added > 0) {
+    if (added > 0 || nextModelProfiles !== target.modelProfiles) {
       patchProviderProfile(target, (item) => ({
         ...item,
         models: nextChatModels,
+        modelProfiles: nextModelProfiles,
         ...(nextImageModels.length > 0
           ? { image: { ...(item.image ?? presetImageCapability(item.id) ?? defaultImageCapability(item.baseUrl)), models: nextImageModels } }
           : {}),
@@ -2718,7 +2806,9 @@ export function ProvidersSettingsSection({ ctx }: { ctx: Record<string, any> }):
       {pendingImport && pendingImportProvider ? (
       <ProviderModelImportDialog
         provider={pendingImportProvider}
-        fetchedModelIds={pendingImport.modelIds}
+        providerModelIds={pendingImport.providerModelIds}
+        catalogResult={pendingImport.catalogResult}
+        providerError={pendingImport.providerError}
         t={t}
         onCancel={() => setPendingImport(null)}
         onConfirm={(picked) => {

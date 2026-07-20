@@ -15,6 +15,7 @@ import {
   modelProviderPresetProfile,
   type ModelProviderProfileV1
 } from '@shared/app-settings'
+import type { ModelProviderProbeResult } from '@shared/kun-gui-api'
 import { AgentsSettingsSection, modelProvidersSettingsPatch } from './settings-section-agents'
 import { ProvidersSettingsSection } from './settings-section-providers'
 
@@ -70,7 +71,7 @@ const labels: Record<string, string> = {
   modelProviderTestFailed: 'Connection failed: {{message}}',
   modelProviderPresetMissingKeyForProbe: 'Enter this provider API key first.',
   modelProviderInvalidUrl: 'URL must start with http:// or https://',
-  modelProviderFetchModels: 'Fetch from API',
+  modelProviderFetchModels: 'Fetch models',
   modelProviderFetchedModels: 'Fetched {{total}} new models',
   modelProviderModelsPlaceholder: 'Type a model ID and press Enter',
   modelProviderModelCount: '{{total}} models',
@@ -95,6 +96,36 @@ const labels: Record<string, string> = {
   modelProviderRetryStatusCodes: 'Retry HTTP status codes',
   modelProviderRetryStatusCodesHint: 'Separate multiple status codes with commas, for example 429,503.',
   modelProviderFetchEmpty: 'No models found',
+  providerModelImportTitle: 'Pick models to import',
+  providerModelImportSubtitle: 'Found {{total}} for {{provider}}; {{existing}} already added.',
+  providerModelImportSearchPlaceholder: 'Search by model name',
+  providerModelImportFilterAll: 'All types ({{count}})',
+  providerModelImportSourceAll: 'All sources ({{count}})',
+  providerModelImportSourceApi: 'Provider API ({{count}})',
+  providerModelImportSourceCatalog: 'models.dev ({{count}})',
+  providerModelImportSourceApiBadge: 'Provider API',
+  providerModelImportSourceCatalogBadge: 'models.dev only',
+  providerModelImportSourceBothBadge: 'API + models.dev',
+  providerModelImportHideExisting: 'Hide already added ({{count}})',
+  providerModelImportAlreadyAdded: 'Already added',
+  providerModelImportNoneFetched: 'No models available',
+  providerModelImportNoneMatch: 'No models match',
+  providerModelImportSelectAllVisible: 'Select filtered ({{count}})',
+  providerModelImportClearVisible: 'Clear filtered selection',
+  providerModelImportSelectedCount: '{{count}} selected',
+  providerModelImportCancel: 'Cancel import',
+  providerModelImportConfirm: 'Import {{count}}',
+  providerModelImportProviderWarning: 'Provider verification failed: {{message}}',
+  providerModelImportProviderReturnedEmpty: 'Provider API returned no models.',
+  providerModelImportCatalogError: 'Catalog unavailable: {{message}}',
+  providerModelImportCatalogUnmapped: 'No exact catalog mapping.',
+  providerModelImportCatalogStale: 'Using cached catalog data.',
+  providerModelImportContextBadge: 'Context {{value}}',
+  providerModelImportOutputBadge: 'Output {{value}}',
+  providerModelImportVisionBadge: 'Vision',
+  providerModelImportToolsBadge: 'Tools',
+  providerModelImportNoToolsBadge: 'No tools',
+  providerModelImportReasoningBadge: 'Reasoning',
   modelEndpointChatCompletions: '/v1/chat/completions (openai)',
   modelEndpointResponses: '/v1/responses (openai)',
   modelEndpointMessages: '/v1/messages (anthropic)',
@@ -676,10 +707,35 @@ describe('AgentsSettingsSection Kun diagnostics smoke', () => {
   })
 
   describe('provider settings workspace', () => {
-    const probeModelProvider = vi.fn(async () => ({
+    const probeModelProvider = vi.fn(async (): Promise<ModelProviderProbeResult> => ({
       ok: true as const,
       latencyMs: 18,
       modelIds: ['model-a', 'model-b']
+    }))
+    const fetchModelsDevCatalog = vi.fn(async () => ({
+      status: 'ok' as const,
+      providerKey: 'test-provider',
+      providerName: 'Test Provider',
+      matchMode: 'catalog' as const,
+      stale: false,
+      models: [
+        {
+          id: 'model-a',
+          name: 'Model A',
+          description: 'Vision-capable catalog metadata',
+          inputModalities: ['text', 'image'] as const,
+          outputModalities: ['text'] as const,
+          contextWindowTokens: 128_000,
+          maxOutputTokens: 16_000,
+          toolCalling: true
+        },
+        {
+          id: 'catalog-only',
+          inputModalities: ['text'] as const,
+          outputModalities: ['text'] as const,
+          toolCalling: false
+        }
+      ]
     }))
     const claudeSubscriptionStatus = vi.fn(async () => ({ loggedIn: true }))
     let mountedRenderers: ReactTestRenderer[] = []
@@ -687,11 +743,13 @@ describe('AgentsSettingsSection Kun diagnostics smoke', () => {
     beforeEach(() => {
       ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
       probeModelProvider.mockClear()
+      fetchModelsDevCatalog.mockClear()
       claudeSubscriptionStatus.mockClear()
       mountedRenderers = []
       vi.stubGlobal('window', {
         kunGui: {
           probeModelProvider,
+          fetchModelsDevCatalog,
           claudeSubscriptionStatus,
           claudeSubscriptionSdkStatus: vi.fn(async () => ({ installed: true })),
           claudeSubscriptionModels: vi.fn(async () => []),
@@ -786,7 +844,7 @@ describe('AgentsSettingsSection Kun diagnostics smoke', () => {
       expect(renderer.root.findAllByProps({ role: 'tab' }).map((tab) => tab.props.tabIndex))
         .toEqual([-1, 0, -1, -1])
       expect(activePanelText(renderer)).toContain('Provider models')
-      expect(activePanelText(renderer)).toContain('Fetch from API')
+      expect(activePanelText(renderer)).toContain('Fetch models')
       expect(activePanelText(renderer)).not.toContain('Provider connection')
 
       await clickProviderTab(renderer, 'Capabilities')
@@ -1045,6 +1103,7 @@ describe('AgentsSettingsSection Kun diagnostics smoke', () => {
         apiKey: 'sk-probe',
         endpointFormat: 'chat_completions'
       })
+      expect(fetchModelsDevCatalog).not.toHaveBeenCalled()
       expect(rendererText(renderer)).toContain('Connected · 18ms · 2 models')
       expect(rendererText(renderer)).toContain('Could not apply')
 
@@ -1063,6 +1122,92 @@ describe('AgentsSettingsSection Kun diagnostics smoke', () => {
       expect(rendererText(renderer)).toContain('URL must start with http:// or https://')
       expect(findButton(renderer, 'Test connection').props.disabled).toBe(true)
       expect(rendererText(renderer)).toContain('Could not apply')
+    })
+
+    it('fetches both model sources and persists metadata only for confirmed selections', async () => {
+      const settings = defaultModelProviderSettings()
+      const target = {
+        id: 'probe-provider',
+        name: 'Probe Provider',
+        apiKey: 'sk-probe',
+        baseUrl: 'https://api.example.com/v1',
+        endpointFormat: 'chat_completions',
+        models: [],
+        modelProfiles: {}
+      } satisfies ModelProviderProfileV1
+      const update = vi.fn()
+      const renderer = await mountProviders({
+        ...baseCtx(),
+        provider: { ...settings, providers: [...settings.providers, target] },
+        kun: { ...defaultKunRuntimeSettings(), providerId: target.id },
+        update
+      })
+
+      await act(async () => findButton(renderer, 'Models').props.onClick())
+      await act(async () => {
+        findButton(renderer, 'Fetch models').props.onClick()
+        await Promise.resolve()
+        await Promise.resolve()
+        await Promise.resolve()
+      })
+
+      expect(probeModelProvider).toHaveBeenCalledWith({
+        baseUrl: target.baseUrl,
+        apiKey: target.apiKey,
+        endpointFormat: target.endpointFormat
+      })
+      expect(fetchModelsDevCatalog).toHaveBeenCalledWith({
+        providerId: target.id,
+        baseUrl: target.baseUrl
+      })
+      expect(instanceText(renderer.root.findByProps({ role: 'dialog' }))).toContain('models.dev only')
+      expect(findButton(renderer, 'Import 2').props.disabled).toBe(false)
+
+      await act(async () => findButton(renderer, 'Import 2').props.onClick())
+
+      const updatedProviders = update.mock.calls[0]?.[0]?.provider?.providers as ModelProviderProfileV1[]
+      const updatedTarget = updatedProviders.find((item) => item.id === target.id)
+      expect(updatedTarget?.models).toEqual(['model-a', 'model-b'])
+      expect(updatedTarget?.models).not.toContain('catalog-only')
+      expect(updatedTarget?.modelProfiles['model-a']).toEqual(expect.objectContaining({
+        contextWindowTokens: 128_000,
+        maxOutputTokens: 16_000,
+        inputModalities: ['text', 'image'],
+        supportsToolCalling: true,
+        messageParts: ['text', 'image_url']
+      }))
+    })
+
+    it('keeps catalog-only candidates unchecked when the provider model request fails', async () => {
+      probeModelProvider.mockResolvedValueOnce({ ok: false, message: '401 unauthorized' })
+      const settings = defaultModelProviderSettings()
+      const target = {
+        id: 'probe-provider',
+        name: 'Probe Provider',
+        apiKey: 'sk-probe',
+        baseUrl: 'https://api.example.com/v1',
+        endpointFormat: 'chat_completions',
+        models: [],
+        modelProfiles: {}
+      } satisfies ModelProviderProfileV1
+      const renderer = await mountProviders({
+        ...baseCtx(),
+        provider: { ...settings, providers: [...settings.providers, target] },
+        kun: { ...defaultKunRuntimeSettings(), providerId: target.id }
+      })
+
+      await act(async () => findButton(renderer, 'Models').props.onClick())
+      await act(async () => {
+        findButton(renderer, 'Fetch models').props.onClick()
+        await Promise.resolve()
+        await Promise.resolve()
+        await Promise.resolve()
+      })
+
+      const dialogText = instanceText(renderer.root.findByProps({ role: 'dialog' }))
+      expect(dialogText).toContain('Provider verification failed: 401 unauthorized')
+      expect(dialogText).toContain('models.dev only')
+      expect(findButton(renderer, 'Import 0').props.disabled).toBe(true)
     })
   })
 

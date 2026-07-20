@@ -308,6 +308,35 @@ export type ModelProviderProbeRequest = {
 export type ModelProviderProbeResult =
   | { ok: true; latencyMs: number; modelIds: string[] }
   | { ok: false; message: string }
+export type ProviderModelCatalogSource = 'provider-api' | 'models-dev'
+export type ModelsDevCatalogModality = 'text' | 'audio' | 'image' | 'video' | 'pdf'
+export type ModelsDevCatalogModel = {
+  id: string
+  name?: string
+  description?: string
+  inputModalities: ModelsDevCatalogModality[]
+  outputModalities: ModelsDevCatalogModality[]
+  reasoning?: boolean
+  toolCalling?: boolean
+  contextWindowTokens?: number
+  maxOutputTokens?: number
+}
+export type ModelsDevCatalogRequest = {
+  providerId: string
+  baseUrl: string
+}
+export type ModelsDevCatalogMatchMode = 'catalog' | 'enrichment-only'
+export type ModelsDevCatalogResult =
+  | {
+      status: 'ok'
+      providerKey: string
+      providerName: string
+      matchMode: ModelsDevCatalogMatchMode
+      stale: boolean
+      models: ModelsDevCatalogModel[]
+    }
+  | { status: 'unmapped'; models: [] }
+  | { status: 'error'; message: string; models: [] }
 export type PromptOptimizationRequest = {
   text: string
 }
@@ -483,6 +512,7 @@ export type KunGuiApi = ExtensionIpcApi & {
   restartRuntime: () => Promise<void>
   fetchUpstreamModels: () => Promise<UpstreamModelsResult>
   probeModelProvider: (payload: ModelProviderProbeRequest) => Promise<ModelProviderProbeResult>
+  fetchModelsDevCatalog: (payload: ModelsDevCatalogRequest) => Promise<ModelsDevCatalogResult>
   optimizePrompt: (payload: PromptOptimizationRequest) => Promise<PromptOptimizationResult>
   getClawStatus: () => Promise<ClawRuntimeStatus>
   runClawTask: (taskId: string) => Promise<ClawRunResult>

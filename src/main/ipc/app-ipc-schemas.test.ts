@@ -5,6 +5,7 @@ import {
   clawTaskFromTextPayloadSchema,
   conversationExportPayloadSchema,
   isSafeOpenExternalUrl,
+  modelsDevCatalogPayloadSchema,
   runtimeRequestPayloadSchema,
   scheduleTaskFromTextPayloadSchema,
   settingsPatchSchema,
@@ -25,6 +26,21 @@ import {
 } from './app-ipc-schemas'
 
 describe('app-ipc-schemas', () => {
+  it('accepts only the provider identity fields needed for models.dev lookup', () => {
+    expect(modelsDevCatalogPayloadSchema.parse({
+      providerId: 'xiaomi-token-plan',
+      baseUrl: ' https://token-plan-cn.xiaomimimo.com/v1 '
+    })).toEqual({
+      providerId: 'xiaomi-token-plan',
+      baseUrl: 'https://token-plan-cn.xiaomimimo.com/v1'
+    })
+    expect(() => modelsDevCatalogPayloadSchema.parse({
+      providerId: 'xiaomi-token-plan',
+      baseUrl: 'https://token-plan-cn.xiaomimimo.com/v1',
+      apiKey: 'must-not-cross-this-boundary'
+    })).toThrow()
+  })
+
   it('normalizes runtime request paths', () => {
     const payload = runtimeRequestPayloadSchema.parse({
       path: 'v1/threads?limit=1',

@@ -1,0 +1,241 @@
+import type {
+  ModelProviderModelProfileV1,
+  ModelProviderProfileV1
+} from '@shared/app-settings'
+import type {
+  ModelsDevCatalogModel,
+  ModelsDevCatalogResult,
+  ProviderModelCatalogSource
+} from '@shared/kun-gui-api'
+import {
+  PROVIDER_MODEL_KINDS,
+  classifyProviderModelIds,
+  providerModelListEntries,
+  type ProviderModelIdGroups,
+  type ProviderModelKind
+} from './provider-model-editor'
+
+export type ProviderModelImportEntry = {
+  modelId: string
+  kind: ProviderModelKind
+  sources: ProviderModelCatalogSource[]
+  catalog?: ModelsDevCatalogModel
+  alreadyExists: boolean
+}
+
+export type ProviderModelImportResult = ProviderModelIdGroups & {
+  catalogModels: ModelsDevCatalogModel[]
+}
+
+export function providerModelImportEntryKey(
+  kind: ProviderModelKind,
+  modelId: string
+): string {
+  return `${kind}\u0001${modelId}`
+}
+
+export function buildProviderModelImportEntries(
+  provider: ModelProviderProfileV1,
+  providerModelIds: readonly string[],
+  catalogResult: ModelsDevCatalogResult
+): ProviderModelImportEntry[] {
+  const catalogModels = catalogResult.status === 'ok' ? catalogResult.models : []
+  const catalogById = new Map(
+    catalogModels.map((model) => [modelKey(model.id), model] as const)
+  )
+  const rows = new Map<string, {
+    modelId: string
+    sources: ProviderModelCatalogSource[]
+    catalog?: ModelsDevCatalogModel
+  }>()
+
+  for (const rawId of providerModelIds) {
+    const modelId = rawId.trim()
+    const key = modelKey(modelId)
+    if (!key || rows.has(key)) continue
+    const catalog = catalogById.get(key)
+    rows.set(key, {
+      modelId,
+      sources: catalog ? ['provider-api', 'models-dev'] : ['provider-api'],
+      ...(catalog ? { catalog } : {})
+    })
+  }
+
+  if (catalogResult.status === 'ok' && catalogResult.matchMode === 'catalog') {
+    for (const catalog of catalogModels) {
+      const key = modelKey(catalog.id)
+      if (!key || rows.has(key)) continue
+      rows.set(key, {
+        modelId: catalog.id.trim(),
+        sources: ['models-dev'],
+        catalog
+      })
+    }
+  }
+
+  const existing = existingKeysFor(provider)
+  return [...rows.values()].map((row) => {
+    const kind = classifyImportModel(provider, row.modelId, row.catalog)
+    return {
+      ...row,
+      kind,
+      alreadyExists: existing.has(providerModelImportEntryKey(kind, modelKey(row.modelId)))
+    }
+  })
+}
+
+export function defaultSelectedProviderModelImportKeys(
+  entries: readonly ProviderModelImportEntry[]
+): Set<string> {
+  const selected = new Set<string>()
+  for (const entry of entries) {
+    if (!entry.alreadyExists && entry.sources.includes('provider-api')) {
+      selected.add(providerModelImportEntryKey(entry.kind, entry.modelId))
+    }
+  }
+  return selected
+}
+
+export function providerModelImportResult(
+  entries: readonly ProviderModelImportEntry[],
+  selected: ReadonlySet<string>
+): ProviderModelImportResult {
+  const result: ProviderModelImportResult = {
+    chat: [],
+    image: [],
+    speech: [],
+    tts: [],
+    music: [],
+    video: [],
+    catalogModels: []
+  }
+  const catalogKeys = new Set<string>()
+  for (const entry of entries) {
+    if (!selected.has(providerModelImportEntryKey(entry.kind, entry.modelId))) continue
+    result[entry.kind].push(entry.modelId)
+    if (entry.catalog && !catalogKeys.has(modelKey(entry.catalog.id))) {
+      catalogKeys.add(modelKey(entry.catalog.id))
+      result.catalogModels.push(entry.catalog)
+    }
+  }
+  return result
+}
+
+export function mergeProviderModelIdsCaseInsensitive(
+  primary: readonly string[],
+  secondary: readonly string[]
+): string[] {
+  const seen = new Set<string>()
+  const merged: string[] = []
+  for (const rawId of [...primary, ...secondary]) {
+    const modelId = rawId.trim()
+    const key = modelKey(modelId)
+    if (!key || seen.has(key)) continue
+    seen.add(key)
+    merged.push(modelId)
+  }
+  return merged
+}
+
+export function enrichProviderModelProfiles(
+  provider: Pick<ModelProviderProfileV1, 'modelProfiles'>,
+  selectedChatModelIds: readonly string[],
+  catalogModels: readonly ModelsDevCatalogModel[]
+): Record<string, ModelProviderModelProfileV1> {
+  const catalogById = new Map(catalogModels.map((model) => [modelKey(model.id), model] as const))
+  const profileKeyById = new Map(
+    Object.keys(provider.modelProfiles).map((key) => [modelKey(key), key] as const)
+  )
+  let next = provider.modelProfiles
+
+  for (const rawModelId of selectedChatModelIds) {
+    const normalizedId = modelKey(rawModelId)
+    const catalog = catalogById.get(normalizedId)
+    if (!catalog) continue
+    const existingKey = profileKeyById.get(normalizedId)
+    if (!existingKey) {
+      if (next === provider.modelProfiles) next = { ...provider.modelProfiles }
+      const key = normalizedId
+      next[key] = modelProfileFromCatalog(catalog)
+      profileKeyById.set(normalizedId, key)
+      continue
+    }
+
+    const existing = next[existingKey]
+    const addContext = existing.contextWindowTokens === undefined && catalog.contextWindowTokens !== undefined
+    const addOutput = existing.maxOutputTokens === undefined && catalog.maxOutputTokens !== undefined
+    if (!addContext && !addOutput) continue
+    if (next === provider.modelProfiles) next = { ...provider.modelProfiles }
+    next[existingKey] = {
+      ...existing,
+      ...(addContext ? { contextWindowTokens: catalog.contextWindowTokens } : {}),
+      ...(addOutput ? { maxOutputTokens: catalog.maxOutputTokens } : {})
+    }
+  }
+
+  return next
+}
+
+export function modelProfileFromCatalog(
+  catalog: ModelsDevCatalogModel
+): ModelProviderModelProfileV1 {
+  const supportsImageInput = catalog.inputModalities.includes('image')
+  const supportsImageOutput = catalog.outputModalities.includes('image')
+  return {
+    ...(catalog.contextWindowTokens
+      ? { contextWindowTokens: catalog.contextWindowTokens }
+      : {}),
+    ...(catalog.maxOutputTokens
+      ? { maxOutputTokens: catalog.maxOutputTokens }
+      : {}),
+    inputModalities: supportsImageInput ? ['text', 'image'] : ['text'],
+    outputModalities: supportsImageOutput ? ['text', 'image'] : ['text'],
+    supportsToolCalling: catalog.toolCalling ?? true,
+    messageParts: supportsImageInput ? ['text', 'image_url'] : ['text']
+  }
+}
+
+function classifyImportModel(
+  provider: ModelProviderProfileV1,
+  modelId: string,
+  catalog?: ModelsDevCatalogModel
+): ProviderModelKind {
+  const existingKind = providerModelListEntries(provider)
+    .find((entry) => modelKey(entry.modelId) === modelKey(modelId))?.kind
+  if (existingKind) return existingKind
+
+  if (catalog) {
+    if (catalog.outputModalities.includes('video')) return 'video'
+    if (catalog.outputModalities.includes('image')) return 'image'
+    if (
+      catalog.inputModalities.includes('audio') &&
+      catalog.outputModalities.includes('text')
+    ) return 'speech'
+    if (catalog.outputModalities.includes('audio')) {
+      const heuristic = heuristicModelKind(provider, modelId)
+      return heuristic === 'music' ? 'music' : 'tts'
+    }
+  }
+
+  return heuristicModelKind(provider, modelId) ?? 'chat'
+}
+
+function heuristicModelKind(
+  provider: ModelProviderProfileV1,
+  modelId: string
+): ProviderModelKind | undefined {
+  const groups = classifyProviderModelIds(provider, [modelId])
+  return PROVIDER_MODEL_KINDS.find((kind) => groups[kind].length > 0)
+}
+
+function existingKeysFor(provider: ModelProviderProfileV1): Set<string> {
+  const existing = new Set<string>()
+  for (const { kind, modelId } of providerModelListEntries(provider)) {
+    existing.add(providerModelImportEntryKey(kind, modelKey(modelId)))
+  }
+  return existing
+}
+
+function modelKey(modelId: string): string {
+  return modelId.trim().toLowerCase()
+}

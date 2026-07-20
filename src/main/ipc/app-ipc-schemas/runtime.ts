@@ -45,6 +45,13 @@ export const providerProbePayloadSchema = z
   })
   .strict()
 
+export const modelsDevCatalogPayloadSchema = z
+  .object({
+    providerId: trimmedString(128),
+    baseUrl: trimmedString(MAX_URL_LENGTH)
+  })
+  .strict()
+
 export const promptOptimizationPayloadSchema = z
   .object({
     text: trimmedString(100_000)

@@ -62,6 +62,7 @@ import {
   logErrorPayloadSchema,
   notificationPayloadSchema,
   openEditorPathPayloadSchema,
+  modelsDevCatalogPayloadSchema,
   providerProbePayloadSchema,
   projectDesignMdLintPayloadSchema,
   promptOptimizationPayloadSchema,
@@ -147,6 +148,7 @@ import {
 } from '../agent-sdk-installer'
 import type { JsonSettingsStore } from '../settings-store'
 import { probeModelProvider } from '../provider-connection'
+import { fetchModelsDevCatalog } from '../models-dev-catalog'
 import type { ClawRuntime } from '../claw-runtime'
 import type { ScheduleRuntime } from '../schedule-runtime'
 import { reloadRenderer } from '../dev-renderer-cache'
@@ -861,6 +863,15 @@ export function registerAppIpcHandlers(options: RegisterAppIpcHandlersOptions): 
   ipcMain.handle('provider:probe', async (_, payload: unknown) => {
     const request = parseIpcPayload('provider:probe', providerProbePayloadSchema, payload)
     return probeModelProvider(request, await store.load())
+  })
+
+  ipcMain.handle('provider:models-dev-catalog', async (_, payload: unknown) => {
+    const request = parseIpcPayload(
+      'provider:models-dev-catalog',
+      modelsDevCatalogPayloadSchema,
+      payload
+    )
+    return fetchModelsDevCatalog(request, await store.load())
   })
 
   ipcMain.handle('prompt:optimize', async (_, payload: unknown) => {
