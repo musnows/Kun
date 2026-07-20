@@ -769,6 +769,7 @@ export function ProviderModelsManager({
                   <AdvancedSettingsDisclosure
                     title={t('providerModelAdvancedTitle')}
                     description={t('providerModelAdvancedDesc')}
+                    contentClassName="max-h-[min(48dvh,480px)] overflow-y-auto overscroll-contain [scrollbar-gutter:stable]"
                   >
                     <div className="grid gap-3 px-3 py-3">
                       <div className="grid gap-1.5">

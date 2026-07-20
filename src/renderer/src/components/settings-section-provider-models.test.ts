@@ -142,6 +142,12 @@ describe('ProviderModelsManager', () => {
     const advanced = dialog.findByType('details')
     expect(advanced.props.open).toBeUndefined()
     expect(advanced.findAll((node) => node.children.includes('Advanced model settings'))).not.toHaveLength(0)
+    const advancedScrollRegion = advanced.find((node) =>
+      typeof node.props.className === 'string'
+      && node.props.className.includes('max-h-[min(48dvh,480px)]')
+    )
+    expect(advancedScrollRegion.props.className).toContain('overflow-y-auto')
+    expect(advancedScrollRegion.props.className).toContain('overscroll-contain')
     expect(advanced.findByProps({ placeholder: 'e.g. 128k' })).toBeDefined()
     expect(dialog.findAllByProps({ role: 'switch' }).map((toggle) => toggle.props['aria-label']))
       .toEqual(['Image input', 'Tool calling', 'Reasoning'])
