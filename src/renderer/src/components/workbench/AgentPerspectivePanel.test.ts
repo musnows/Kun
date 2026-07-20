@@ -39,9 +39,24 @@ describe('AgentPerspectivePanel', () => {
             redactedNames: ['authorization']
           },
           body: {
-            text: '{"model":"deepseek-chat","messages":[]}',
-            capturedBytes: 43,
-            originalBytes: 43,
+            text: JSON.stringify({
+              model: 'deepseek-chat',
+              messages: [
+                { role: 'system', content: 'You are a coding assistant.' },
+                { role: 'user', content: 'Inspect this request' }
+              ],
+              tools: [{
+                type: 'function',
+                function: {
+                  name: 'read_file',
+                  description: 'Read a file',
+                  parameters: { type: 'object' }
+                }
+              }],
+              stream: true
+            }),
+            capturedBytes: 320,
+            originalBytes: 320,
             truncated: false
           }
         },
@@ -74,7 +89,7 @@ describe('AgentPerspectivePanel', () => {
     useTraces.mockReturnValue(state)
   })
 
-  it('exposes accessible detail tabs and renders already-redacted request data', () => {
+  it('renders the semantic inspector and preserves access to already-redacted raw data', () => {
     let renderer!: ReactTestRenderer
     act(() => {
       renderer = create(createElement(AgentPerspectivePanel, {
@@ -85,9 +100,16 @@ describe('AgentPerspectivePanel', () => {
     })
 
     const tabs = renderer.root.findAll((node) => node.props.role === 'tab')
-    expect(tabs.map(textContent)).toEqual(['Overview', 'Request', 'Response', 'Decoded'])
+    expect(tabs.map(textContent)).toEqual([
+      'Semantic request', 'Raw request', 'Response', 'Stream events', 'Timing'
+    ])
     expect(tabs[0]?.props['aria-selected']).toBe(true)
     expect(renderer.root.findByProps({ 'aria-label': 'Refresh requests' })).toBeDefined()
+    expect(textContent(renderer.root)).toContain('LLM request')
+    expect(textContent(renderer.root)).toContain('System prompt')
+    expect(textContent(renderer.root)).toContain('Tool definitions')
+    expect(textContent(renderer.root)).toContain('Inspect this request')
+    expect(textContent(renderer.root)).toContain('read_file')
 
     act(() => tabs[1]?.props.onClick())
     const requestBody = renderer.root.findByProps({ 'aria-label': 'Request body' })
