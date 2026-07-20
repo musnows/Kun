@@ -59,6 +59,21 @@ describe('ModelRequestTraceStore', () => {
       'utf8'
     )).toContain('other')
   })
+
+  it('round-trips optional tool provenance while accepting legacy records without it', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'kun-model-traces-'))
+    cleanup.push(dataDir)
+    const store = new ModelRequestTraceStore(dataDir)
+    const exact = record('trace-2', '2026-01-01T00:00:02.000Z')
+    exact.toolCatalog = [{ name: 'read', providerKind: 'built-in', providerId: 'builtin' }]
+    await store.append(record('trace-1', '2026-01-01T00:00:01.000Z'))
+    await store.append(exact)
+
+    const page = await store.list('thread-1')
+
+    expect(page.records[0].toolCatalog).toEqual(exact.toolCatalog)
+    expect(page.records[1].toolCatalog).toBeUndefined()
+  })
 })
 
 function record(

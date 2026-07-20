@@ -77,6 +77,7 @@ describe('Agent Perspective semantic projection', () => {
       messages: [{ role: 'user', content: 'Read package.json' }],
       tools: []
     }, {
+      toolCatalog: [{ name: 'read_file', providerKind: 'mcp', providerId: 'mcp:filesystem' }],
       decoded: {
         text: '', reasoning: '',
         toolCalls: [{ callId: 'call-1', toolName: 'read_file', arguments: { path: 'package.json' } }]
@@ -105,6 +106,11 @@ describe('Agent Perspective semantic projection', () => {
     expect(events[1]).toMatchObject({
       kind: 'tool_call',
       toolName: 'read_file',
+      provenance: {
+        source: 'mcp',
+        providerName: 'filesystem',
+        inferred: false
+      },
       result: { role: 'tool', text: '{"name":"kun"}' }
     })
     expect(events[3]).toMatchObject({ kind: 'title_generation', title: 'Hello' })

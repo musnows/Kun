@@ -181,7 +181,12 @@ export class CompatModelClient implements ModelClient {
       threadId: request.threadId,
       turnId: request.turnId,
       provider: this.provider,
-      model: request.model?.trim() || this.config.model
+      model: request.model?.trim() || this.config.model,
+      toolCatalog: request.tools.map((tool) => ({
+        name: tool.name,
+        ...(tool.providerKind ? { providerKind: tool.providerKind } : {}),
+        ...(tool.providerId ? { providerId: tool.providerId } : {})
+      }))
     })) ?? null
     if (!round) {
       yield* this.streamInner(request, null)

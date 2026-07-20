@@ -1,5 +1,6 @@
 import type { TurnItem } from '../contracts/items.js'
 import type { UsageSnapshot } from '../contracts/usage.js'
+import type { ToolProviderKind } from './tool-host.js'
 
 /**
  * One streaming chunk from a model response. The loop consumes these
@@ -116,6 +117,10 @@ export type ModelToolSpec = {
   description: string
   inputSchema: Record<string, unknown>
   toolKind?: 'tool_call' | 'command_execution' | 'file_change'
+  /** Local execution provenance. Provider serializers must not forward it. */
+  providerKind?: ToolProviderKind
+  /** Stable local provider id (for example `builtin` or `mcp:filesystem`). */
+  providerId?: string
 }
 
 /**

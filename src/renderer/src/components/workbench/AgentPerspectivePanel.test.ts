@@ -52,6 +52,20 @@ describe('AgentPerspectivePanel', () => {
                   description: 'Read a file',
                   parameters: { type: 'object' }
                 }
+              }, {
+                type: 'function',
+                function: {
+                  name: 'schedule_create',
+                  description: 'Create a scheduled task',
+                  parameters: { type: 'object', properties: { title: { type: 'string' } } }
+                }
+              }, {
+                type: 'function',
+                function: {
+                  name: 'slides_export',
+                  description: 'Export a slide deck',
+                  parameters: { type: 'object' }
+                }
               }],
               stream: true
             }),
@@ -60,6 +74,11 @@ describe('AgentPerspectivePanel', () => {
             truncated: false
           }
         },
+        toolCatalog: [
+          { name: 'read_file', providerKind: 'built-in', providerId: 'builtin' },
+          { name: 'schedule_create', providerKind: 'mcp', providerId: 'mcp:gui_schedule' },
+          { name: 'slides_export', providerKind: 'extension', providerId: 'extension:slides' }
+        ],
         response: {
           status: 200,
           statusText: 'OK',
@@ -157,5 +176,70 @@ describe('AgentPerspectivePanel', () => {
       expect(scrollable.props.tabIndex).toBe(0)
       expect(scrollable.props['aria-label']).toBeTruthy()
     }
+  })
+
+  it('groups tool definitions by source with nested, initially bounded disclosure', () => {
+    let renderer!: ReactTestRenderer
+    act(() => {
+      renderer = create(createElement(AgentPerspectivePanel, {
+        threadId: 'thread-1',
+        active: true,
+        threadRunning: false
+      }))
+    })
+
+    const kunSummary = renderer.root.findByProps({ 'aria-label': 'Toggle Kun system tools' })
+    const mcpSummary = renderer.root.findByProps({ 'aria-label': 'Toggle MCP tools' })
+    const extensionSummary = renderer.root.findByProps({ 'aria-label': 'Toggle Extensions tools' })
+    expect(kunSummary.parent?.props.open).toBe(true)
+    expect(mcpSummary.parent?.props.open).toBe(false)
+    expect(extensionSummary.parent?.props.open).toBe(false)
+
+    const coreSummary = renderer.root.findByProps({ 'aria-label': 'Toggle Common core group' })
+    expect(coreSummary.parent?.props.open).toBe(true)
+    const toolSummary = renderer.root.findByProps({ 'aria-label': 'Toggle read_file details' })
+    expect(toolSummary.parent?.props.open).toBe(false)
+    const schema = renderer.root.findByProps({ 'aria-label': 'read_file input schema' })
+    expect(schema.props.className).toContain('max-h-40')
+    expect(schema.props.className).toContain('overflow-auto')
+    expect(textContent(renderer.root)).toContain('MCP Server · gui_schedule')
+    expect(textContent(renderer.root)).toContain('Kun managed')
+
+    const mainScroller = renderer.root.findAllByType('div').find((node) =>
+      String(node.props.className).includes('min-h-0 flex-1 overflow-auto p-3')
+    )
+    expect(mainScroller).toBeDefined()
+  })
+
+  it('reuses exact provenance in the tool-call timeline, hero, and detail', () => {
+    const state = useTraces()
+    const record = {
+      ...state.records[0],
+      decoded: {
+        text: '',
+        reasoning: '',
+        toolCalls: [{
+          callId: 'call-schedule',
+          toolName: 'schedule_create',
+          arguments: { title: 'Daily report' }
+        }]
+      }
+    }
+    useTraces.mockReturnValue({ ...state, records: [record], selected: record })
+
+    let renderer!: ReactTestRenderer
+    act(() => {
+      renderer = create(createElement(AgentPerspectivePanel, {
+        threadId: 'thread-1',
+        active: true,
+        threadRunning: false
+      }))
+    })
+
+    const rendered = textContent(renderer.root)
+    expect(rendered).toContain('Tool source')
+    expect(rendered).toContain('MCP · gui_schedule')
+    expect(rendered).toContain('Kun managed')
+    expect(rendered).toContain('call-schedule')
   })
 })

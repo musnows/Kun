@@ -8,6 +8,10 @@ const MAX_TRACE_PAGE_BODY_CHARS = 64 * 1024 * 1024
 const MAX_TRACE_TEXT_CHARS = 8 * 1024 * 1024
 const MAX_TRACE_HEADERS = 256
 const MAX_TRACE_HEADER_CHARS = 64 * 1024
+const MAX_TRACE_TOOL_CATALOG_ENTRIES = 512
+const MAX_TRACE_TOOL_NAME_CHARS = 256
+const MAX_TRACE_PROVIDER_KIND_CHARS = 64
+const MAX_TRACE_PROVIDER_ID_CHARS = 256
 
 export type ModelRequestTraceBody = {
   text: string
@@ -19,6 +23,12 @@ export type ModelRequestTraceBody = {
 export type ModelRequestTraceHeaders = {
   values: Record<string, string>
   redactedNames: string[]
+}
+
+export type ModelRequestTraceToolCatalogEntry = {
+  name: string
+  providerKind?: string
+  providerId?: string
 }
 
 export type ModelRequestTraceRecord = {
@@ -45,6 +55,7 @@ export type ModelRequestTraceRecord = {
     headers: ModelRequestTraceHeaders
     body: ModelRequestTraceBody
   }
+  toolCatalog?: ModelRequestTraceToolCatalogEntry[]
   response?: {
     status: number
     statusText: string
@@ -161,9 +172,35 @@ function parseRecord(value: unknown, label: string): ModelRequestTraceRecord {
   if (input.captureWarnings !== undefined) {
     parsed.captureWarnings = stringArray(input.captureWarnings, `${label}.captureWarnings`, 16, 1_024)
   }
+  if (input.toolCatalog !== undefined) {
+    parsed.toolCatalog = parseToolCatalog(input.toolCatalog)
+  }
   if (input.response !== undefined) parsed.response = parseResponse(input.response, `${label}.response`)
   if (input.decoded !== undefined) parsed.decoded = parseDecoded(input.decoded, `${label}.decoded`)
   return parsed
+}
+
+function parseToolCatalog(value: unknown): ModelRequestTraceToolCatalogEntry[] {
+  if (!Array.isArray(value)) return []
+  const tools: ModelRequestTraceToolCatalogEntry[] = []
+  for (const entry of value.slice(0, MAX_TRACE_TOOL_CATALOG_ENTRIES)) {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue
+    const input = entry as Record<string, unknown>
+    const name = optionalBoundedText(input.name, MAX_TRACE_TOOL_NAME_CHARS)
+    if (!name) continue
+    const providerKind = optionalBoundedText(input.providerKind, MAX_TRACE_PROVIDER_KIND_CHARS)
+    const providerId = optionalBoundedText(input.providerId, MAX_TRACE_PROVIDER_ID_CHARS)
+    tools.push({
+      name,
+      ...(providerKind ? { providerKind } : {}),
+      ...(providerId ? { providerId } : {})
+    })
+  }
+  return tools
+}
+
+function optionalBoundedText(value: unknown, max: number): string | undefined {
+  return typeof value === 'string' && value.length > 0 && value.length <= max ? value : undefined
 }
 
 function parseResponse(value: unknown, label: string): NonNullable<ModelRequestTraceRecord['response']> {

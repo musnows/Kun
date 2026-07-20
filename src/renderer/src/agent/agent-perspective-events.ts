@@ -1,4 +1,8 @@
 import type { ModelRequestTraceRecord } from './model-request-traces'
+import {
+  resolveToolProvenance,
+  type ToolProvenance
+} from './agent-tool-provenance'
 
 export type AgentPerspectiveEventKind = 'llm_request' | 'tool_call' | 'title_generation'
 
@@ -20,6 +24,7 @@ export type SemanticToolDefinition = {
   name: string
   description: string
   inputSchema?: Record<string, unknown>
+  provenance: ToolProvenance
 }
 
 export type SemanticMessage = {
@@ -72,6 +77,7 @@ export type AgentToolCallEvent = {
   callId: string
   toolName: string
   arguments: Record<string, unknown>
+  provenance: ToolProvenance
   result?: SemanticMessage
 }
 
@@ -124,6 +130,7 @@ export function projectAgentPerspectiveEvents(
         callId: call.callId,
         toolName: call.toolName,
         arguments: call.arguments,
+        provenance: resolveToolProvenance(call.toolName, record.toolCatalog),
         ...(toolResults.get(call.callId) ? { result: toolResults.get(call.callId) } : {})
       })
     }
@@ -157,7 +164,7 @@ export function parseSemanticRequest(record: ModelRequestTraceRecord): SemanticR
     model: stringValue(body.model) || record.model,
     prompts,
     skills: parseSkills(prompts),
-    tools: parseToolDefinitions(body.tools),
+    tools: parseToolDefinitions(body.tools, record.toolCatalog),
     messages,
     parameters: Object.entries(body)
       .filter(([key]) => !STRUCTURAL_KEYS.has(key))
@@ -277,7 +284,10 @@ function collectToolResults(requests: readonly SemanticRequest[]): Map<string, S
   return results
 }
 
-function parseToolDefinitions(value: unknown): SemanticToolDefinition[] {
+function parseToolDefinitions(
+  value: unknown,
+  catalog: ModelRequestTraceRecord['toolCatalog']
+): SemanticToolDefinition[] {
   if (!Array.isArray(value)) return []
   return value.flatMap((entry) => {
     if (!isRecord(entry)) return []
@@ -288,6 +298,7 @@ function parseToolDefinitions(value: unknown): SemanticToolDefinition[] {
     return [{
       name,
       description: stringValue(nested.description),
+      provenance: resolveToolProvenance(name, catalog),
       ...(isRecord(schema) ? { inputSchema: schema } : {})
     }]
   })

@@ -109,4 +109,21 @@ describe('model request trace renderer contract', () => {
       }
     }]))).toThrow('bounded string')
   })
+
+  it('parses bounded tool provenance and ignores malformed catalog entries', () => {
+    const parsed = parseModelRequestTracePage(page([{
+      ...record(),
+      toolCatalog: [
+        { name: 'read', providerKind: 'built-in', providerId: 'builtin' },
+        { name: '', providerKind: 'mcp' },
+        { nope: true },
+        { name: 'x'.repeat(257), providerKind: 'extension' }
+      ]
+    }]))
+
+    expect(parsed.records[0].toolCatalog).toEqual([
+      { name: 'read', providerKind: 'built-in', providerId: 'builtin' }
+    ])
+    expect(parseModelRequestTracePage(page()).records[0].toolCatalog).toBeUndefined()
+  })
 })

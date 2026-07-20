@@ -1,6 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { ModelRequest, ModelStreamChunk } from '../../ports/model-client.js'
-import { MODEL_REQUEST_TRACE_REDACTED_VALUE } from '../../contracts/model-request-trace.js'
+import {
+  MAX_MODEL_REQUEST_TRACE_PROVIDER_ID_LENGTH,
+  MAX_MODEL_REQUEST_TRACE_PROVIDER_KIND_LENGTH,
+  MAX_MODEL_REQUEST_TRACE_TOOL_CATALOG_ENTRIES,
+  MAX_MODEL_REQUEST_TRACE_TOOL_NAME_LENGTH,
+  MODEL_REQUEST_TRACE_REDACTED_VALUE
+} from '../../contracts/model-request-trace.js'
 import { LlmDebugRecorder, type LlmDebugSink } from '../../services/llm-debug-recorder.js'
 import { CompatModelClient } from './compat-model-client.js'
 
@@ -64,12 +70,27 @@ describe('CompatModelClient request observability', () => {
       }) as unknown as typeof fetch
     })
 
-    const chunks = await drain(client.stream(request()))
+    const chunks = await drain(client.stream(request({
+      tools: [{
+        name: 'read',
+        description: 'Read a file',
+        inputSchema: { type: 'object' },
+        providerKind: 'built-in',
+        providerId: 'builtin'
+      }]
+    })))
     const page = await recorder.listThread('thread-observe')
     const trace = page.records[0]
 
     expect(trace.request.body.text).toBe(transmittedBody)
     expect(JSON.parse(trace.request.body.text)).toHaveProperty('messages')
+    expect(trace.toolCatalog).toEqual([{
+      name: 'read',
+      providerKind: 'built-in',
+      providerId: 'builtin'
+    }])
+    expect(trace.request.body.text).not.toContain('providerKind')
+    expect(trace.request.body.text).not.toContain('providerId')
     expect(transmittedAuthorization).toBe('Bearer sk-provider-secret')
     expect(trace.request.headers.values.Authorization).toBe(MODEL_REQUEST_TRACE_REDACTED_VALUE)
     expect(trace.request.headers.values['x-project']).toBe('visible-project')
@@ -109,7 +130,15 @@ describe('CompatModelClient request observability', () => {
       }) as unknown as typeof fetch
     })
 
-    await drain(client.stream(request()))
+    await drain(client.stream(request({
+      tools: [{
+        name: 'mcp_files_read',
+        description: 'Read through MCP',
+        inputSchema: { type: 'object' },
+        providerKind: 'mcp',
+        providerId: 'mcp:files'
+      }]
+    })))
     const traces = (await recorder.listThread('thread-observe')).records
 
     expect(traces).toHaveLength(2)
@@ -120,6 +149,7 @@ describe('CompatModelClient request observability', () => {
     expect(traces.find((trace) => trace.attempt === 1)?.response?.body?.text).toBe('bad gateway')
     expect(traces.find((trace) => trace.attempt === 1)?.response?.status).toBe(502)
     expect(traces.find((trace) => trace.attempt === 2)?.decoded?.text).toBe('retried')
+    expect(traces[0].toolCatalog).toEqual(traces[1].toolCatalog)
   })
 
   it('records the stream-options compatibility fallback with its changed exact body', async () => {
@@ -196,5 +226,38 @@ describe('CompatModelClient request observability', () => {
     expect(chunks).toContainEqual({ kind: 'assistant_text_delta', text: 'still works' })
     expect(warning).toHaveBeenCalledWith(expect.stringContaining('provider request continues unchanged'))
     warning.mockRestore()
+  })
+
+  it('bounds the local tool catalog before retaining it', () => {
+    const recorder = new LlmDebugRecorder()
+    const round = recorder.start({
+      threadId: 'thread-observe',
+      turnId: 'turn-observe',
+      provider: 'compat',
+      model: 'test-model',
+      toolCatalog: Array.from({ length: MAX_MODEL_REQUEST_TRACE_TOOL_CATALOG_ENTRIES + 20 }, (_, index) => ({
+        name: `${index}-${'n'.repeat(MAX_MODEL_REQUEST_TRACE_TOOL_NAME_LENGTH + 20)}`,
+        providerKind: 'k'.repeat(MAX_MODEL_REQUEST_TRACE_PROVIDER_KIND_LENGTH + 20),
+        providerId: 'p'.repeat(MAX_MODEL_REQUEST_TRACE_PROVIDER_ID_LENGTH + 20)
+      }))
+    })
+
+    const trace = recorder.beginHttpAttempt(round, {
+      endpointFormat: 'chat_completions',
+      attempt: 1,
+      reason: 'initial',
+      url: 'https://provider.example/v1/chat/completions',
+      headers: {},
+      bodyText: '{}'
+    })
+
+    expect(trace.toolCatalog).toHaveLength(MAX_MODEL_REQUEST_TRACE_TOOL_CATALOG_ENTRIES)
+    expect(trace.toolCatalog?.[0].name.length).toBe(MAX_MODEL_REQUEST_TRACE_TOOL_NAME_LENGTH)
+    expect(trace.toolCatalog?.[0].providerKind?.length).toBe(
+      MAX_MODEL_REQUEST_TRACE_PROVIDER_KIND_LENGTH
+    )
+    expect(trace.toolCatalog?.[0].providerId?.length).toBe(
+      MAX_MODEL_REQUEST_TRACE_PROVIDER_ID_LENGTH
+    )
   })
 })

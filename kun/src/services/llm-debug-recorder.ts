@@ -1,11 +1,16 @@
 import { randomUUID } from 'node:crypto'
 import type { UsageSnapshot } from '../contracts/usage.js'
 import {
+  MAX_MODEL_REQUEST_TRACE_PROVIDER_ID_LENGTH,
+  MAX_MODEL_REQUEST_TRACE_PROVIDER_KIND_LENGTH,
+  MAX_MODEL_REQUEST_TRACE_TOOL_CATALOG_ENTRIES,
+  MAX_MODEL_REQUEST_TRACE_TOOL_NAME_LENGTH,
   MODEL_REQUEST_TRACE_SCHEMA_VERSION,
   type ModelRequestTraceDecoded,
   type ModelRequestTraceLimits,
   type ModelRequestTracePage,
-  type ModelRequestTraceRecord
+  type ModelRequestTraceRecord,
+  type ModelRequestTraceToolCatalogEntry
 } from '../contracts/model-request-trace.js'
 import type { ModelStreamChunk } from '../ports/model-client.js'
 import {
@@ -64,6 +69,7 @@ export type LlmDebugRoundMeta = {
   turnId: string
   provider: string
   model: string
+  toolCatalog?: readonly ModelRequestTraceToolCatalogEntry[]
 }
 
 export type LlmHttpAttemptReason = ModelRequestTraceRecord['attemptReason']
@@ -113,6 +119,7 @@ export type LlmDebugRecorderOptions = Partial<LlmDebugRecorderLimits> & {
 type CaptureState = {
   requestBytes: number
   outputBytes: number
+  toolCatalog: ModelRequestTraceToolCatalogEntry[]
   text: StringBlockAccumulator
   reasoning: StringBlockAccumulator
   pendingCaptures: Promise<void>[]
@@ -172,7 +179,7 @@ export class LlmDebugRecorder implements LlmDebugSink {
       output: { text: '', reasoning: '', toolCalls: [] },
       exchanges: []
     }
-    this.states.set(round, createCaptureState())
+    this.states.set(round, createCaptureState(meta.toolCatalog))
     const active = this.activeByThread.get(meta.threadId) ?? new Set<LlmDebugRound>()
     active.add(round)
     this.activeByThread.set(meta.threadId, active)
@@ -197,6 +204,9 @@ export class LlmDebugRecorder implements LlmDebugSink {
       attemptReason: meta.reason,
       status: 'pending',
       startedAt: new Date().toISOString(),
+      ...(state.toolCatalog.length
+        ? { toolCatalog: state.toolCatalog.map((tool) => ({ ...tool })) }
+        : {}),
       request: {
         method: 'POST',
         url: sanitizedUrl.value,
@@ -485,14 +495,47 @@ export class LlmDebugRecorder implements LlmDebugSink {
   }
 }
 
-function createCaptureState(): CaptureState {
+function createCaptureState(
+  toolCatalog?: readonly ModelRequestTraceToolCatalogEntry[]
+): CaptureState {
   return {
     requestBytes: 0,
     outputBytes: 0,
+    toolCatalog: normalizeTraceToolCatalog(toolCatalog),
     text: { blocks: [], parts: [] },
     reasoning: { blocks: [], parts: [] },
     pendingCaptures: []
   }
+}
+
+function normalizeTraceToolCatalog(
+  input: readonly ModelRequestTraceToolCatalogEntry[] | undefined
+): ModelRequestTraceToolCatalogEntry[] {
+  if (!input?.length) return []
+  const out: ModelRequestTraceToolCatalogEntry[] = []
+  for (const entry of input.slice(0, MAX_MODEL_REQUEST_TRACE_TOOL_CATALOG_ENTRIES)) {
+    const name = boundedCatalogValue(entry.name, MAX_MODEL_REQUEST_TRACE_TOOL_NAME_LENGTH)
+    if (!name) continue
+    const providerKind = boundedCatalogValue(
+      entry.providerKind,
+      MAX_MODEL_REQUEST_TRACE_PROVIDER_KIND_LENGTH
+    )
+    const providerId = boundedCatalogValue(
+      entry.providerId,
+      MAX_MODEL_REQUEST_TRACE_PROVIDER_ID_LENGTH
+    )
+    out.push({
+      name,
+      ...(providerKind ? { providerKind } : {}),
+      ...(providerId ? { providerId } : {})
+    })
+  }
+  return out
+}
+
+function boundedCatalogValue(value: string | undefined, maxLength: number): string | undefined {
+  const normalized = value?.trim()
+  return normalized ? normalized.slice(0, maxLength) : undefined
 }
 
 function appendStringBlock(accumulator: StringBlockAccumulator, value: string): void {

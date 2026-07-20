@@ -15,16 +15,28 @@ import {
   RefreshCw,
   ScanSearch,
   Search,
-  Sparkles
+  Sparkles,
+  Puzzle
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import type { TFunction } from 'i18next'
 import {
   projectAgentPerspectiveEvents,
   usageNumber,
   type AgentPerspectiveEvent,
   type AgentPerspectiveEventKind,
-  type SemanticRequest
+  type SemanticRequest,
+  type SemanticToolDefinition
 } from '../../agent/agent-perspective-events'
+import {
+  groupToolsByProvenance,
+  type ToolProvenance,
+  type ToolProvenanceCategory,
+  type ToolProvenanceGroup,
+  type ToolProvenanceManagement,
+  type ToolProvenanceSource,
+  type ToolProvenanceSubgroup
+} from '../../agent/agent-tool-provenance'
 import type {
   ModelRequestTraceBody,
   ModelRequestTraceHeaders,
@@ -300,6 +312,11 @@ function TimelineItem({
         <span className="mt-0.5 block truncate text-[9px] text-ds-muted" title={eventSubtitle(event)}>
           {eventSubtitle(event)}
         </span>
+        {event.kind === 'tool_call' ? (
+          <span className="mt-1 flex min-w-0 flex-wrap gap-1">
+            <ToolProvenanceBadges provenance={event.provenance} compact />
+          </span>
+        ) : null}
         <span className="mt-1 flex items-center gap-1 text-[8px] text-ds-faint">
           <Clock3 className="h-2.5 w-2.5" aria-hidden />
           {formatTimestamp(event.startedAt)}
@@ -318,6 +335,8 @@ function EventHero({ event }: { event: AgentPerspectiveEvent }): ReactElement {
   const usage = record.decoded?.usage
   const totalTokens = usageNumber(usage, 'totalTokens')
   const cacheHitRate = usageNumber(usage, 'cacheHitRate')
+  const semantic = event.kind === 'tool_call' ? null : event.semantic
+  const toolGroups = semantic ? groupToolsByProvenance(semantic.tools) : []
   return (
     <section className="shrink-0 border-b border-ds-border-muted px-3 py-2.5">
       <div className="flex items-center gap-2">
@@ -339,6 +358,16 @@ function EventHero({ event }: { event: AgentPerspectiveEvent }): ReactElement {
       <div className="mt-2 flex flex-wrap gap-1.5 text-[8px]">
         <MetaChip>{record.model}</MetaChip>
         <MetaChip>{record.provider}</MetaChip>
+        {event.kind === 'tool_call' ? (
+          <ToolProvenanceBadges provenance={event.provenance} />
+        ) : semantic?.tools.length ? (
+          <MetaChip>
+            {t('agentPerspectiveToolSourceSummary', {
+              groups: toolGroups.length,
+              tools: semantic.tools.length
+            })}
+          </MetaChip>
+        ) : null}
         {totalTokens !== undefined ? <MetaChip>{t('agentPerspectiveTokens', { count: totalTokens })}</MetaChip> : null}
         {cacheHitRate !== undefined ? <MetaChip>{t('agentPerspectiveCacheHit', { rate: Math.round(cacheHitRate * 100) })}</MetaChip> : null}
         <MetaChip>{record.endpointFormat}</MetaChip>
@@ -421,24 +450,11 @@ function SemanticRequestDetail({
         title={t('agentPerspectiveToolDefinitions')}
         count={semantic.tools.length}
         icon={<Braces className="h-3 w-3" />}
+        open
       >
-        {semantic.tools.length ? semantic.tools.map((tool) => (
-          <article key={tool.name} className="border-b border-ds-border-muted px-2.5 py-2 last:border-b-0">
-            <div className="flex items-center justify-between gap-2">
-              <code className="truncate text-[10px] font-semibold text-cyan-700 dark:text-cyan-300">{tool.name}</code>
-              {tool.inputSchema ? <CopyButton value={JSON.stringify(tool.inputSchema, null, 2)} /> : null}
-            </div>
-            {tool.description ? <p className="mt-1 text-[9px] leading-4 text-ds-muted">{tool.description}</p> : null}
-            {tool.inputSchema ? (
-              <ScrollablePre
-                ariaLabel={`${tool.name} ${t('agentPerspectiveToolDefinitions')}`}
-                className="mt-1.5 max-h-32 whitespace-pre-wrap rounded-md bg-ds-surface-subtle p-2 font-mono text-[8px] leading-3 text-ds-muted"
-              >
-                {JSON.stringify(tool.inputSchema, null, 2)}
-              </ScrollablePre>
-            ) : null}
-          </article>
-        )) : <SectionEmpty text={t('agentPerspectiveNoTools')} />}
+        {semantic.tools.length
+          ? <ToolDefinitionGroups tools={semantic.tools} />
+          : <SectionEmpty text={t('agentPerspectiveNoTools')} />}
       </SemanticSection>
 
       <SemanticSection
@@ -499,6 +515,10 @@ function ToolCallDetail({ event }: { event: Extract<AgentPerspectiveEvent, { kin
           <dd className="truncate font-mono">{event.callId}</dd>
           <dt className="text-ds-faint">{t('agentPerspectiveParentRequest')}</dt>
           <dd className="truncate font-mono">{event.record.id}</dd>
+          <dt className="text-ds-faint">{t('agentPerspectiveToolSource')}</dt>
+          <dd className="flex min-w-0 flex-wrap gap-1">
+            <ToolProvenanceBadges provenance={event.provenance} />
+          </dd>
         </dl>
       </div>
       <JsonCard title={t('agentPerspectiveToolArguments')} value={event.arguments} />
@@ -514,6 +534,180 @@ function ToolCallDetail({ event }: { event: Extract<AgentPerspectiveEvent, { kin
         </section>
       ) : <Notice text={t('agentPerspectiveToolResultPending')} />}
     </div>
+  )
+}
+
+function ToolDefinitionGroups({ tools }: { tools: readonly SemanticToolDefinition[] }): ReactElement {
+  const groups = groupToolsByProvenance(tools)
+  return (
+    <div className="space-y-2 bg-ds-surface-subtle/25 p-2">
+      {groups.map((group, index) => (
+        <ToolSourceDisclosure key={group.source} group={group} initiallyOpen={index === 0} />
+      ))}
+    </div>
+  )
+}
+
+function ToolSourceDisclosure({
+  group,
+  initiallyOpen
+}: {
+  group: ToolProvenanceGroup<SemanticToolDefinition>
+  initiallyOpen: boolean
+}): ReactElement {
+  const { t } = useTranslation('common')
+  const [expanded, setExpanded] = useState(initiallyOpen)
+  const Icon = sourceIcon(group.source)
+  const label = sourceLabel(t, group.source)
+  return (
+    <details
+      open={expanded}
+      onToggle={(event) => setExpanded(event.currentTarget.open)}
+      className="group/source overflow-hidden rounded-lg border border-ds-border-muted bg-ds-card"
+    >
+      <summary
+        aria-label={t('agentPerspectiveExpandToolSource', { source: label })}
+        className="flex cursor-pointer list-none items-center gap-2 px-2.5 py-2 text-[9px] font-semibold hover:bg-ds-hover [&::-webkit-details-marker]:hidden"
+      >
+        <span className={sourceIconClass(group.source)}><Icon className="h-3 w-3" /></span>
+        <span>{label}</span>
+        <span className="rounded-full bg-ds-surface-subtle px-1.5 py-0.5 text-[8px] tabular-nums text-ds-faint">
+          {group.tools.length}
+        </span>
+        <ChevronDown className="ml-auto h-3 w-3 text-ds-faint transition group-open/source:rotate-180" />
+      </summary>
+      <div className="space-y-1.5 border-t border-ds-border-muted p-1.5">
+        {group.subgroups.map((subgroup, index) => (
+          <ToolProviderDisclosure
+            key={subgroup.id}
+            subgroup={subgroup}
+            initiallyOpen={index === 0}
+          />
+        ))}
+      </div>
+    </details>
+  )
+}
+
+function ToolProviderDisclosure({
+  subgroup,
+  initiallyOpen
+}: {
+  subgroup: ToolProvenanceSubgroup<SemanticToolDefinition>
+  initiallyOpen: boolean
+}): ReactElement {
+  const { t } = useTranslation('common')
+  const [expanded, setExpanded] = useState(initiallyOpen)
+  const label = subgroupLabel(t, subgroup)
+  return (
+    <details
+      open={expanded}
+      onToggle={(event) => setExpanded(event.currentTarget.open)}
+      className="group/provider overflow-hidden rounded-md border border-ds-border-muted bg-ds-surface-subtle/35"
+    >
+      <summary
+        aria-label={t('agentPerspectiveExpandToolProvider', { provider: label })}
+        className="flex cursor-pointer list-none items-center gap-1.5 px-2 py-1.5 text-[9px] hover:bg-ds-hover [&::-webkit-details-marker]:hidden"
+      >
+        <span className="min-w-0 flex-1 truncate font-medium">{label}</span>
+        {subgroup.management ? <ManagementBadge management={subgroup.management} /> : null}
+        <span className="tabular-nums text-ds-faint">{subgroup.tools.length}</span>
+        <ChevronDown className="h-3 w-3 text-ds-faint transition group-open/provider:rotate-180" />
+      </summary>
+      <div className="divide-y divide-ds-border-muted border-t border-ds-border-muted bg-ds-card">
+        {subgroup.tools.map((tool) => <ToolDefinitionDisclosure key={tool.name} tool={tool} />)}
+      </div>
+    </details>
+  )
+}
+
+function ToolDefinitionDisclosure({ tool }: { tool: SemanticToolDefinition }): ReactElement {
+  const { t } = useTranslation('common')
+  const [expanded, setExpanded] = useState(false)
+  const schema = tool.inputSchema ? JSON.stringify(tool.inputSchema, null, 2) : ''
+  const copyValue = [tool.description, schema].filter(Boolean).join('\n\n')
+  return (
+    <details
+      open={expanded}
+      onToggle={(event) => setExpanded(event.currentTarget.open)}
+      className="group/tool"
+    >
+      <summary
+        aria-label={t('agentPerspectiveExpandTool', { tool: tool.name })}
+        className="cursor-pointer list-none px-2.5 py-2 hover:bg-ds-hover [&::-webkit-details-marker]:hidden"
+      >
+        <span className="flex min-w-0 items-center gap-1.5">
+          <code className="min-w-0 flex-1 truncate text-[9px] font-semibold text-cyan-700 dark:text-cyan-300">
+            {tool.name}
+          </code>
+          <ToolProvenanceBadges provenance={tool.provenance} compact />
+          <ChevronDown className="h-3 w-3 shrink-0 text-ds-faint transition group-open/tool:rotate-180" />
+        </span>
+        <span className="mt-1 block truncate text-[8px] leading-3 text-ds-muted">
+          {tool.description || t('agentPerspectiveNoToolDescription')}
+        </span>
+      </summary>
+      <div className="border-t border-ds-border-muted bg-ds-surface-subtle/30 px-2.5 py-2">
+        <div className="flex items-start gap-2">
+          <p className="min-w-0 flex-1 whitespace-pre-wrap text-[9px] leading-4 text-ds-muted">
+            {tool.description || t('agentPerspectiveNoToolDescription')}
+          </p>
+          {copyValue ? <CopyButton value={copyValue} /> : null}
+        </div>
+        {schema ? (
+          <ScrollablePre
+            ariaLabel={t('agentPerspectiveToolSchema', { tool: tool.name })}
+            className="mt-2 max-h-40 whitespace-pre-wrap break-words rounded-md border border-ds-border-muted bg-ds-card p-2 font-mono text-[8px] leading-3 text-ds-muted"
+          >
+            {schema}
+          </ScrollablePre>
+        ) : null}
+      </div>
+    </details>
+  )
+}
+
+function ToolProvenanceBadges({
+  provenance,
+  compact = false
+}: {
+  provenance: ToolProvenance
+  compact?: boolean
+}): ReactElement {
+  const { t } = useTranslation('common')
+  const label = provenanceLabel(t, provenance)
+  return (
+    <>
+      <span
+        title={label}
+        className={`max-w-36 truncate rounded border px-1 py-0.5 font-medium ${compact ? 'text-[7px]' : 'text-[8px]'} ${sourceBadgeClass(provenance.source)}`}
+      >
+        {label}
+      </span>
+      {provenance.management ? <ManagementBadge management={provenance.management} compact={compact} /> : null}
+      {provenance.inferred ? (
+        <span className={`shrink-0 rounded bg-amber-500/10 px-1 py-0.5 text-amber-700 dark:text-amber-300 ${compact ? 'text-[7px]' : 'text-[8px]'}`}>
+          {t('agentPerspectiveHistoricalInference')}
+        </span>
+      ) : null}
+    </>
+  )
+}
+
+function ManagementBadge({
+  management,
+  compact = false
+}: {
+  management: ToolProvenanceManagement
+  compact?: boolean
+}): ReactElement {
+  const { t } = useTranslation('common')
+  return (
+    <span className={`shrink-0 rounded bg-violet-500/10 px-1 py-0.5 text-violet-700 dark:text-violet-300 ${compact ? 'text-[7px]' : 'text-[8px]'}`}>
+      {t(management === 'discovery'
+        ? 'agentPerspectiveMcpDiscovery'
+        : 'agentPerspectiveKunManaged')}
+    </span>
   )
 }
 
@@ -919,6 +1113,73 @@ function TruncationNotice(): ReactElement {
   return <Notice text={t('agentPerspectiveTruncationNotice')} warning />
 }
 
+function sourceLabel(t: TFunction, source: ToolProvenanceSource): string {
+  if (source === 'kun') return t('agentPerspectiveSourceKun')
+  if (source === 'mcp') return t('agentPerspectiveSourceMcp')
+  if (source === 'extension') return t('agentPerspectiveSourceExtension')
+  return t('agentPerspectiveSourceUnclassified')
+}
+
+function categoryLabel(t: TFunction, category: ToolProvenanceCategory): string {
+  if (category === 'kun-core') return t('agentPerspectiveKunCore')
+  if (category === 'kun-gui') return t('agentPerspectiveKunGui')
+  if (category === 'kun-runtime') return t('agentPerspectiveKunRuntime')
+  return t('agentPerspectiveSourceUnclassified')
+}
+
+function subgroupLabel(
+  t: TFunction,
+  subgroup: ToolProvenanceSubgroup<SemanticToolDefinition>
+): string {
+  if (subgroup.category === 'mcp-server') {
+    return `${t('agentPerspectiveMcpServer')} · ${subgroup.providerName || t('agentPerspectiveProviderUnknown')}`
+  }
+  if (subgroup.category === 'extension-provider') {
+    return `${t('agentPerspectiveExtensionProvider')} · ${subgroup.providerName || t('agentPerspectiveProviderUnknown')}`
+  }
+  return categoryLabel(t, subgroup.category)
+}
+
+function provenanceLabel(t: TFunction, provenance: ToolProvenance): string {
+  if (provenance.source === 'kun') return categoryLabel(t, provenance.category)
+  if (provenance.source === 'mcp') {
+    return `${t('agentPerspectiveSourceMcp')} · ${provenance.providerName || t('agentPerspectiveProviderUnknown')}`
+  }
+  if (provenance.source === 'extension') {
+    return `${t('agentPerspectiveSourceExtension')} · ${provenance.providerName || t('agentPerspectiveProviderUnknown')}`
+  }
+  const detail = provenance.providerName || provenance.providerKind
+  return detail
+    ? `${t('agentPerspectiveSourceUnclassified')} · ${detail}`
+    : t('agentPerspectiveSourceUnclassified')
+}
+
+function sourceIcon(source: ToolProvenanceSource): typeof Bot {
+  if (source === 'mcp') return ScanSearch
+  if (source === 'extension') return Puzzle
+  if (source === 'unclassified') return AlertTriangle
+  return Bot
+}
+
+function sourceIconClass(source: ToolProvenanceSource): string {
+  return `flex h-5 w-5 items-center justify-center rounded-md ${
+    source === 'kun'
+      ? 'bg-blue-500/10 text-blue-700 dark:text-blue-300'
+      : source === 'mcp'
+        ? 'bg-violet-500/10 text-violet-700 dark:text-violet-300'
+        : source === 'extension'
+          ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300'
+          : 'bg-ds-surface-subtle text-ds-muted'
+  }`
+}
+
+function sourceBadgeClass(source: ToolProvenanceSource): string {
+  if (source === 'kun') return 'border-blue-500/20 bg-blue-500/8 text-blue-700 dark:text-blue-300'
+  if (source === 'mcp') return 'border-violet-500/20 bg-violet-500/8 text-violet-700 dark:text-violet-300'
+  if (source === 'extension') return 'border-amber-500/20 bg-amber-500/8 text-amber-700 dark:text-amber-300'
+  return 'border-ds-border-muted bg-ds-surface-subtle text-ds-muted'
+}
+
 function eventStyle(kind: AgentPerspectiveEventKind): {
   Icon: typeof Bot
   label: string
@@ -953,7 +1214,7 @@ function eventSubtitle(event: AgentPerspectiveEvent): string {
 
 function eventSearchText(event: AgentPerspectiveEvent): string {
   if (event.kind === 'tool_call') {
-    return `${event.kind} ${event.toolName} ${event.callId} ${JSON.stringify(event.arguments)}`
+    return `${event.kind} ${event.toolName} ${event.callId} ${event.provenance.providerKind ?? ''} ${event.provenance.providerId ?? ''} ${JSON.stringify(event.arguments)}`
   }
   return `${event.kind} ${event.record.model} ${event.record.provider} ${event.kind === 'title_generation' ? event.title : ''}`
 }

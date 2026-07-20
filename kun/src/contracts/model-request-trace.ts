@@ -3,6 +3,19 @@ import { UsageSnapshotSchema } from './usage.js'
 
 export const MODEL_REQUEST_TRACE_SCHEMA_VERSION = 1 as const
 export const MODEL_REQUEST_TRACE_REDACTED_VALUE = '[REDACTED]' as const
+export const MAX_MODEL_REQUEST_TRACE_TOOL_CATALOG_ENTRIES = 512
+export const MAX_MODEL_REQUEST_TRACE_TOOL_NAME_LENGTH = 256
+export const MAX_MODEL_REQUEST_TRACE_PROVIDER_KIND_LENGTH = 64
+export const MAX_MODEL_REQUEST_TRACE_PROVIDER_ID_LENGTH = 256
+
+export const ModelRequestTraceToolCatalogEntrySchema = z.object({
+  name: z.string().min(1).max(MAX_MODEL_REQUEST_TRACE_TOOL_NAME_LENGTH),
+  providerKind: z.string().min(1).max(MAX_MODEL_REQUEST_TRACE_PROVIDER_KIND_LENGTH).optional(),
+  providerId: z.string().min(1).max(MAX_MODEL_REQUEST_TRACE_PROVIDER_ID_LENGTH).optional()
+})
+export type ModelRequestTraceToolCatalogEntry = z.infer<
+  typeof ModelRequestTraceToolCatalogEntrySchema
+>
 
 export const ModelRequestTraceBodySchema = z.object({
   text: z.string(),
@@ -71,6 +84,9 @@ export const ModelRequestTraceRecordSchema = z.object({
   timeToHeadersMs: z.number().nonnegative().optional(),
   durationMs: z.number().nonnegative().optional(),
   request: ModelRequestTraceRequestSchema,
+  toolCatalog: z.array(ModelRequestTraceToolCatalogEntrySchema)
+    .max(MAX_MODEL_REQUEST_TRACE_TOOL_CATALOG_ENTRIES)
+    .optional(),
   response: ModelRequestTraceResponseSchema.optional(),
   decoded: ModelRequestTraceDecodedSchema.optional(),
   error: z.string().optional(),
