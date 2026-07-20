@@ -1746,6 +1746,7 @@
   "queuedMessageRemove": "ลบข้อความที่อยู่ในคิว",
   "queuedMessageMoreActions": "การดำเนินการเพิ่มเติมสำหรับข้อความ",
   "queuedMessageEdit": "แก้ไขข้อความ",
+  "queuedMessageReorder": "ลากเพื่อจัดลำดับข้อความในคิว",
   "guideQueuedMessage": "คู่มือ",
   "guideQueuedMessagePending": "แนวทาง",
   "guideQueuedMessageHint": "เพิ่มอินพุตนี้ลงในการโต้ตอบโมเดลถัดไปของตัวแทน",

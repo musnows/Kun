@@ -30,6 +30,10 @@ import type { ExtensionComposerContextEvent } from '@shared/extension-ipc'
 export type QueuedUserMessage = {
   id: string
   text: string
+  /** Pending items are visible; starting/in-flight items remain durable until the turn settles. */
+  deliveryState?: 'pending' | 'starting' | 'in_flight'
+  deliveryTurnId?: string
+  deliveryUserMessageItemId?: string
   displayText?: string
   mode?: string
   model?: string
@@ -339,6 +343,11 @@ export type ChatState = {
   reviewActiveThread: (target: ReviewTarget) => Promise<boolean>
   drainQueuedMessages: () => Promise<void>
   removeQueuedMessage: (id: string) => void
+  reorderQueuedMessage: (
+    id: string,
+    targetId: string,
+    position: 'before' | 'after'
+  ) => void
   guideQueuedMessage: (id: string) => Promise<boolean>
   attachExtensionComposerContext: (event: ExtensionComposerContextEvent) => void
   removeExtensionComposerContext: (attachmentId: string) => void

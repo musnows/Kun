@@ -1746,6 +1746,7 @@
   "queuedMessageRemove": "Remove queued message",
   "queuedMessageMoreActions": "More queued message actions",
   "queuedMessageEdit": "Edit message",
+  "queuedMessageReorder": "Drag to reorder queued message",
   "guideQueuedMessage": "Guide",
   "guideQueuedMessagePending": "Guiding",
   "guideQueuedMessageHint": "Add this input to the agent's next model interaction",

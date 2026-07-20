@@ -1746,6 +1746,7 @@
   "queuedMessageRemove": "移除排队消息",
   "queuedMessageMoreActions": "更多排队消息操作",
   "queuedMessageEdit": "编辑消息",
+  "queuedMessageReorder": "拖动调整排队顺序",
   "guideQueuedMessage": "引导",
   "guideQueuedMessagePending": "引导中",
   "guideQueuedMessageHint": "在 Agent 的下一次模型交互中加入这条输入",

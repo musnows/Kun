@@ -171,6 +171,72 @@ describe('FloatingComposer queued guidance', () => {
     })).toEqual({ left: 1724, top: 796, width: 176 })
   })
 
+  it('reorders multiple queued messages by drag handle or keyboard', async () => {
+    const previousLanguage = i18n.language
+    await i18n.changeLanguage('en')
+    const onReorder = vi.fn()
+    let renderer: ReturnType<typeof createRenderer>
+
+    try {
+      await act(async () => {
+        renderer = createRenderer(createElement(FloatingComposerQueuedMessages, {
+          messages: [
+            { id: 'q-first', text: 'first' },
+            { id: 'q-second', text: 'second' }
+          ],
+          onRemove: () => undefined,
+          onReorder
+        }))
+      })
+
+      const handles = renderer!.root.findAllByProps({
+        'data-queued-message-drag-handle': true
+      })
+      expect(handles).toHaveLength(2)
+      expect(handles[0]!.props.draggable).toBe(true)
+      expect(handles[0]!.props['aria-label']).toBe('Drag to reorder queued message')
+
+      const dataTransfer = {
+        dropEffect: 'none',
+        effectAllowed: 'none',
+        setData: vi.fn()
+      }
+      await act(async () => {
+        handles[0]!.props.onDragStart({ dataTransfer })
+      })
+      const secondRow = renderer!.root.findByProps({
+        'data-queued-message-id': 'q-second'
+      })
+      await act(async () => {
+        secondRow.props.onDragOver({
+          clientY: 90,
+          currentTarget: {
+            getBoundingClientRect: () => ({ height: 48, top: 50 })
+          },
+          dataTransfer,
+          preventDefault: vi.fn()
+        })
+      })
+      expect(renderer!.root.findByProps({
+        'data-queued-message-drop-indicator': 'after'
+      })).toBeDefined()
+
+      await act(async () => {
+        secondRow.props.onDrop({ dataTransfer, preventDefault: vi.fn() })
+      })
+      expect(onReorder).toHaveBeenCalledWith('q-first', 'q-second', 'after')
+
+      onReorder.mockClear()
+      await act(async () => {
+        handles[1]!.props.onKeyDown({ key: 'ArrowUp', preventDefault: vi.fn() })
+      })
+      expect(onReorder).toHaveBeenCalledWith('q-second', 'q-first', 'before')
+    } finally {
+      renderer!.unmount()
+      await i18n.changeLanguage(previousLanguage)
+    }
+  })
+
   it('does not dequeue structured queued payloads into a text-only editor', () => {
     expect(canEditQueuedComposerMessage({
       id: 'q-text',
@@ -187,6 +253,28 @@ describe('FloatingComposer queued guidance', () => {
       text: 'build the plan',
       mode: 'plan'
     })).toBe(false)
+  })
+
+  it('hides a durable in-flight item while keeping later pending items visible', () => {
+    const html = renderToStaticMarkup(createElement(FloatingComposerQueuedMessages, {
+      messages: [
+        {
+          id: 'q-running',
+          text: 'already running',
+          deliveryState: 'in_flight',
+          deliveryTurnId: 'turn-running'
+        },
+        {
+          id: 'q-pending',
+          text: 'send this next',
+          deliveryState: 'pending'
+        }
+      ],
+      onRemove: () => undefined
+    }))
+
+    expect(html).not.toContain('already running')
+    expect(html).toContain('send this next')
   })
 
   it('anchors todo progress above the queue instead of over it', () => {

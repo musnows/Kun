@@ -196,6 +196,8 @@ export function useWorkbenchChatComposerProps({
     queuedMessages: queuedMessages.map((message) => ({
       id: message.id,
       text: message.text,
+      ...(message.deliveryState ? { deliveryState: message.deliveryState } : {}),
+      ...(message.deliveryTurnId ? { deliveryTurnId: message.deliveryTurnId } : {}),
       ...(message.displayText ? { displayText: message.displayText } : {}),
       guidanceEligible: canGuideQueuedMessage(message)
     })),

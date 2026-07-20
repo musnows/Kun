@@ -1,5 +1,21 @@
-import { useEffect, useRef, useState, type CSSProperties, type ReactElement } from 'react'
-import { CornerDownRight, ListPlus, Loader2, MoreHorizontal, Pencil, Trash2 } from 'lucide-react'
+import {
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type DragEvent as ReactDragEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type ReactElement
+} from 'react'
+import {
+  CornerDownRight,
+  GripVertical,
+  ListPlus,
+  Loader2,
+  MoreHorizontal,
+  Pencil,
+  Trash2
+} from 'lucide-react'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 
@@ -55,6 +71,9 @@ function currentBodyZoom(): number {
 export type QueuedComposerMessage = {
   id: string
   text: string
+  deliveryState?: 'pending' | 'starting' | 'in_flight'
+  deliveryTurnId?: string
+  deliveryUserMessageItemId?: string
   displayText?: string
   guidanceEligible?: boolean
   mode?: string
@@ -92,15 +111,20 @@ type Props = {
   onRemove: (id: string) => void
   onGuide?: (id: string) => void | Promise<unknown>
   onEdit?: (message: QueuedComposerMessage) => void
+  onReorder?: (id: string, targetId: string, position: 'before' | 'after') => void
 }
 
 export function FloatingComposerQueuedMessages({
   messages,
   onRemove,
   onGuide,
-  onEdit
+  onEdit,
+  onReorder
 }: Props): ReactElement | null {
   const { t } = useTranslation('common')
+  const visibleMessages = messages.filter(
+    (message) => !message.deliveryState || message.deliveryState === 'pending'
+  )
   const rootRef = useRef<HTMLDivElement | null>(null)
   const menuRef = useRef<HTMLDivElement | null>(null)
   const menuButtonRefs = useRef(new Map<string, HTMLButtonElement>())
@@ -108,6 +132,11 @@ export function FloatingComposerQueuedMessages({
   const [guidingIds, setGuidingIds] = useState<Set<string>>(() => new Set())
   const [openMenuId, setOpenMenuId] = useState<string | null>(null)
   const [menuPlacement, setMenuPlacement] = useState<QueuedMessageMenuPlacement | null>(null)
+  const [draggedMessageId, setDraggedMessageId] = useState<string | null>(null)
+  const [dropTarget, setDropTarget] = useState<{
+    id: string
+    position: 'before' | 'after'
+  } | null>(null)
 
   useEffect(() => {
     if (!openMenuId || typeof window === 'undefined') return
@@ -155,7 +184,7 @@ export function FloatingComposerQueuedMessages({
     }
   }, [openMenuId])
 
-  if (messages.length === 0) return null
+  if (visibleMessages.length === 0) return null
 
   const guide = async (id: string): Promise<void> => {
     if (!onGuide || guidingIdsRef.current.has(id)) return
@@ -169,8 +198,56 @@ export function FloatingComposerQueuedMessages({
     }
   }
 
+  const clearDragState = (): void => {
+    setDraggedMessageId(null)
+    setDropTarget(null)
+  }
+
+  const dragOverMessage = (
+    event: ReactDragEvent<HTMLDivElement>,
+    targetId: string
+  ): void => {
+    if (!draggedMessageId || draggedMessageId === targetId || !onReorder) return
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'move'
+    const rect = event.currentTarget.getBoundingClientRect()
+    const position = event.clientY < rect.top + rect.height / 2 ? 'before' : 'after'
+    setDropTarget((current) => current?.id === targetId && current.position === position
+      ? current
+      : { id: targetId, position })
+  }
+
+  const dropMessage = (
+    event: ReactDragEvent<HTMLDivElement>,
+    targetId: string
+  ): void => {
+    if (!draggedMessageId || draggedMessageId === targetId || !onReorder) {
+      clearDragState()
+      return
+    }
+    event.preventDefault()
+    const position = dropTarget?.id === targetId ? dropTarget.position : 'before'
+    onReorder(draggedMessageId, targetId, position)
+    clearDragState()
+  }
+
+  const moveMessageWithKeyboard = (
+    event: ReactKeyboardEvent<HTMLButtonElement>,
+    messageId: string,
+    messageIndex: number
+  ): void => {
+    if (!onReorder) return
+    if (event.key === 'ArrowUp' && messageIndex > 0) {
+      event.preventDefault()
+      onReorder(messageId, visibleMessages[messageIndex - 1]!.id, 'before')
+    } else if (event.key === 'ArrowDown' && messageIndex < visibleMessages.length - 1) {
+      event.preventDefault()
+      onReorder(messageId, visibleMessages[messageIndex + 1]!.id, 'after')
+    }
+  }
+
   const openMenuMessage = openMenuId
-    ? messages.find((message) => message.id === openMenuId) ?? null
+    ? visibleMessages.find((message) => message.id === openMenuId) ?? null
     : null
   const menuStyle: CSSProperties = menuPlacement
     ? {
@@ -213,26 +290,59 @@ export function FloatingComposerQueuedMessages({
         ref={rootRef}
         data-composer-queue
         className="mb-2 space-y-2"
-        aria-label={t('queuedMessagesTitle', { count: messages.length })}
+        aria-label={t('queuedMessagesTitle', { count: visibleMessages.length })}
       >
-        {messages.map((message) => {
+        {visibleMessages.map((message, messageIndex) => {
           const guiding = guidingIds.has(message.id)
           const guidanceEligible = message.guidanceEligible !== false
           const guideTitle = guidanceEligible
             ? t('guideQueuedMessageHint')
             : t('guideQueuedMessageTextOnly')
           const editMessage = onEdit && canEditQueuedComposerMessage(message) ? onEdit : null
+          const canReorder = Boolean(onReorder && visibleMessages.length > 1 && !guiding)
+          const messageDropTarget = dropTarget?.id === message.id ? dropTarget : null
           return (
             <div
               key={message.id}
-              className="group relative flex min-h-12 min-w-0 items-center gap-2 rounded-[20px] border border-ds-border bg-white/92 px-3 py-2 shadow-[0_8px_26px_rgba(20,47,95,0.07)] backdrop-blur-xl dark:bg-ds-card/94"
+              data-queued-message-id={message.id}
+              onDragOver={(event) => dragOverMessage(event, message.id)}
+              onDrop={(event) => dropMessage(event, message.id)}
+              className={`group relative flex min-h-12 min-w-0 items-center gap-2 rounded-[20px] border border-ds-border bg-white/92 px-3 py-2 shadow-[0_8px_26px_rgba(20,47,95,0.07)] backdrop-blur-xl transition-[opacity,transform] dark:bg-ds-card/94 ${draggedMessageId === message.id ? 'opacity-60' : ''}`}
             >
-              <span
-                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-ds-faint"
-                aria-hidden="true"
-              >
-                <ListPlus className="h-4 w-4" strokeWidth={1.8} />
-              </span>
+              {messageDropTarget ? (
+                <span
+                  data-queued-message-drop-indicator={messageDropTarget.position}
+                  className={`pointer-events-none absolute left-4 right-4 z-10 h-0.5 rounded-full bg-ds-ink ${messageDropTarget.position === 'before' ? '-top-[5px]' : '-bottom-[5px]'}`}
+                  aria-hidden="true"
+                />
+              ) : null}
+              {canReorder ? (
+                <button
+                  type="button"
+                  draggable
+                  data-queued-message-drag-handle
+                  onDragStart={(event) => {
+                    setOpenMenuId(null)
+                    setDraggedMessageId(message.id)
+                    event.dataTransfer.effectAllowed = 'move'
+                    event.dataTransfer.setData('text/plain', message.id)
+                  }}
+                  onDragEnd={clearDragState}
+                  onKeyDown={(event) => moveMessageWithKeyboard(event, message.id, messageIndex)}
+                  className="ds-no-drag flex h-7 w-7 shrink-0 cursor-grab items-center justify-center rounded-full text-ds-faint transition hover:bg-ds-hover hover:text-ds-ink active:cursor-grabbing"
+                  aria-label={t('queuedMessageReorder')}
+                  title={t('queuedMessageReorder')}
+                >
+                  <GripVertical className="h-4 w-4" strokeWidth={1.8} />
+                </button>
+              ) : (
+                <span
+                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-ds-faint"
+                  aria-hidden="true"
+                >
+                  <ListPlus className="h-4 w-4" strokeWidth={1.8} />
+                </span>
+              )}
               <span className="min-w-0 flex-1 truncate text-[14px] leading-5 text-ds-ink">
                 {message.displayText ?? message.text}
               </span>

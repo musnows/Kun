@@ -355,6 +355,7 @@ export function FloatingComposer({
   const activeClawChannelId = useChatStore((s) => s.activeClawChannelId)
   const blocks = useChatStore((s) => s.blocks)
   const resolveUserInput = useChatStore((s) => s.resolveUserInput)
+  const reorderQueuedMessage = useChatStore((s) => s.reorderQueuedMessage)
   const compact = variant === 'compact'
   // The pending ask-user request for the active thread, surfaced as a panel
   // docked above this composer. The main Chat and Design composers host it, as
@@ -1152,6 +1153,7 @@ export function FloatingComposer({
           messages={queuedMessages}
           onRemove={onRemoveQueuedMessage}
           onGuide={onGuideQueuedMessage}
+          onReorder={reorderQueuedMessage}
           onEdit={(message) => {
             returnQueuedMessageToComposer(message, onRemoveQueuedMessage, setInput)
             draft.focusComposer()

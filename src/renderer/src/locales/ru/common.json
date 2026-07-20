@@ -1746,6 +1746,7 @@
   "queuedMessageRemove": "Удалить сообщение из очереди",
   "queuedMessageMoreActions": "Другие действия с сообщением",
   "queuedMessageEdit": "Редактировать сообщение",
+  "queuedMessageReorder": "Перетащите, чтобы изменить порядок",
   "guideQueuedMessage": "Руководство",
   "guideQueuedMessagePending": "Руководство",
   "guideQueuedMessageHint": "Добавьте эти входные данные к следующему взаимодействию модели агента.",

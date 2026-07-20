@@ -1746,6 +1746,7 @@
   "queuedMessageRemove": "キューに入れられたメッセージを削除する",
   "queuedMessageMoreActions": "キューのメッセージのその他の操作",
   "queuedMessageEdit": "メッセージを編集",
+  "queuedMessageReorder": "ドラッグしてキューの順序を変更",
   "guideQueuedMessage": "ガイド",
   "guideQueuedMessagePending": "導き",
   "guideQueuedMessageHint": "この入力をエージェントの次のモデル インタラクションに追加します",

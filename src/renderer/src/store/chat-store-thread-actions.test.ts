@@ -3,6 +3,11 @@ import type { NormalizedThread, ThreadEventSink } from '../agent/types'
 import type { ChatState, ChatStoreGet, ChatStoreSet, GuiPlanMessageContext } from './chat-store-types'
 import { rendererRuntimeClient } from '../agent/runtime-client'
 import { useWriteWorkspaceStore } from '../write/write-workspace-store'
+import type { BrowserStorageLike } from '../lib/browser-storage'
+import {
+  queuedMessagesForThread,
+  saveQueuedMessagesForThread
+} from './queued-message-persistence'
 
 const registryMock = vi.hoisted(() => ({
   getProvider: vi.fn()
@@ -13,6 +18,18 @@ vi.mock('../agent/registry', () => ({
 }))
 
 import { createThreadActions } from './chat-store-thread-actions'
+
+class MemoryStorage implements BrowserStorageLike {
+  private readonly values = new Map<string, string>()
+
+  getItem(key: string): string | null {
+    return this.values.get(key) ?? null
+  }
+
+  setItem(key: string, value: string): void {
+    this.values.set(key, value)
+  }
+}
 
 function thread(id: string): NormalizedThread {
   return {
@@ -108,6 +125,70 @@ describe('chat-store-thread-actions queued messages', () => {
 
     state.composerModel = 'deepseek-v4-pro'
     expect(state.queuedMessages[0]?.model).toBe('deepseek-v4-flash')
+  })
+
+  it('persists queued messages and their reordered send order for the active thread', async () => {
+    const storage = new MemoryStorage()
+    vi.stubGlobal('localStorage', storage)
+    const { actions } = buildHarness()
+
+    await expect(actions.sendMessage('first queued task', 'agent')).resolves.toBe(true)
+    await expect(actions.sendMessage('second queued task', 'agent')).resolves.toBe(true)
+    const persisted = queuedMessagesForThread('thr_existing', storage)
+    actions.reorderQueuedMessage(persisted[1]!.id, persisted[0]!.id, 'before')
+
+    expect(queuedMessagesForThread('thr_existing', storage).map((message) => message.text)).toEqual([
+      'second queued task',
+      'first queued task'
+    ])
+  })
+
+  it('restores a persisted queue when its conversation is selected again', async () => {
+    const storage = new MemoryStorage()
+    vi.stubGlobal('window', { localStorage: storage })
+    saveQueuedMessagesForThread('thr_existing', [
+      { id: 'q-restored', text: 'continue after restart', deliveryState: 'pending' }
+    ], storage)
+    expect(queuedMessagesForThread('thr_existing')).toHaveLength(1)
+    registryMock.getProvider.mockReturnValue({
+      getThreadDetail: vi.fn(async () => ({
+        blocks: [{ id: 'u-running', kind: 'user', text: 'current task' }],
+        latestSeq: 2,
+        threadStatus: 'running',
+        latestTurnId: 'turn-running',
+        latestUserMessageId: 'u-running'
+      })),
+      subscribeThreadEvents: vi.fn(async () => ({ streamId: 'stream-restored' }))
+    })
+    const { actions, state } = buildHarness()
+    state.queuedMessages = []
+    state.composerPickList = []
+    state.composerModelGroups = []
+
+    await actions.selectThread('thr_existing')
+
+    expect(state.queuedMessages).toEqual([
+      expect.objectContaining({
+        id: 'q-restored',
+        text: 'continue after restart',
+        deliveryState: 'pending'
+      })
+    ])
+  })
+
+  it('reorders queued messages in the order they will be sent', () => {
+    const { actions, state } = buildHarness()
+    state.queuedMessages = [
+      { id: 'q-1', text: 'first' },
+      { id: 'q-2', text: 'second' },
+      { id: 'q-3', text: 'third' }
+    ]
+
+    actions.reorderQueuedMessage('q-3', 'q-1', 'before')
+    expect(state.queuedMessages.map((message) => message.id)).toEqual(['q-3', 'q-1', 'q-2'])
+
+    actions.reorderQueuedMessage('q-3', 'q-2', 'after')
+    expect(state.queuedMessages.map((message) => message.id)).toEqual(['q-1', 'q-2', 'q-3'])
   })
 
   it('does not queue GUI plan messages while another turn is active', async () => {
@@ -374,6 +455,40 @@ describe('chat-store-thread-actions queued messages', () => {
           kind: 'file'
         }]
       })
+    })
+  })
+
+  it('keeps an in-flight queued item until its runtime turn settles', async () => {
+    const { actions, state } = buildHarness()
+    const sendMessage = vi.fn(async () => false)
+    state.sendMessage = sendMessage as unknown as ChatState['sendMessage']
+    state.currentTurnId = 'turn-queued'
+    state.queuedMessages = [
+      {
+        id: 'q-running',
+        text: 'currently running',
+        deliveryState: 'in_flight',
+        deliveryTurnId: 'turn-queued',
+        deliveryUserMessageItemId: 'user-queued'
+      },
+      {
+        id: 'q-next',
+        text: 'run this next',
+        deliveryState: 'pending'
+      }
+    ]
+
+    await actions.drainQueuedMessages()
+    expect(state.queuedMessages.map((message) => message.id)).toEqual(['q-running', 'q-next'])
+    expect(sendMessage).not.toHaveBeenCalled()
+
+    state.busy = false
+    state.currentTurnId = null
+    state.blocks = [{ id: 'user-queued', kind: 'user', text: 'currently running' }]
+    await actions.drainQueuedMessages()
+    expect(state.queuedMessages.map((message) => message.id)).toEqual(['q-next'])
+    expect(sendMessage).toHaveBeenCalledWith('run this next', undefined, {
+      queued: expect.objectContaining({ id: 'q-next' })
     })
   })
 
@@ -665,6 +780,17 @@ describe('chat-store-thread-actions queued messages', () => {
       'Queued edit',
       expect.objectContaining({ composerContexts: [composerContext] })
     )
+    expect(state.queuedMessages).toEqual([
+      expect.objectContaining({
+        id: queued.id,
+        deliveryState: 'in_flight',
+        deliveryTurnId: 'turn_queued'
+      })
+    ])
+
+    state.busy = false
+    state.currentTurnId = null
+    await actions.drainQueuedMessages()
     expect(state.queuedMessages).toEqual([])
   })
 
