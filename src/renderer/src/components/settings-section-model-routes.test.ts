@@ -2,7 +2,12 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { act, create as createRenderer, type ReactTestInstance, type ReactTestRenderer } from 'react-test-renderer'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { defaultModelProviderSettings, type ModelProviderSettingsV1 } from '@shared/app-settings'
+import {
+  defaultModelProviderSettings,
+  getModelProviderPreset,
+  modelProviderPresetAccountProfile,
+  type ModelProviderSettingsV1
+} from '@shared/app-settings'
 import { ModelRoutesSettings } from './settings-section-model-routes'
 
 function settings(): ModelProviderSettingsV1 {
@@ -46,6 +51,24 @@ describe('ModelRoutesSettings', () => {
     expect(html).toContain('稳定性优先自适应')
     expect(html).toContain('流式输出开始后固定停止')
     expect(html).toContain('127.0.0.1 · 无鉴权')
+  })
+
+  it('keeps every numbered account available as an independent route target', () => {
+    const draft = settings()
+    const kimi = getModelProviderPreset('kimi-code')!
+    const first = modelProviderPresetAccountProfile(kimi, 'api', [])!
+    const second = modelProviderPresetAccountProfile(kimi, 'api', [first])!
+    draft.providers = [...draft.providers, first, second]
+    draft.routePools[0].targets = [
+      { id: 'kimi-1', providerId: first.id, modelId: first.models[0], enabled: true, weight: 1 },
+      { id: 'kimi-2', providerId: second.id, modelId: second.models[0], enabled: true, weight: 1 }
+    ]
+
+    const html = renderToStaticMarkup(createElement(ModelRoutesSettings, { settings: draft, onChange: () => undefined }))
+    expect(html).toContain('Kimi Code')
+    expect(html).toContain('Kimi Code 2')
+    expect(html).toContain('value="kimi-code"')
+    expect(html).toContain('value="kimi-code-2"')
   })
 
   it('dispatches local API and route pool enable switches', async () => {

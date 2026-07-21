@@ -5,6 +5,7 @@ import type {
   ModelProviderImageCapabilityV1,
   ModelProviderMusicCapabilityV1,
   ModelProviderModelProfileV1,
+  ModelProviderPresetMode,
   ModelProviderProfileV1,
   ModelProviderReasoningCapabilityV1,
   ModelProviderSpeechCapabilityV1,
@@ -752,6 +753,7 @@ export function modelProviderPresetProfile(
   return {
     id: preset.id,
     name: preset.name,
+    presetSource: { presetId: preset.id, mode: 'api' },
     apiKey: apiKey.trim(),
     baseUrl: preset.baseUrl,
     endpointFormat: preset.endpointFormat,
@@ -784,6 +786,7 @@ export function modelProviderTokenPlanProfile(
   return {
     id: tokenPlanProviderId(preset.id),
     name: `${preset.name} Token Plan`,
+    presetSource: { presetId: preset.id, mode: 'token-plan' },
     apiKey: apiKey.trim(),
     baseUrl: resolvedBaseUrl,
     endpointFormat: tokenPlan.endpointFormat,
@@ -836,6 +839,90 @@ export function modelProviderTokenPlanProfile(
         }
       : {})
   }
+}
+
+export type ResolvedModelProviderPresetSource = {
+  preset: ModelProviderPreset
+  mode: ModelProviderPresetMode
+}
+
+/**
+ * Resolves a persisted profile back to its built-in preset. Explicit source
+ * metadata supports multi-account ids; exact legacy ids remain compatible.
+ */
+export function resolveModelProviderPresetSource(
+  profile: Pick<ModelProviderProfileV1, 'id' | 'presetSource'>
+): ResolvedModelProviderPresetSource | null {
+  const explicit = profile.presetSource
+  if (explicit) {
+    const preset = getModelProviderPreset(explicit.presetId)
+    if (!preset || (explicit.mode === 'token-plan' && !preset.tokenPlan)) return null
+    return { preset, mode: explicit.mode }
+  }
+  const direct = getModelProviderPreset(profile.id)
+  if (direct) return { preset: direct, mode: 'api' }
+  if (!profile.id.endsWith(TOKEN_PLAN_PROVIDER_ID_SUFFIX)) return null
+  const preset = getModelProviderPreset(profile.id.slice(0, -TOKEN_PLAN_PROVIDER_ID_SUFFIX.length))
+  return preset?.tokenPlan ? { preset, mode: 'token-plan' } : null
+}
+
+export function isMultiAccountProviderPreset(
+  preset: ModelProviderPreset,
+  mode: ModelProviderPresetMode
+): boolean {
+  return mode === 'token-plan' || preset.category === 'subscription'
+}
+
+export function modelProviderPresetAccountCount(
+  preset: ModelProviderPreset,
+  mode: ModelProviderPresetMode,
+  providers: readonly Pick<ModelProviderProfileV1, 'id' | 'name' | 'presetSource'>[]
+): number {
+  return providers.filter((provider) => {
+    const source = resolveModelProviderPresetSource(provider)
+    return source?.preset.id === preset.id && source.mode === mode
+  }).length
+}
+
+/** Builds the next independent account profile for a preset/mode family. */
+export function modelProviderPresetAccountProfile(
+  preset: ModelProviderPreset,
+  mode: ModelProviderPresetMode,
+  providers: readonly Pick<ModelProviderProfileV1, 'id' | 'name' | 'presetSource'>[]
+): ModelProviderProfileV1 | null {
+  const base = mode === 'token-plan'
+    ? modelProviderTokenPlanProfile(preset)
+    : modelProviderPresetProfile(preset)
+  if (!base) return null
+  const family = providers.filter((provider) => {
+    const source = resolveModelProviderPresetSource(provider)
+    return source?.preset.id === preset.id && source.mode === mode
+  })
+  const idPattern = new RegExp(`^${escapeRegExp(base.id)}-(\\d+)$`)
+  const namePattern = new RegExp(`^${escapeRegExp(base.name)} (\\d+)$`, 'i')
+  let highestOrdinal = 0
+  for (const provider of family) {
+    highestOrdinal = Math.max(
+      highestOrdinal,
+      provider.id === base.id ? 1 : Number(idPattern.exec(provider.id)?.[1] ?? 0),
+      provider.name.toLowerCase() === base.name.toLowerCase() ? 1 : Number(namePattern.exec(provider.name)?.[1] ?? 0)
+    )
+  }
+  let ordinal = family.length === 0 ? 1 : Math.max(highestOrdinal, family.length) + 1
+  const usedIds = new Set(providers.map((provider) => provider.id.toLowerCase()))
+  const usedNames = new Set(providers.map((provider) => provider.name.trim().toLowerCase()).filter(Boolean))
+  while (true) {
+    const id = ordinal === 1 ? base.id : `${base.id}-${ordinal}`
+    const name = ordinal === 1 ? base.name : `${base.name} ${ordinal}`
+    if (!usedIds.has(id.toLowerCase()) && !usedNames.has(name.toLowerCase())) {
+      return { ...base, id, name }
+    }
+    ordinal += 1
+  }
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
 function tokenPlanCapabilityBaseUrl(

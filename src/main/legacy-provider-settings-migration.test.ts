@@ -6,8 +6,11 @@ import {
   MODEL_PROVIDER_PRESETS,
   defaultKunRuntimeSettings,
   defaultModelProviderSettings,
+  getModelProviderPreset,
+  modelProviderPresetAccountProfile,
   modelProviderPresetProfile,
-  resolveKunRuntimeSettings
+  resolveKunRuntimeSettings,
+  type AppSettingsV1
 } from '../shared/app-settings'
 import { LegacyProviderSettingsMigrationCoordinator } from './legacy-provider-settings-migration'
 import { providersConfigForRuntime } from './runtime/kun-runtime-model-config'
@@ -15,6 +18,27 @@ import { syncGuiManagedKunConfig } from './runtime/kun-runtime-config-service'
 import { JsonSettingsStore } from './settings-store'
 
 describe('LegacyProviderSettingsMigrationCoordinator', () => {
+  it('emits distinct protected credential bindings for numbered plan accounts', () => {
+    const providerSettings = defaultModelProviderSettings()
+    const kimi = getModelProviderPreset('kimi-code')!
+    const first = modelProviderPresetAccountProfile(kimi, 'api', [])!
+    const second = modelProviderPresetAccountProfile(kimi, 'api', [first])!
+    const runtimeProviders = providersConfigForRuntime({
+      provider: {
+        ...providerSettings,
+        providers: [...providerSettings.providers, first, second]
+      }
+    } as AppSettingsV1)
+
+    expect(runtimeProviders[first.id]).toEqual(expect.objectContaining({
+      credentialSourceId: 'settings:provider:kimi-code'
+    }))
+    expect(runtimeProviders[second.id]).toEqual(expect.objectContaining({
+      credentialSourceId: 'settings:provider:kimi-code-2'
+    }))
+    expect(runtimeProviders[first.id]?.credentialSourceId).not.toBe(runtimeProviders[second.id]?.credentialSourceId)
+  })
+
   it('backs up and removes plaintext while keeping secure bindings readable across restarts', async () => {
     const userDataDir = await mkdtemp(join(tmpdir(), 'kun-settings-credential-migration-'))
     const dataDir = join(userDataDir, 'runtime-data')

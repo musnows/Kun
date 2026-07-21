@@ -530,6 +530,8 @@
   "speechLanguage_ja": "일본어",
   "speechLanguage_ko": "한국어",
   "modelProviderPresetUpdateTag": "사전 설정 업데이트",
+  "modelProviderAccountCount": "계정 {{count}}개",
+  "modelProviderAddAccountHint": "독립 계정 추가",
   "modelProviderUpdatePresetTitle": "사전 설정 \"{{name}}\"을(를) 업데이트하시겠습니까?",
   "modelProviderUpdatePresetDetail": "이 사전 설정은 이미 존재합니다. 업데이트하면 API 키와 기존 모델을 유지하면서 엔드포인트와 모델 목록이 새로 고쳐집니다.",
   "modelProviderUpdatePresetAction": "업데이트",

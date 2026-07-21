@@ -530,6 +530,8 @@
   "speechLanguage_ja": "日本語",
   "speechLanguage_ko": "韓国語",
   "modelProviderPresetUpdateTag": "プリセットを更新する",
+  "modelProviderAccountCount": "{{count}} 個のアカウント",
+  "modelProviderAddAccountHint": "独立したアカウントを追加",
   "modelProviderUpdatePresetTitle": "プリセット「{{name}}」を更新しますか?",
   "modelProviderUpdatePresetDetail": "このプリセットはすでに存在します。更新すると、API キーと既存のモデルを維持したまま、エンドポイントとモデルのリストが更新されます。",
   "modelProviderUpdatePresetAction": "アップデート",

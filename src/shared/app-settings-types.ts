@@ -233,9 +233,16 @@ export type ModelProviderVideoCapabilityV1 = {
   baseUrl: string
   models: string[]
 }
+export type ModelProviderPresetMode = 'api' | 'token-plan'
+export type ModelProviderPresetSourceV1 = {
+  presetId: string
+  mode: ModelProviderPresetMode
+}
 export type ModelProviderProfileV1 = {
   id: string
   name: string
+  /** Stable built-in preset identity, independent from a multi-account profile id/name. */
+  presetSource?: ModelProviderPresetSourceV1
   apiKey: string
   baseUrl: string
   endpointFormat: ModelEndpointFormat

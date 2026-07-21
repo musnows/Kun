@@ -15,6 +15,7 @@ import type {
   ModelEndpointFormat,
   ModelProviderImageCapabilityV1,
   ModelProviderModelProfileV1,
+  ModelProviderPresetMode,
   ModelProviderMusicCapabilityV1,
   ModelProviderProfileV1,
   ModelProviderSettingsV1,
@@ -34,15 +35,17 @@ import {
   DEFAULT_VIDEO_GENERATION_PROTOCOL,
   MODEL_ENDPOINT_FORMATS,
   MODEL_PROVIDER_PRESETS,
-  TOKEN_PLAN_PROVIDER_ID_SUFFIX,
   defaultMiniMaxMediaGenerationKunPatch,
   defaultModelRequestRetrySettings,
   defaultModelProviderSettings,
-  getModelProviderPreset,
+  isMultiAccountProviderPreset,
+  modelProviderPresetAccountCount,
+  modelProviderPresetAccountProfile,
   modelProviderPresetProfile,
   modelSupportsImageInput,
   modelProviderTokenPlanProfile,
   normalizeModelProviderId,
+  resolveModelProviderPresetSource,
   tokenPlanProviderId
 } from '@shared/app-settings'
 import type { ModelProviderPreset } from '@shared/model-provider-presets'
@@ -165,10 +168,11 @@ export function modelProvidersSettingsPatch(input: {
   }
 }
 
-function tokenPlanPresetForProfileId(id: string): ModelProviderPreset | null {
-  if (!id.endsWith(TOKEN_PLAN_PROVIDER_ID_SUFFIX)) return null
-  const preset = getModelProviderPreset(id.slice(0, -TOKEN_PLAN_PROVIDER_ID_SUFFIX.length))
-  return preset?.tokenPlan ? preset : null
+function tokenPlanPresetForProfile(
+  provider: Pick<ModelProviderProfileV1, 'id' | 'presetSource'>
+): ModelProviderPreset | null {
+  const source = resolveModelProviderPresetSource(provider)
+  return source?.mode === 'token-plan' ? source.preset : null
 }
 
 // 「套餐订阅」组 = Token Plan 套餐档(<id>-token-plan)或本身就是订阅制的预设(category==='subscription');
@@ -177,9 +181,11 @@ function isAgentSdkProvider(provider: ModelProviderProfileV1): boolean {
   return provider.kind === 'agent-sdk'
 }
 
-function isSubscriptionProviderId(id: string): boolean {
-  if (tokenPlanPresetForProfileId(id)) return true
-  return getModelProviderPreset(id)?.category === 'subscription'
+function isSubscriptionProvider(
+  provider: Pick<ModelProviderProfileV1, 'id' | 'presetSource'>
+): boolean {
+  const source = resolveModelProviderPresetSource(provider)
+  return source?.mode === 'token-plan' || source?.preset.category === 'subscription'
 }
 
 function addedModelCount(current: readonly string[], next: readonly string[]): number {
@@ -243,67 +249,32 @@ function profileForModel(
   return provider.modelProfiles[trimmed.toLowerCase()] ?? provider.modelProfiles[trimmed]
 }
 
-function presetImageCapability(providerId: string): ModelProviderImageCapabilityV1 | null {
-  const preset = getModelProviderPreset(providerId)
-  if (!preset?.image) return null
-  return { protocol: preset.image.protocol, baseUrl: preset.image.baseUrl, models: [...preset.image.models] }
+function presetProfileForProvider(provider: ModelProviderProfileV1): ModelProviderProfileV1 | null {
+  const source = resolveModelProviderPresetSource(provider)
+  if (!source) return null
+  return source.mode === 'token-plan'
+    ? modelProviderTokenPlanProfile(source.preset, '', provider.baseUrl)
+    : modelProviderPresetProfile(source.preset)
+}
+
+function presetImageCapability(provider: ModelProviderProfileV1): ModelProviderImageCapabilityV1 | null {
+  return presetProfileForProvider(provider)?.image ?? null
 }
 
 function presetSpeechCapability(provider: ModelProviderProfileV1): ModelProviderSpeechCapabilityV1 | null {
-  const direct = getModelProviderPreset(provider.id)
-  if (direct?.speech) {
-    return { protocol: direct.speech.protocol, baseUrl: direct.speech.baseUrl, models: [...direct.speech.models] }
-  }
-  const tokenPlanSpeech = tokenPlanPresetForProfileId(provider.id)?.tokenPlan?.speech
-  if (tokenPlanSpeech) {
-    // 套餐端点自己提供 ASR,语音地址跟随该 profile 的服务地址。
-    return { protocol: tokenPlanSpeech.protocol, baseUrl: provider.baseUrl, models: [...tokenPlanSpeech.models] }
-  }
-  return null
+  return presetProfileForProvider(provider)?.speech ?? null
 }
 
 function presetTextToSpeechCapability(provider: ModelProviderProfileV1): ModelProviderTextToSpeechCapabilityV1 | null {
-  const direct = getModelProviderPreset(provider.id)
-  if (direct?.textToSpeech) {
-    return {
-      protocol: direct.textToSpeech.protocol,
-      baseUrl: direct.textToSpeech.baseUrl,
-      models: [...direct.textToSpeech.models]
-    }
-  }
-  const tokenPlanTextToSpeech = tokenPlanPresetForProfileId(provider.id)?.tokenPlan?.textToSpeech
-  if (tokenPlanTextToSpeech) {
-    return {
-      protocol: tokenPlanTextToSpeech.protocol,
-      baseUrl: tokenPlanTextToSpeech.baseUrl ?? provider.baseUrl,
-      models: [...tokenPlanTextToSpeech.models]
-    }
-  }
-  return null
+  return presetProfileForProvider(provider)?.textToSpeech ?? null
 }
 
 function presetMusicCapability(provider: ModelProviderProfileV1): ModelProviderMusicCapabilityV1 | null {
-  const direct = getModelProviderPreset(provider.id)
-  if (direct?.music) {
-    return { protocol: direct.music.protocol, baseUrl: direct.music.baseUrl, models: [...direct.music.models] }
-  }
-  const tokenPlanMusic = tokenPlanPresetForProfileId(provider.id)?.tokenPlan?.music
-  if (tokenPlanMusic) {
-    return { protocol: tokenPlanMusic.protocol, baseUrl: tokenPlanMusic.baseUrl, models: [...tokenPlanMusic.models] }
-  }
-  return null
+  return presetProfileForProvider(provider)?.music ?? null
 }
 
 function presetVideoCapability(provider: ModelProviderProfileV1): ModelProviderVideoCapabilityV1 | null {
-  const direct = getModelProviderPreset(provider.id)
-  if (direct?.video) {
-    return { protocol: direct.video.protocol, baseUrl: direct.video.baseUrl, models: [...direct.video.models] }
-  }
-  const tokenPlanVideo = tokenPlanPresetForProfileId(provider.id)?.tokenPlan?.video
-  if (tokenPlanVideo) {
-    return { protocol: tokenPlanVideo.protocol, baseUrl: tokenPlanVideo.baseUrl, models: [...tokenPlanVideo.models] }
-  }
-  return null
+  return presetProfileForProvider(provider)?.video ?? null
 }
 
 function isAcceptableHttpUrl(value: string): boolean {
@@ -332,26 +303,27 @@ type ProbeState = {
 }
 
 function providerPresetRequiresApiKey(provider: ModelProviderProfileV1): boolean {
-  if (provider.id === 'litellm') return false
-  if (isOAuthSubscriptionProvider(provider.id)) return false
-  return Boolean(getModelProviderPreset(provider.id) || tokenPlanPresetForProfileId(provider.id))
+  const source = resolveModelProviderPresetSource(provider)
+  if (source?.preset.id === 'litellm') return false
+  if (isOAuthSubscriptionProvider(provider)) return false
+  return Boolean(source)
 }
 
-function isCodexProvider(id: string): boolean {
-  return id === 'codex'
+function isCodexProvider(provider: Pick<ModelProviderProfileV1, 'id' | 'presetSource'>): boolean {
+  return resolveModelProviderPresetSource(provider)?.preset.id === 'codex'
 }
 
-function isGrokSubscriptionProvider(id: string): boolean {
-  return id === 'grok-subscription'
+function isGrokSubscriptionProvider(provider: Pick<ModelProviderProfileV1, 'id' | 'presetSource'>): boolean {
+  return resolveModelProviderPresetSource(provider)?.preset.id === 'grok-subscription'
 }
 
-function isOAuthSubscriptionProvider(id: string): boolean {
-  return isCodexProvider(id) || isGrokSubscriptionProvider(id)
+function isOAuthSubscriptionProvider(provider: Pick<ModelProviderProfileV1, 'id' | 'presetSource'>): boolean {
+  return isCodexProvider(provider) || isGrokSubscriptionProvider(provider)
 }
 
 function providerRequiresApiKey(provider: ModelProviderProfileV1): boolean {
   if (isAgentSdkProvider(provider)) return false
-  if (provider.id === DEFAULT_MODEL_PROVIDER_ID || isOAuthSubscriptionProvider(provider.id)) return true
+  if (provider.id === DEFAULT_MODEL_PROVIDER_ID || isOAuthSubscriptionProvider(provider)) return true
   return providerPresetRequiresApiKey(provider)
 }
 
@@ -1192,8 +1164,7 @@ export function ProvidersSettingsSection({ ctx }: { ctx: Record<string, any> }):
   const canEditActiveProviderId = Boolean(
     activeProvider &&
     activeProvider.id !== DEFAULT_MODEL_PROVIDER_ID &&
-    !getModelProviderPreset(activeProvider.id) &&
-    !tokenPlanPresetForProfileId(activeProvider.id)
+    !resolveModelProviderPresetSource(activeProvider)
   )
   const activeKunProviderId: string = kun.providerId?.trim() || DEFAULT_MODEL_PROVIDER_ID
   const providerProxy = provider.proxy ?? { enabled: false, url: '' }
@@ -1493,8 +1464,13 @@ export function ProvidersSettingsSection({ ctx }: { ctx: Record<string, any> }):
 
   const addPresetModelProvider = async (
     preset: ModelProviderPreset,
-    mode: 'api' | 'token-plan' = 'api'
+    mode: ModelProviderPresetMode = 'api'
   ): Promise<void> => {
+    if (isMultiAccountProviderPreset(preset, mode)) {
+      const accountProvider = modelProviderPresetAccountProfile(preset, mode, displayProviders)
+      if (accountProvider) startProviderDraft(accountProvider)
+      return
+    }
     const presetProvider = mode === 'token-plan'
       ? modelProviderTokenPlanProfile(preset)
       : modelProviderPresetProfile(preset)
@@ -1603,8 +1579,15 @@ export function ProvidersSettingsSection({ ctx }: { ctx: Record<string, any> }):
       return { status: 'error', message: 'models.dev catalog bridge is unavailable.', models: [] }
     }
     try {
+      const source = resolveModelProviderPresetSource(target)
       return await window.kunGui.fetchModelsDevCatalog({
-        providerId: target.id,
+        // Multi-account profiles keep a unique runtime id, while catalog
+        // matching must use the canonical preset id understood by models.dev.
+        providerId: source
+          ? source.mode === 'token-plan'
+            ? tokenPlanProviderId(source.preset.id)
+            : source.preset.id
+          : target.id,
         baseUrl: target.baseUrl,
         forceRefresh: true
       })
@@ -1818,7 +1801,7 @@ export function ProvidersSettingsSection({ ctx }: { ctx: Record<string, any> }):
         models: nextChatModels,
         modelProfiles: nextModelProfiles,
         ...(nextImageModels.length > 0
-          ? { image: { ...(item.image ?? presetImageCapability(item.id) ?? defaultImageCapability(item.baseUrl)), models: nextImageModels } }
+          ? { image: { ...(item.image ?? presetImageCapability(item) ?? defaultImageCapability(item.baseUrl)), models: nextImageModels } }
           : {}),
         ...(nextSpeechModels.length > 0
           ? { speech: { ...(item.speech ?? presetSpeechCapability(item) ?? defaultSpeechCapability(item.baseUrl)), models: nextSpeechModels } }
@@ -1846,10 +1829,10 @@ export function ProvidersSettingsSection({ ctx }: { ctx: Record<string, any> }):
 
   const providerKindLabel = (item: ModelProviderProfileV1): string => {
     if (item.id === DEFAULT_MODEL_PROVIDER_ID) return t('modelProviderDefaultBadge')
-    if (tokenPlanPresetForProfileId(item.id)) return t('modelProviderTokenPlanBadge')
-    const preset = getModelProviderPreset(item.id)
-    if (preset?.category === 'subscription') return t('modelProviderPlanBadge')
-    if (preset) return t('modelProviderPresetBadge')
+    const source = resolveModelProviderPresetSource(item)
+    if (source?.mode === 'token-plan') return t('modelProviderTokenPlanBadge')
+    if (source?.preset.category === 'subscription') return t('modelProviderPlanBadge')
+    if (source) return t('modelProviderPresetBadge')
     return t('modelProviderCustomBadge')
   }
 
@@ -1898,7 +1881,7 @@ export function ProvidersSettingsSection({ ctx }: { ctx: Record<string, any> }):
   )
   const activeProbeBlocked = activeBaseUrlInvalid || activeMissingCredential
   const activeTokenPlanRegions = activeProvider
-    ? tokenPlanPresetForProfileId(activeProvider.id)?.tokenPlan?.regions ?? []
+    ? tokenPlanPresetForProfile(activeProvider)?.tokenPlan?.regions ?? []
     : []
 
   const normalizedProviderListQuery = providerListQuery.trim().toLowerCase()
@@ -1907,10 +1890,10 @@ export function ProvidersSettingsSection({ ctx }: { ctx: Record<string, any> }):
         `${item.name} ${item.id}`.toLowerCase().includes(normalizedProviderListQuery)
       )
     : displayProviders
-  const planProviders = filteredProviders.filter((item) => isSubscriptionProviderId(item.id))
-  const apiProviders = filteredProviders.filter((item) => !isSubscriptionProviderId(item.id))
+  const planProviders = filteredProviders.filter((item) => isSubscriptionProvider(item))
+  const apiProviders = filteredProviders.filter((item) => !isSubscriptionProvider(item))
   // 只要存在任一套餐类供应商就分组展示;否则(通常只有默认 DeepSeek)保持单一平铺列表。
-  const grouped = displayProviders.some((item) => isSubscriptionProviderId(item.id))
+  const grouped = displayProviders.some((item) => isSubscriptionProvider(item))
 
   const renderProviderButton = (item: ModelProviderProfileV1): ReactElement => {
     const selected = activeProvider?.id === item.id
@@ -1958,7 +1941,7 @@ export function ProvidersSettingsSection({ ctx }: { ctx: Record<string, any> }):
   const addMenuEntries = MODEL_PROVIDER_PRESETS.flatMap((preset) => {
     const entries: {
       preset: ModelProviderPreset
-      mode: 'api' | 'token-plan'
+      mode: ModelProviderPresetMode
       profileId: string
       label: string
       group: 'subscription' | 'api'
@@ -1991,7 +1974,11 @@ export function ProvidersSettingsSection({ ctx }: { ctx: Record<string, any> }):
   const planAddEntries = visibleAddEntries.filter((entry) => entry.group === 'subscription')
   const apiAddEntries = visibleAddEntries.filter((entry) => entry.group === 'api')
   const renderAddEntry = (entry: (typeof addMenuEntries)[number]): ReactElement => {
-    const exists = modelProviders.some((item) => item.id === entry.profileId)
+    const multiAccount = isMultiAccountProviderPreset(entry.preset, entry.mode)
+    const accountCount = multiAccount
+      ? modelProviderPresetAccountCount(entry.preset, entry.mode, modelProviders)
+      : 0
+    const exists = !multiAccount && modelProviders.some((item) => item.id === entry.profileId)
     return (
       <button
         key={entry.profileId}
@@ -2004,15 +1991,19 @@ export function ProvidersSettingsSection({ ctx }: { ctx: Record<string, any> }):
       >
         <span className="flex min-w-0 items-start justify-between gap-2">
           <span className="truncate text-[13.5px] font-semibold text-ds-ink">{entry.label}</span>
-          <StatusPill tone={exists ? 'warning' : 'muted'}>
-            {exists
+          <StatusPill tone={exists ? 'warning' : accountCount > 0 ? 'success' : 'muted'}>
+            {accountCount > 0
+              ? t('modelProviderAccountCount', { count: accountCount })
+              : exists
               ? t('modelProviderPresetUpdateTag')
               : entry.group === 'subscription'
                 ? t('modelProviderPlanBadge')
                 : t('modelProviderPresetBadge')}
           </StatusPill>
         </span>
-        <span className="truncate font-mono text-[11.5px] text-ds-faint">{entry.profileId}</span>
+        <span className="truncate font-mono text-[11.5px] text-ds-faint">
+          {entry.profileId}{multiAccount ? ` · ${t('modelProviderAddAccountHint')}` : ''}
+        </span>
       </button>
     )
   }
@@ -2211,13 +2202,13 @@ export function ProvidersSettingsSection({ ctx }: { ctx: Record<string, any> }):
                   </div>
                 </DetailSection>
                 <DetailSection title={t('modelProviderSectionConnection')}>
-                  {isCodexProvider(activeProvider.id) ? (
+                  {isCodexProvider(activeProvider) ? (
                     <CodexLoginSection
                       provider={activeProvider}
                       onCredentialChange={(apiKey) => updateModelProvider(activeProvider.id, { apiKey })}
                       t={t}
                     />
-                  ) : isGrokSubscriptionProvider(activeProvider.id) ? (
+                  ) : isGrokSubscriptionProvider(activeProvider) ? (
                     <GrokLoginSection
                       provider={activeProvider}
                       onCredentialChange={(apiKey) => updateModelProvider(activeProvider.id, { apiKey })}
@@ -2305,7 +2296,7 @@ export function ProvidersSettingsSection({ ctx }: { ctx: Record<string, any> }):
                     <select
                       className={selectControlClass}
                       value={activeProvider.endpointFormat}
-                      disabled={isOAuthSubscriptionProvider(activeProvider.id) || isAgentSdkProvider(activeProvider)}
+                      disabled={isOAuthSubscriptionProvider(activeProvider) || isAgentSdkProvider(activeProvider)}
                       onChange={(e) => updateModelProvider(activeProvider.id, {
                         endpointFormat: e.target.value as ModelEndpointFormat
                       })}
@@ -2317,11 +2308,11 @@ export function ProvidersSettingsSection({ ctx }: { ctx: Record<string, any> }):
                       ))}
                     </select>
                   </label>
-                  {isCodexProvider(activeProvider.id) ? (
+                  {isCodexProvider(activeProvider) ? (
                     <p className="text-[12px] leading-5 text-ds-muted">
                       {t('codexEndpointLocked')}
                     </p>
-                  ) : isGrokSubscriptionProvider(activeProvider.id) ? (
+                  ) : isGrokSubscriptionProvider(activeProvider) ? (
                     <p className="text-[12px] leading-5 text-ds-muted">
                       {t('grokEndpointLocked')}
                     </p>
@@ -2507,7 +2498,7 @@ export function ProvidersSettingsSection({ ctx }: { ctx: Record<string, any> }):
                   onToggle={(value) => {
                     if (value) {
                       updateModelProvider(activeProvider.id, {
-                        image: presetImageCapability(activeProvider.id) ?? defaultImageCapability(activeProvider.baseUrl)
+                        image: presetImageCapability(activeProvider) ?? defaultImageCapability(activeProvider.baseUrl)
                       })
                       setCapabilityExpanded('image', true)
                     } else {

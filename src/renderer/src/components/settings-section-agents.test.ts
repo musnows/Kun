@@ -12,7 +12,9 @@ import {
   defaultKunRuntimeSettings,
   defaultModelProviderSettings,
   getModelProviderPreset,
+  modelProviderPresetAccountProfile,
   modelProviderPresetProfile,
+  modelProviderTokenPlanProfile,
   type ModelProviderProfileV1
 } from '@shared/app-settings'
 import type { ModelProviderProbeResult } from '@shared/kun-gui-api'
@@ -51,6 +53,8 @@ const labels: Record<string, string> = {
   modelProviderPlanBadge: 'Plan',
   modelProviderTokenPlanBadge: 'Token Plan',
   modelProviderPresetUpdateTag: 'Update preset',
+  modelProviderAccountCount: '{{count}} accounts',
+  modelProviderAddAccountHint: 'Add an independent account',
   modelProviderNewName: 'Custom provider {{index}}',
   modelProviderDraftBadge: 'Unsaved',
   modelProviderDraftSection: 'Add this provider',
@@ -1060,6 +1064,137 @@ describe('AgentsSettingsSection Kun diagnostics smoke', () => {
         agents: {
           kun: expect.objectContaining({ providerId: 'custom-provider-3' })
         }
+      })
+      expect(rendererText(renderer)).not.toContain('Unsaved')
+    })
+
+    it('adds repeated Token Plan accounts with independent numbered identities', async () => {
+      const settings = defaultModelProviderSettings()
+      const minimax = getModelProviderPreset('minimax')
+      const first = modelProviderTokenPlanProfile(minimax!, 'sk-first')!
+      const update = vi.fn()
+      const renderer = await mountProviders({
+        ...baseCtx(),
+        provider: { ...settings, providers: [...settings.providers, first] },
+        kun: { ...defaultKunRuntimeSettings(), providerId: first.id, model: first.models[0] },
+        update
+      })
+
+      await act(async () => findButton(renderer, 'Add provider').props.onClick())
+      const dialog = renderer.root.findByProps({ role: 'dialog' })
+      expect(instanceText(dialog)).toContain('1 accounts')
+      const minimaxPlanEntry = dialog.findAllByType('button')
+        .find((button) => {
+          const text = instanceText(button)
+          return text.includes('MiniMax') && text.includes('Token Plan') && text.includes('1 accounts')
+        })
+      expect(minimaxPlanEntry).toBeDefined()
+      expect(instanceText(minimaxPlanEntry!)).toContain('Add an independent account')
+
+      await act(async () => minimaxPlanEntry!.props.onClick())
+      expect(renderer.root.findAllByProps({ role: 'dialog' })).toHaveLength(0)
+      expect(rendererText(renderer)).toContain('Unsaved')
+      expect(rendererText(renderer)).toContain('MiniMax Token Plan 2')
+
+      await act(async () => findButton(renderer, 'Cancel').props.onClick())
+      expect(rendererText(renderer)).not.toContain('Unsaved')
+      expect(update).not.toHaveBeenCalled()
+
+      await act(async () => findButton(renderer, 'Add provider').props.onClick())
+      const reopenedDialog = renderer.root.findByProps({ role: 'dialog' })
+      const reopenedEntry = reopenedDialog.findAllByType('button')
+        .find((button) => {
+          const text = instanceText(button)
+          return text.includes('MiniMax') && text.includes('Token Plan') && text.includes('1 accounts')
+        })
+      await act(async () => reopenedEntry!.props.onClick())
+
+      const apiKeyInput = renderer.root.findAllByType('input')
+        .find((input) => input.props.placeholder === 'Enter provider API key')
+      await act(async () => apiKeyInput!.props.onChange({ target: { value: 'sk-second' } }))
+      await act(async () => findButton(renderer, 'Add').props.onClick())
+
+      const savedProviders = update.mock.calls[0]?.[0]?.provider?.providers as ModelProviderProfileV1[]
+      expect(savedProviders.filter((provider) => provider.presetSource?.presetId === 'minimax')).toEqual([
+        expect.objectContaining({
+          id: 'minimax-token-plan',
+          name: 'MiniMax Token Plan',
+          apiKey: 'sk-first',
+          presetSource: { presetId: 'minimax', mode: 'token-plan' }
+        }),
+        expect.objectContaining({
+          id: 'minimax-token-plan-2',
+          name: 'MiniMax Token Plan 2',
+          apiKey: 'sk-second',
+          presetSource: { presetId: 'minimax', mode: 'token-plan' }
+        })
+      ])
+      expect(update.mock.calls[0]?.[0]?.agents?.kun?.providerId).toBe('minimax-token-plan-2')
+    })
+
+    it('uses the canonical models.dev source for a numbered provider account', async () => {
+      const settings = defaultModelProviderSettings()
+      const kimi = getModelProviderPreset('kimi-code')!
+      const first = modelProviderPresetAccountProfile(kimi, 'api', [])!
+      const second = {
+        ...modelProviderPresetAccountProfile(kimi, 'api', [first])!,
+        apiKey: 'sk-second'
+      }
+      const renderer = await mountProviders({
+        ...baseCtx(),
+        provider: { ...settings, providers: [...settings.providers, first, second] },
+        kun: { ...defaultKunRuntimeSettings(), providerId: second.id, model: second.models[0] }
+      })
+
+      await clickProviderTab(renderer, 'Models')
+      await act(async () => {
+        findButton(renderer, 'Fetch models').props.onClick()
+        await Promise.resolve()
+        await Promise.resolve()
+        await Promise.resolve()
+      })
+
+      expect(fetchModelsDevCatalog).toHaveBeenCalledWith({
+        providerId: 'kimi-code',
+        baseUrl: second.baseUrl,
+        forceRefresh: true
+      })
+    })
+
+    it('continues to refresh a pay-as-you-go preset without creating a duplicate account', async () => {
+      const settings = defaultModelProviderSettings()
+      const xiaomi = getModelProviderPreset('xiaomi')!
+      const existing = {
+        ...modelProviderPresetProfile(xiaomi, 'sk-xiaomi'),
+        name: 'Work Xiaomi',
+        models: [...modelProviderPresetProfile(xiaomi).models, 'private-model']
+      }
+      const update = vi.fn()
+      const renderer = await mountProviders({
+        ...baseCtx(),
+        provider: { ...settings, providers: [...settings.providers, existing] },
+        kun: { ...defaultKunRuntimeSettings(), providerId: existing.id, model: existing.models[0] },
+        update
+      })
+
+      await act(async () => findButton(renderer, 'Add provider').props.onClick())
+      const dialog = renderer.root.findByProps({ role: 'dialog' })
+      const xiaomiEntry = dialog.findAllByType('button')
+        .find((button) => instanceText(button).includes('Xiaomi') && instanceText(button).includes('Update preset'))
+      await act(async () => {
+        xiaomiEntry!.props.onClick()
+        await Promise.resolve()
+      })
+
+      expect(update).toHaveBeenCalledTimes(1)
+      const savedProviders = update.mock.calls[0]?.[0]?.provider?.providers as ModelProviderProfileV1[]
+      const savedXiaomi = savedProviders.filter((provider) => provider.id === 'xiaomi')
+      expect(savedXiaomi).toHaveLength(1)
+      expect(savedXiaomi[0]).toMatchObject({
+        name: 'Work Xiaomi',
+        apiKey: 'sk-xiaomi',
+        models: expect.arrayContaining(['private-model']),
+        presetSource: { presetId: 'xiaomi', mode: 'api' }
       })
       expect(rendererText(renderer)).not.toContain('Unsaved')
     })

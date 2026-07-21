@@ -530,6 +530,8 @@
   "speechLanguage_ja": "Японский",
   "speechLanguage_ko": "Корейский",
   "modelProviderPresetUpdateTag": "Обновить пресет",
+  "modelProviderAccountCount": "Аккаунтов: {{count}}",
+  "modelProviderAddAccountHint": "Добавить отдельный аккаунт",
   "modelProviderUpdatePresetTitle": "Обновить пресет «{{name}}»?",
   "modelProviderUpdatePresetDetail": "Этот пресет уже существует. Обновление обновит endpoint и список моделей, сохранив ваш API-ключ и существующие модели.",
   "modelProviderUpdatePresetAction": "Обновить",

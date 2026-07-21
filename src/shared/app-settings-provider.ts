@@ -40,6 +40,7 @@ import {
   type ModelProviderReasoningCapabilityV1,
   type ModelProviderProfilePatchV1,
   type ModelProviderProfileV1,
+  type ModelProviderPresetSourceV1,
   type ModelRequestRetrySettingsV1,
   type ModelRouteFailurePolicyV1,
   type ModelRouteHealthPolicyV1,
@@ -69,9 +70,9 @@ import {
   CHATGPT_SUBSCRIPTION_NAME,
   CHATGPT_SUBSCRIPTION_PROVIDER_ID,
   TOKEN_PLAN_PROVIDER_ID_SUFFIX,
-  getModelProviderPreset,
   modelProviderPresetProfile,
   modelProviderTokenPlanProfile,
+  resolveModelProviderPresetSource,
   type ModelProviderPreset
 } from './model-provider-presets'
 
@@ -568,7 +569,7 @@ function configuredMiniMaxMediaCapability(
   currentProviderId: string | undefined
 ): { provider: ModelProviderProfileV1; capability: MiniMaxMediaCapability; model: string } | null {
   const byId = new Map(providers.map((provider) => [provider.id, providerWithPresetCapabilities(provider)]))
-  for (const id of preferredMiniMaxMediaProviderIds(currentProviderId)) {
+  for (const id of preferredMiniMaxMediaProviderIds(currentProviderId, providers)) {
     const provider = byId.get(id)
     if (!provider?.apiKey.trim()) continue
     const capability = provider[key]
@@ -579,11 +580,23 @@ function configuredMiniMaxMediaCapability(
   return null
 }
 
-function preferredMiniMaxMediaProviderIds(currentProviderId: string | undefined): string[] {
+function preferredMiniMaxMediaProviderIds(
+  currentProviderId: string | undefined,
+  providers: readonly ModelProviderProfileV1[]
+): string[] {
   const normalized = normalizeModelProviderId(currentProviderId)
-  const ids = normalized === MINIMAX_PROVIDER_ID || normalized === MINIMAX_TOKEN_PLAN_PROVIDER_ID
-    ? [normalized, MINIMAX_PROVIDER_ID, MINIMAX_TOKEN_PLAN_PROVIDER_ID]
-    : [MINIMAX_PROVIDER_ID, MINIMAX_TOKEN_PLAN_PROVIDER_ID]
+  const current = providers.find((provider) => provider.id === normalized)
+  const currentSource = current ? resolveModelProviderPresetSource(current) : null
+  const accountIds = providers.flatMap((provider) => {
+    const source = resolveModelProviderPresetSource(provider)
+    return source?.preset.id === MINIMAX_PROVIDER_ID ? [provider.id] : []
+  })
+  const ids = [
+    ...(currentSource?.preset.id === MINIMAX_PROVIDER_ID ? [normalized] : []),
+    MINIMAX_PROVIDER_ID,
+    MINIMAX_TOKEN_PLAN_PROVIDER_ID,
+    ...accountIds
+  ]
   return ids.filter((id, index) => ids.indexOf(id) === index)
 }
 
@@ -609,8 +622,8 @@ function providerWithPresetCapabilities(provider: ModelProviderProfileV1): Model
 }
 
 function modelProviderPresetProfileForProvider(provider: ModelProviderProfileV1): ModelProviderProfileV1 | null {
-  const preset = getModelProviderPreset(provider.id)
-  return preset ? modelProviderPresetProfile(preset, provider.apiKey) : null
+  const source = resolveModelProviderPresetSource(provider)
+  return source?.mode === 'api' ? modelProviderPresetProfile(source.preset, provider.apiKey) : null
 }
 
 function mergePresetCapability<T extends { baseUrl: string; models: string[] }>(
@@ -918,10 +931,11 @@ function resolveImageProviderCapabilityModel(
     : fallback || model
 }
 
-function tokenPlanPresetForProvider(provider: Pick<ModelProviderProfileV1, 'id'>) {
-  if (!provider.id.endsWith(TOKEN_PLAN_PROVIDER_ID_SUFFIX)) return null
-  const preset = getModelProviderPreset(provider.id.slice(0, -TOKEN_PLAN_PROVIDER_ID_SUFFIX.length))
-  return preset?.tokenPlan ? preset : null
+function tokenPlanPresetForProvider(
+  provider: Pick<ModelProviderProfileV1, 'id' | 'presetSource'>
+) {
+  const source = resolveModelProviderPresetSource(provider)
+  return source?.mode === 'token-plan' ? source.preset : null
 }
 
 function sameModelIds(a: readonly string[], b: readonly string[]): boolean {
@@ -1023,12 +1037,13 @@ function normalizeModelProviderProfile(
 ): ModelProviderProfileV1 | null {
   const id = normalizeModelProviderId(input?.id)
   if (!id) return null
+  const presetSource = normalizeModelProviderPresetSource(input, id)
   const rawName = typeof input?.name === 'string' && input.name.trim() ? input.name.trim() : id
   const baseUrl = normalizeModelProviderBaseUrl(input?.baseUrl)
   const rawModels = normalizeProviderModels(input?.models)
   const { name, models } = migrateChatGptSubscriptionProfile(id, rawName, rawModels)
   const modelProfiles = withPresetModelProfiles(
-    id,
+    { id, presetSource },
     models,
     normalizeModelProviderModelProfiles(input?.modelProfiles, models)
   )
@@ -1040,6 +1055,7 @@ function normalizeModelProviderProfile(
   return providerWithPresetCapabilities({
     id,
     name,
+    ...(presetSource ? { presetSource } : {}),
     apiKey: typeof input?.apiKey === 'string' ? input.apiKey.trim() : '',
     baseUrl,
     endpointFormat: normalizeModelEndpointFormat(input?.endpointFormat),
@@ -1053,6 +1069,23 @@ function normalizeModelProviderProfile(
     ...(music ? { music } : {}),
     ...(video ? { video } : {})
   })
+}
+
+function normalizeModelProviderPresetSource(
+  input: ModelProviderProfilePatchV1 | undefined,
+  id: string
+): ModelProviderPresetSourceV1 | undefined {
+  const raw = input?.presetSource
+  if (raw !== undefined) {
+    if (!raw || typeof raw !== 'object') return undefined
+    const presetId = typeof raw.presetId === 'string' ? raw.presetId.trim() : ''
+    const mode = raw.mode === 'api' || raw.mode === 'token-plan' ? raw.mode : undefined
+    if (!presetId || !mode) return undefined
+    const resolved = resolveModelProviderPresetSource({ id, presetSource: { presetId, mode } })
+    return resolved ? { presetId: resolved.preset.id, mode: resolved.mode } : undefined
+  }
+  const inferred = resolveModelProviderPresetSource({ id })
+  return inferred ? { presetId: inferred.preset.id, mode: inferred.mode } : undefined
 }
 
 function migrateChatGptSubscriptionProfile(
@@ -1126,11 +1159,11 @@ function deepseekTextModelProfile(): ModelProviderModelProfileV1 {
  * in Settings keep surviving normalization.
  */
 function withPresetModelProfiles(
-  providerId: string,
+  provider: Pick<ModelProviderProfileV1, 'id' | 'presetSource'>,
   models: readonly string[],
   stored: Record<string, ModelProviderModelProfileV1>
 ): Record<string, ModelProviderModelProfileV1> {
-  const presetProfiles = presetModelProfilesForProvider(providerId)
+  const presetProfiles = presetModelProfilesForProvider(provider)
   if (!presetProfiles) return stored
   const knownModelKeys = new Set(models.map(normalizeModelKey).filter(Boolean))
   const merged: Record<string, ModelProviderModelProfileV1> = {}
@@ -1161,16 +1194,13 @@ function withPresetModelProfiles(
 }
 
 function presetModelProfilesForProvider(
-  providerId: string
+  provider: Pick<ModelProviderProfileV1, 'id' | 'presetSource'>
 ): Record<string, ModelProviderModelProfileV1> | null {
-  const isTokenPlan = providerId.endsWith(TOKEN_PLAN_PROVIDER_ID_SUFFIX)
-  const preset = getModelProviderPreset(
-    isTokenPlan ? providerId.slice(0, -TOKEN_PLAN_PROVIDER_ID_SUFFIX.length) : providerId
-  )
-  if (!preset) return null
-  const profiles = isTokenPlan
-    ? preset.tokenPlan?.modelProfiles ?? preset.modelProfiles
-    : preset.modelProfiles
+  const source = resolveModelProviderPresetSource(provider)
+  if (!source) return null
+  const profiles = source.mode === 'token-plan'
+    ? source.preset.tokenPlan?.modelProfiles ?? source.preset.modelProfiles
+    : source.preset.modelProfiles
   return profiles ?? null
 }
 

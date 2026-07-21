@@ -13,6 +13,8 @@ import {
   defaultWorkflowSettings,
   defaultWriteSettings,
   defaultTerminalSettings,
+  getModelProviderPreset,
+  modelProviderPresetAccountProfile,
   type AppSettingsV1
 } from '../shared/app-settings'
 import { fetchUpstreamModelIds, readConfiguredKunModelIds } from './upstream-models'
@@ -188,6 +190,34 @@ describe('upstream model picker list', () => {
         modelIds: ['team-coding', 'team-general']
       })
       expect(result.modelGroups?.some((group) => group.providerId.startsWith('route-pool:'))).toBe(false)
+    }
+  })
+
+  it('keeps duplicate subscription accounts as separate composer provider groups', async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), 'deepseek-gui-models-'))
+    await mkdir(dataDir, { recursive: true })
+    const configured = settings(dataDir)
+    const kimi = getModelProviderPreset('kimi-code')!
+    const first = modelProviderPresetAccountProfile(kimi, 'api', [])!
+    const second = modelProviderPresetAccountProfile(kimi, 'api', [first])!
+    configured.provider.providers.push(first, second)
+
+    const result = await fetchUpstreamModelIds(configured, '')
+
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.modelGroups).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          providerId: 'kimi-code',
+          label: 'Kimi Code',
+          modelIds: ['kimi-for-coding']
+        }),
+        expect.objectContaining({
+          providerId: 'kimi-code-2',
+          label: 'Kimi Code 2',
+          modelIds: ['kimi-for-coding']
+        })
+      ]))
     }
   })
 

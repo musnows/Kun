@@ -530,6 +530,8 @@
   "speechLanguage_ja": "Japanese",
   "speechLanguage_ko": "Korean",
   "modelProviderPresetUpdateTag": "Update preset",
+  "modelProviderAccountCount": "{{count}} accounts",
+  "modelProviderAddAccountHint": "Add an independent account",
   "modelProviderUpdatePresetTitle": "Update preset \"{{name}}\"?",
   "modelProviderUpdatePresetDetail": "This preset already exists. Updating refreshes the endpoint and model list while keeping your API key and existing models.",
   "modelProviderUpdatePresetAction": "Update",

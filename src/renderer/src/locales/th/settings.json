@@ -530,6 +530,8 @@
   "speechLanguage_ja": "ภาษาญี่ปุ่น",
   "speechLanguage_ko": "เกาหลี",
   "modelProviderPresetUpdateTag": "อัปเดตพรีเซ็ต",
+  "modelProviderAccountCount": "{{count}} บัญชี",
+  "modelProviderAddAccountHint": "เพิ่มบัญชีแยก",
   "modelProviderUpdatePresetTitle": "อัปเดตค่าที่ตั้งล่วงหน้า \"{{name}}\" หรือไม่",
   "modelProviderUpdatePresetDetail": "ค่าที่กำหนดล่วงหน้านี้มีอยู่แล้ว การอัปเดตจะรีเฟรชรายการปลายทางและโมเดลโดยยังคงรักษาคีย์ API และโมเดลที่มีอยู่ไว้",
   "modelProviderUpdatePresetAction": "อัปเดต",

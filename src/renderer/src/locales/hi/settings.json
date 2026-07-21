@@ -530,6 +530,8 @@
   "speechLanguage_ja": "जापानी",
   "speechLanguage_ko": "कोरियाई",
   "modelProviderPresetUpdateTag": "प्रीसेट अपडेट करें",
+  "modelProviderAccountCount": "{{count}} खाते",
+  "modelProviderAddAccountHint": "अलग खाता जोड़ें",
   "modelProviderUpdatePresetTitle": "Update preset \"{{name}}\"?",
   "modelProviderUpdatePresetDetail": "यह प्रीसेट पहले से मौजूद है. अपडेट करने से आपकी एपीआई कुंजी और मौजूदा मॉडल को बनाए रखते हुए एंडपॉइंट और मॉडल सूची ताज़ा हो जाती है।",
   "modelProviderUpdatePresetAction": "अद्यतन करें",
