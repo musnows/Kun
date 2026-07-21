@@ -6,6 +6,9 @@ import type { ExtensionPrincipal } from './extension-agent-service.js'
 import type { ExtensionCredentialStore } from './extension-credential-store.js'
 import type { ExtensionProviderAccountStore } from './extension-provider-account-store.js'
 
+// Keep aligned with src/main/grok-auth.ts and the Grok Build OAuth client.
+const GROK_CLIENT_VERSION = '0.2.106'
+
 const MigrationRollbackSchema = z.object({
   accountId: z.string().min(1),
   credentialRef: z.string().min(1),
@@ -101,7 +104,9 @@ export function materializeLegacyProviderCredential(rawApiKey: string): LegacyPr
         apiKey: accessToken,
         headers: {
           'X-XAI-Token-Auth': 'xai-grok-cli',
-          'x-authenticateresponse': 'authenticate-response'
+          'x-authenticateresponse': 'authenticate-response',
+          'x-grok-client-version': GROK_CLIENT_VERSION,
+          'x-grok-client-mode': 'interactive'
         }
       }
     }

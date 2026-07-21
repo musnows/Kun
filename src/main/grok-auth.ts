@@ -7,6 +7,8 @@ export const GROK_OAUTH_ISSUER = 'https://auth.x.ai'
 export const GROK_CLI_CHAT_PROXY_BASE_URL = 'https://cli-chat-proxy.grok.com/v1'
 export const GROK_TOKEN_AUTH_HEADER = 'xai-grok-cli'
 export const GROK_OAUTH_REFERRER = 'kun'
+/** Keep aligned with the Grok Build client whose public OAuth contract we use. */
+export const GROK_CLIENT_VERSION = '0.2.106'
 
 /** Align with grok-build DEFAULT_EARLY_INVALIDATION_SECS. */
 export const GROK_EARLY_INVALIDATION_MS = 5 * 60 * 1000
@@ -27,8 +29,6 @@ const GROK_OAUTH_SCOPES = [
   'workspaces:read',
   'workspaces:write'
 ].join(' ')
-const DEVICE_GRANT_TYPE = 'urn:ietf:params:oauth:grant-type:device_code'
-
 export type GrokOAuthCredentials = {
   kind: 'grok-oauth'
   accessToken: string
@@ -39,14 +39,6 @@ export type GrokOAuthCredentials = {
   issuer?: string
   clientId?: string
 }
-
-export type GrokAuthStartResult =
-  | { ok: true; url: string; deviceCode: string; userCode: string; interval: number }
-  | { ok: false; message: string }
-
-export type GrokAuthPollResult =
-  | { done: true; credentials: GrokOAuthCredentials }
-  | { done: false; error?: string; slowDown?: boolean }
 
 export type GrokBrowserAuthErrorCode = 'port_in_use'
 
@@ -71,16 +63,6 @@ type PendingBrowserSession = {
 }
 
 let pendingBrowserSession: PendingBrowserSession | null = null
-
-class GrokBrowserAuthError extends Error {
-  constructor(
-    message: string,
-    readonly code: GrokBrowserAuthErrorCode
-  ) {
-    super(message)
-    this.name = 'GrokBrowserAuthError'
-  }
-}
 
 function parseJwtClaims(token: string): Record<string, unknown> | undefined {
   const part = token.split('.')[1]
@@ -181,8 +163,9 @@ function base64UrlEncode(buffer: Buffer): string {
 }
 
 function generatePkce(): { verifier: string; challenge: string } {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~'
-  const verifier = Array.from(randomBytes(32), (byte) => chars[byte % chars.length]).join('')
+  // RFC 7636 requires 43-128 characters. Grok Build encodes 32 random bytes,
+  // producing a 43-character base64url verifier without padding.
+  const verifier = base64UrlEncode(randomBytes(32))
   const challenge = base64UrlEncode(createHash('sha256').update(verifier).digest())
   return { verifier, challenge }
 }
@@ -226,7 +209,7 @@ function credentialsFromTokens(
   issuer: string = GROK_OAUTH_ISSUER
 ): GrokOAuthCredentials | null {
   const accessToken = tokens.access_token as string | undefined
-  // Device/browser login should always return a refresh_token (offline_access).
+  // Browser login should always return a refresh_token (offline_access).
   // Keep refresh optional only if IdP omits it — callers still get a session
   // but ensureFresh will force re-login once access expires.
   const refreshToken = (tokens.refresh_token as string | undefined) ?? ''
@@ -304,13 +287,17 @@ async function exchangeAuthorizationCode(
   session: Pick<PendingBrowserSession, 'tokenEndpoint' | 'redirectUri' | 'codeVerifier'>,
   code: string
 ): Promise<GrokOAuthCredentials> {
-  const tokens = await postForm(session.tokenEndpoint, {
-    grant_type: 'authorization_code',
-    code,
-    redirect_uri: session.redirectUri,
-    client_id: GROK_OAUTH_CLIENT_ID,
-    code_verifier: session.codeVerifier
-  })
+  const tokens = await postForm(
+    session.tokenEndpoint,
+    {
+      grant_type: 'authorization_code',
+      code,
+      redirect_uri: session.redirectUri,
+      client_id: GROK_OAUTH_CLIENT_ID,
+      code_verifier: session.codeVerifier
+    },
+    { 'x-grok-client-version': GROK_CLIENT_VERSION }
+  )
   const creds = credentialsFromTokens(tokens)
   if (!creds) throw new Error('令牌交换返回的数据不完整')
   return creds
@@ -433,9 +420,7 @@ export async function startGrokBrowserAuth(
   } catch (error) {
     cancelGrokBrowserAuth()
     const message = error instanceof Error ? error.message : String(error)
-    return error instanceof GrokBrowserAuthError
-      ? { ok: false, message, code: error.code }
-      : { ok: false, message }
+    return { ok: false, message }
   }
 }
 
@@ -480,125 +465,6 @@ export function isGrokBrowserAuthPending(): boolean {
   return Boolean(pendingBrowserSession && !pendingBrowserSession.settled)
 }
 
-export async function startGrokDeviceAuth(): Promise<GrokAuthStartResult> {
-  try {
-    const issuer = GROK_OAUTH_ISSUER.replace(/\/$/, '')
-    const res = await fetch(`${issuer}/oauth2/device/code`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'x-grok-client-surface': 'ui'
-      },
-      body: new URLSearchParams({
-        client_id: GROK_OAUTH_CLIENT_ID,
-        scope: GROK_OAUTH_SCOPES,
-        referrer: GROK_OAUTH_REFERRER
-      }).toString()
-    })
-    const text = await res.text()
-    if (!res.ok) {
-      if (res.status === 404) {
-        return {
-          ok: false,
-          message: 'Device-code login is not available for this deployment. Try browser login instead.'
-        }
-      }
-      const detail = summarizeAuthErrorBody(text)
-      return {
-        ok: false,
-        message: `Device code request failed (${res.status})${detail ? `: ${detail}` : ''}`
-      }
-    }
-    let data: Record<string, unknown>
-    try {
-      data = JSON.parse(text) as Record<string, unknown>
-    } catch {
-      return { ok: false, message: 'Invalid device code response' }
-    }
-    const deviceCode = typeof data.device_code === 'string' ? data.device_code : ''
-    const userCode = typeof data.user_code === 'string' ? data.user_code : ''
-    const verificationUri =
-      typeof data.verification_uri_complete === 'string'
-        ? data.verification_uri_complete
-        : typeof data.verification_uri === 'string'
-          ? data.verification_uri
-          : ''
-    const interval = Math.max(Number(data.interval) || 5, 1)
-    if (!deviceCode || !userCode || !verificationUri) {
-      return { ok: false, message: 'Incomplete device auth response' }
-    }
-    if (!/^[A-Z0-9-]+$/i.test(userCode)) {
-      return { ok: false, message: 'Server returned invalid user_code format' }
-    }
-    return {
-      ok: true,
-      url: verificationUri,
-      deviceCode,
-      userCode,
-      interval
-    }
-  } catch (error) {
-    return { ok: false, message: error instanceof Error ? error.message : String(error) }
-  }
-}
-
-/**
- * Single poll of the device-code token endpoint. The renderer drives the
- * interval (and slow_down backoff) the same way Codex device login does.
- */
-export async function pollGrokDeviceAuth(deviceCode: string): Promise<GrokAuthPollResult> {
-  try {
-    const issuer = GROK_OAUTH_ISSUER.replace(/\/$/, '')
-    const res = await fetch(`${issuer}/oauth2/token`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'x-grok-client-surface': 'ui'
-      },
-      body: new URLSearchParams({
-        grant_type: DEVICE_GRANT_TYPE,
-        device_code: deviceCode,
-        client_id: GROK_OAUTH_CLIENT_ID
-      }).toString()
-    })
-    const text = await res.text()
-    if (res.ok) {
-      let tokens: Record<string, unknown>
-      try {
-        tokens = JSON.parse(text) as Record<string, unknown>
-      } catch {
-        return { done: false, error: 'Invalid token response' }
-      }
-      const credentials = credentialsFromTokens(tokens)
-      if (!credentials) return { done: false, error: 'Token exchange returned incomplete tokens' }
-      return { done: true, credentials }
-    }
-
-    let errorCode = ''
-    let errorDescription = ''
-    try {
-      const parsed = JSON.parse(text) as Record<string, unknown>
-      errorCode = typeof parsed.error === 'string' ? parsed.error : ''
-      errorDescription =
-        typeof parsed.error_description === 'string' ? parsed.error_description : errorCode
-    } catch {
-      return { done: false, error: `Device authorization failed: ${res.status}` }
-    }
-
-    if (errorCode === 'authorization_pending') return { done: false }
-    if (errorCode === 'slow_down') return { done: false, slowDown: true }
-    if (errorCode === 'access_denied') {
-      return { done: false, error: errorDescription || 'Authorization denied' }
-    }
-    if (errorCode === 'expired_token') {
-      return { done: false, error: 'Device code expired. Please try again.' }
-    }
-    return { done: false, error: errorDescription || `Token exchange error: ${errorCode || res.status}` }
-  } catch (error) {
-    return { done: false, error: error instanceof Error ? error.message : String(error) }
-  }
-}
-
 export async function refreshGrokToken(
   credentials: GrokOAuthCredentials
 ): Promise<GrokOAuthCredentials | null> {
@@ -611,11 +477,15 @@ export async function refreshGrokToken(
     } catch {
       /* fall back to /oauth2/token */
     }
-    const tokens = await postForm(tokenEndpoint, {
-      grant_type: 'refresh_token',
-      refresh_token: credentials.refreshToken,
-      client_id: credentials.clientId || GROK_OAUTH_CLIENT_ID
-    })
+    const tokens = await postForm(
+      tokenEndpoint,
+      {
+        grant_type: 'refresh_token',
+        refresh_token: credentials.refreshToken,
+        client_id: credentials.clientId || GROK_OAUTH_CLIENT_ID
+      },
+      { 'x-grok-client-version': GROK_CLIENT_VERSION }
+    )
     // Refresh responses sometimes omit refresh_token — keep the previous one.
     if (typeof tokens.refresh_token !== 'string' || !tokens.refresh_token) {
       tokens.refresh_token = credentials.refreshToken
@@ -696,7 +566,9 @@ export function encodeGrokCredentials(creds: GrokOAuthCredentials): string {
 export function grokRequestHeaders(): Record<string, string> {
   return {
     'X-XAI-Token-Auth': GROK_TOKEN_AUTH_HEADER,
-    'x-authenticateresponse': 'authenticate-response'
+    'x-authenticateresponse': 'authenticate-response',
+    'x-grok-client-version': GROK_CLIENT_VERSION,
+    'x-grok-client-mode': 'interactive'
   }
 }
 

@@ -4,6 +4,7 @@ import {
   cancelGrokBrowserAuth,
   encodeGrokCredentials,
   ensureFreshGrokCredentials,
+  GROK_CLIENT_VERSION,
   GROK_EARLY_INVALIDATION_MS,
   GROK_OAUTH_CLIENT_ID,
   GROK_OAUTH_ISSUER,
@@ -11,10 +12,8 @@ import {
   isGrokOAuthCredentials,
   parseGrokCredentials,
   parseGrokPastedAuthInput,
-  pollGrokDeviceAuth,
   resolveGrokOAuthApiKey,
   startGrokBrowserAuth,
-  startGrokDeviceAuth,
   submitGrokBrowserAuthCode
 } from './grok-auth'
 
@@ -56,7 +55,7 @@ function hitCallback(redirectUri: string, state: string): Promise<void> {
 }
 
 function mockDiscoveryAndToken(tokenBody: Record<string, unknown> = successfulTokenBody()) {
-  const tokenRequests: Array<{ url: string; body: string }> = []
+  const tokenRequests: Array<{ url: string; body: string; clientVersion: string | null }> = []
   vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) => {
     const urlString = String(url)
     if (urlString.includes('openid-configuration')) {
@@ -65,7 +64,11 @@ function mockDiscoveryAndToken(tokenBody: Record<string, unknown> = successfulTo
         headers: { 'Content-Type': 'application/json' }
       })
     }
-    tokenRequests.push({ url: urlString, body: String(init?.body ?? '') })
+    tokenRequests.push({
+      url: urlString,
+      body: String(init?.body ?? ''),
+      clientVersion: new Headers(init?.headers).get('x-grok-client-version')
+    })
     return new Response(JSON.stringify(tokenBody), {
       status: 200,
       headers: { 'Content-Type': 'application/json' }
@@ -105,7 +108,11 @@ describe('startGrokBrowserAuth', () => {
     expect(authUrl.searchParams.get('client_id')).toBe(GROK_OAUTH_CLIENT_ID)
     expect(authUrl.searchParams.get('code_challenge_method')).toBe('S256')
     const tokenBody = new URLSearchParams(tokenRequests[0]?.body ?? '')
-    expect(tokenBody.get('code_verifier')).toBeTruthy()
+    const verifier = tokenBody.get('code_verifier') ?? ''
+    expect(verifier).toHaveLength(43)
+    expect(verifier).toMatch(/^[A-Za-z0-9_-]{43}$/)
+    expect(authUrl.searchParams.get('code_challenge')).toMatch(/^[A-Za-z0-9_-]{43}$/)
+    expect(tokenRequests[0]?.clientVersion).toBe(GROK_CLIENT_VERSION)
   })
 
   it('completes browser OAuth when the user pastes a bare authorization code', async () => {
@@ -123,6 +130,7 @@ describe('startGrokBrowserAuth', () => {
       ok: true,
       credentials: { kind: 'grok-oauth', email: 'grok@example.com' }
     })
+    if (result.ok) expect(result.credentials.accessToken).not.toBe('pasted-auth-code')
     const tokenBody = new URLSearchParams(tokenRequests[0]?.body ?? '')
     expect(tokenBody.get('code')).toBe('pasted-auth-code')
     expect(tokenBody.get('grant_type')).toBe('authorization_code')
@@ -173,69 +181,6 @@ describe('parseGrokPastedAuthInput', () => {
   })
 })
 
-describe('startGrokDeviceAuth / pollGrokDeviceAuth', () => {
-  it('requests a device code and completes on successful poll', async () => {
-    vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) => {
-      const urlString = String(url)
-      if (urlString.endsWith('/oauth2/device/code')) {
-        const body = String(init?.body ?? '')
-        expect(body).toContain(`client_id=${GROK_OAUTH_CLIENT_ID}`)
-        return new Response(
-          JSON.stringify({
-            device_code: 'device-abc',
-            user_code: 'ABCD-1234',
-            verification_uri: 'https://accounts.x.ai/device',
-            verification_uri_complete: 'https://accounts.x.ai/device?user_code=ABCD-1234',
-            expires_in: 600,
-            interval: 5
-          }),
-          { status: 200, headers: { 'Content-Type': 'application/json' } }
-        )
-      }
-      if (urlString.endsWith('/oauth2/token')) {
-        return new Response(JSON.stringify(successfulTokenBody()), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' }
-        })
-      }
-      throw new Error(`unexpected url ${urlString}`)
-    })
-
-    const start = await startGrokDeviceAuth()
-    expect(start).toMatchObject({
-      ok: true,
-      deviceCode: 'device-abc',
-      userCode: 'ABCD-1234',
-      interval: 5
-    })
-    if (!start.ok) return
-
-    const poll = await pollGrokDeviceAuth(start.deviceCode)
-    expect(poll).toMatchObject({
-      done: true,
-      credentials: { kind: 'grok-oauth', email: 'grok@example.com' }
-    })
-  })
-
-  it('returns pending / slow_down without finishing', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
-      new Response(JSON.stringify({ error: 'authorization_pending' }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json' }
-      })
-    )
-    await expect(pollGrokDeviceAuth('device-abc')).resolves.toEqual({ done: false })
-
-    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
-      new Response(JSON.stringify({ error: 'slow_down' }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json' }
-      })
-    )
-    await expect(pollGrokDeviceAuth('device-abc')).resolves.toEqual({ done: false, slowDown: true })
-  })
-})
-
 describe('credential helpers and refresh', () => {
   it('round-trips encode/parse and materializes proxy headers', () => {
     const encoded = encodeGrokCredentials({
@@ -252,7 +197,9 @@ describe('credential helpers and refresh', () => {
       apiKey: 'access',
       headers: {
         'X-XAI-Token-Auth': 'xai-grok-cli',
-        'x-authenticateresponse': 'authenticate-response'
+        'x-authenticateresponse': 'authenticate-response',
+        'x-grok-client-version': GROK_CLIENT_VERSION,
+        'x-grok-client-mode': 'interactive'
       }
     })
     expect(resolveGrokOAuthApiKey('plain-key')).toEqual({ apiKey: 'plain-key' })
@@ -288,7 +235,7 @@ describe('credential helpers and refresh', () => {
 
   it('refreshes credentials that fall within the early-invalidation window', async () => {
     const newClaims = { email: 'new@example.com', sub: 'user_new' }
-    mockDiscoveryAndToken(
+    const tokenRequests = mockDiscoveryAndToken(
       successfulTokenBody({
         access_token: encodeJwt(newClaims),
         id_token: encodeJwt(newClaims),
@@ -311,5 +258,6 @@ describe('credential helpers and refresh', () => {
     expect(result.credentials?.accessToken).not.toBe('old-access')
     expect(result.credentials?.refreshToken).toBe('new-refresh')
     expect(parseGrokCredentials(result.apiKey)?.email).toBe('new@example.com')
+    expect(tokenRequests[0]?.clientVersion).toBe(GROK_CLIENT_VERSION)
   })
 })

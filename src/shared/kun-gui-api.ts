@@ -369,9 +369,6 @@ export type CodexBrowserAuthErrorCode = 'port_in_use'
 export type CodexBrowserAuthResult =
   | { ok: true; credentials: CodexOAuthCredentials }
   | { ok: false; message: string; code?: CodexBrowserAuthErrorCode }
-export type GrokAuthStartResult =
-  | { ok: true; url: string; deviceCode: string; userCode: string; interval: number }
-  | { ok: false; message: string }
 export type GrokOAuthCredentials = {
   kind: 'grok-oauth'
   accessToken: string
@@ -382,9 +379,6 @@ export type GrokOAuthCredentials = {
   issuer?: string
   clientId?: string
 }
-export type GrokAuthPollResult =
-  | { done: true; credentials: GrokOAuthCredentials }
-  | { done: false; error?: string; slowDown?: boolean }
 export type GrokBrowserAuthErrorCode = 'port_in_use'
 export type GrokBrowserAuthResult =
   | { ok: true; credentials: GrokOAuthCredentials }
@@ -562,8 +556,6 @@ export type KunGuiApi = ExtensionIpcApi & {
   startCodexAuth: () => Promise<CodexAuthStartResult>
   pollCodexAuth: (deviceCode: string, userCode: string) => Promise<CodexAuthPollResult>
   startCodexBrowserAuth: () => Promise<CodexBrowserAuthResult>
-  startGrokAuth: () => Promise<GrokAuthStartResult>
-  pollGrokAuth: (deviceCode: string) => Promise<GrokAuthPollResult>
   startGrokBrowserAuth: () => Promise<GrokBrowserAuthResult>
   /** Paste the authorization code (or callback URL) from accounts.x.ai. */
   submitGrokBrowserAuthCode: (code: string) => Promise<GrokBrowserAuthResult>

@@ -155,8 +155,6 @@ import { reloadRenderer } from '../dev-renderer-cache'
 import { verifyTelegramBotToken } from '../telegram-runtime'
 import { startCodexDeviceAuth, pollCodexDeviceAuth, startCodexBrowserAuth } from '../codex-auth'
 import {
-  startGrokDeviceAuth,
-  pollGrokDeviceAuth,
   startGrokBrowserAuth,
   submitGrokBrowserAuthCode,
   cancelGrokBrowserAuth
@@ -1098,19 +1096,6 @@ export function registerAppIpcHandlers(options: RegisterAppIpcHandlersOptions): 
     return startCodexBrowserAuth(async (url: string) => {
       await shell.openExternal(url)
     })
-  })
-
-  ipcMain.handle('grok:auth:start', async () => {
-    return startGrokDeviceAuth()
-  })
-
-  ipcMain.handle('grok:auth:poll', async (_, payload: unknown) => {
-    const request = parseIpcPayload(
-      'grok:auth:poll',
-      z.object({ deviceCode: z.string().min(1) }).strict(),
-      payload
-    )
-    return pollGrokDeviceAuth(request.deviceCode)
   })
 
   ipcMain.handle('grok:auth:browser', async () => {

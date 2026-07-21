@@ -163,7 +163,9 @@ describe('materializeLegacyProviderCredential', () => {
       apiKey: 'grok-access',
       headers: {
         'X-XAI-Token-Auth': 'xai-grok-cli',
-        'x-authenticateresponse': 'authenticate-response'
+        'x-authenticateresponse': 'authenticate-response',
+        'x-grok-client-version': '0.2.106',
+        'x-grok-client-mode': 'interactive'
       }
     })
   })

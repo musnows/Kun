@@ -1,5 +1,6 @@
 import { createServer, type Server } from 'node:http'
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
+import { grokRequestHeaders } from './grok-auth'
 
 const CODEX_CLIENT_ID = 'app_EMoamEEZ73f0CkXaXp7hrann'
 const CODEX_ISSUER = 'https://auth.openai.com'
@@ -472,10 +473,7 @@ export function resolveCodexOAuthApiKey(rawApiKey: string): { apiKey: string; he
       if (parsed.kind === 'grok-oauth' && typeof parsed.accessToken === 'string' && parsed.accessToken.trim()) {
         return {
           apiKey: parsed.accessToken.trim(),
-          headers: {
-            'X-XAI-Token-Auth': 'xai-grok-cli',
-            'x-authenticateresponse': 'authenticate-response'
-          }
+          headers: grokRequestHeaders()
         }
       }
     } catch {
