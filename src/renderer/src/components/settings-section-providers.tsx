@@ -333,7 +333,7 @@ type ProbeState = {
 
 function providerPresetRequiresApiKey(provider: ModelProviderProfileV1): boolean {
   if (provider.id === 'litellm') return false
-  if (isCodexProvider(provider.id)) return false
+  if (isOAuthSubscriptionProvider(provider.id)) return false
   return Boolean(getModelProviderPreset(provider.id) || tokenPlanPresetForProfileId(provider.id))
 }
 
@@ -341,9 +341,17 @@ function isCodexProvider(id: string): boolean {
   return id === 'codex'
 }
 
+function isGrokSubscriptionProvider(id: string): boolean {
+  return id === 'grok-subscription'
+}
+
+function isOAuthSubscriptionProvider(id: string): boolean {
+  return isCodexProvider(id) || isGrokSubscriptionProvider(id)
+}
+
 function providerRequiresApiKey(provider: ModelProviderProfileV1): boolean {
   if (isAgentSdkProvider(provider)) return false
-  if (provider.id === DEFAULT_MODEL_PROVIDER_ID || isCodexProvider(provider.id)) return true
+  if (provider.id === DEFAULT_MODEL_PROVIDER_ID || isOAuthSubscriptionProvider(provider.id)) return true
   return providerPresetRequiresApiKey(provider)
 }
 
@@ -353,6 +361,17 @@ function parseCodexEmail(apiKey: string): string | undefined {
     const parsed = JSON.parse(apiKey) as Record<string, unknown>
     if (parsed.kind === 'codex-oauth' && typeof parsed.email === 'string') return parsed.email
     if (parsed.kind === 'codex-oauth') return parsed.accountId as string
+  } catch { /* ignore */ }
+  return undefined
+}
+
+function parseGrokIdentity(apiKey: string): string | undefined {
+  if (!apiKey.startsWith('{')) return undefined
+  try {
+    const parsed = JSON.parse(apiKey) as Record<string, unknown>
+    if (parsed.kind !== 'grok-oauth') return undefined
+    if (typeof parsed.email === 'string' && parsed.email) return parsed.email
+    if (typeof parsed.userId === 'string' && parsed.userId) return parsed.userId
   } catch { /* ignore */ }
   return undefined
 }
@@ -639,6 +658,304 @@ function CodexLoginSection({
       >
         <KeyRound className="h-3.5 w-3.5" strokeWidth={1.9} />
         {t('codexLoginDeviceCodeFallback')}
+      </button>
+      {phase === 'error' && error ? (
+        <InlineNoticeView notice={{ tone: 'error', message: error }} />
+      ) : null}
+    </div>
+  )
+}
+
+type GrokLoginPhase = 'idle' | 'browser' | 'device-starting' | 'polling' | 'error'
+
+function GrokLoginSection({
+  provider,
+  onCredentialChange,
+  t
+}: {
+  provider: ModelProviderProfileV1
+  onCredentialChange: (apiKey: string) => void
+  t: (key: string, params?: Record<string, unknown>) => string
+}): ReactElement {
+  const [phase, setPhase] = useState<GrokLoginPhase>('idle')
+  const [userCode, setUserCode] = useState('')
+  const [verifyUrl, setVerifyUrl] = useState('')
+  const [error, setError] = useState('')
+  const [notice, setNotice] = useState<InlineNotice | null>(null)
+  const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const loginRunRef = useRef(0)
+  const identity = parseGrokIdentity(provider.apiKey)
+  const connected = Boolean(identity)
+
+  const clearPoll = (): void => {
+    if (pollRef.current) clearTimeout(pollRef.current)
+    pollRef.current = null
+  }
+
+  const beginLoginRun = (): number => {
+    clearPoll()
+    loginRunRef.current += 1
+    return loginRunRef.current
+  }
+
+  const isCurrentLoginRun = (runId: number): boolean => loginRunRef.current === runId
+
+  useEffect(() => {
+    return () => {
+      if (pollRef.current) clearTimeout(pollRef.current)
+      loginRunRef.current += 1
+    }
+  }, [])
+
+  const startDeviceCodeLogin = async ({
+    runId = beginLoginRun(),
+    fallbackNotice = null
+  }: {
+    runId?: number
+    fallbackNotice?: InlineNotice | null
+  } = {}): Promise<void> => {
+    if (typeof window.kunGui?.startGrokAuth !== 'function') {
+      if (!isCurrentLoginRun(runId)) return
+      setPhase('error')
+      setError('Grok 订阅登录不可用，请重启应用')
+      setNotice(null)
+      return
+    }
+    setPhase('device-starting')
+    setError('')
+    setNotice(fallbackNotice)
+    try {
+      const result = await window.kunGui.startGrokAuth()
+      if (!isCurrentLoginRun(runId)) return
+      if (!result.ok) {
+        setPhase('error')
+        setError(result.message)
+        setNotice(null)
+        return
+      }
+      setUserCode(result.userCode)
+      setVerifyUrl(result.url)
+      setPhase('polling')
+      const deviceCode = result.deviceCode
+      let interval = Math.max(result.interval, 2) * 1000
+      clearPoll()
+      const schedulePoll = (): void => {
+        clearPoll()
+        pollRef.current = setTimeout(async () => {
+          if (!isCurrentLoginRun(runId)) {
+            clearPoll()
+            return
+          }
+          if (typeof window.kunGui?.pollGrokAuth !== 'function') return
+          try {
+            const poll = await window.kunGui.pollGrokAuth(deviceCode)
+            if (!isCurrentLoginRun(runId)) return
+            if (poll.done) {
+              clearPoll()
+              setNotice(null)
+              onCredentialChange(JSON.stringify(poll.credentials))
+              setPhase('idle')
+              return
+            }
+            if (poll.error) {
+              clearPoll()
+              setPhase('error')
+              setError(poll.error)
+              setNotice(null)
+              return
+            }
+            if (poll.slowDown) interval += 5000
+            schedulePoll()
+          } catch (pollError) {
+            if (!isCurrentLoginRun(runId)) return
+            clearPoll()
+            setPhase('error')
+            setError(pollError instanceof Error ? pollError.message : String(pollError))
+            setNotice(null)
+          }
+        }, interval)
+      }
+      schedulePoll()
+    } catch (err) {
+      if (!isCurrentLoginRun(runId)) return
+      setPhase('error')
+      setError(err instanceof Error ? err.message : String(err))
+      setNotice(null)
+    }
+  }
+
+  const startBrowserLogin = async (): Promise<void> => {
+    const runId = beginLoginRun()
+    if (typeof window.kunGui?.startGrokBrowserAuth !== 'function') {
+      setPhase('error')
+      setError('Grok 订阅浏览器登录不可用，请重启应用')
+      setNotice(null)
+      return
+    }
+    setPhase('browser')
+    setError('')
+    setNotice(null)
+    try {
+      const result = await window.kunGui.startGrokBrowserAuth()
+      if (!isCurrentLoginRun(runId)) return
+      if (result.ok) {
+        setNotice(null)
+        onCredentialChange(JSON.stringify(result.credentials))
+        setPhase('idle')
+      } else if (result.code === 'port_in_use') {
+        await startDeviceCodeLogin({
+          runId,
+          fallbackNotice: {
+            tone: 'info',
+            message: t('grokLoginPortBusyFallback')
+          }
+        })
+      } else {
+        setPhase('error')
+        setError(result.message)
+      }
+    } catch (err) {
+      if (!isCurrentLoginRun(runId)) return
+      setPhase('error')
+      setError(err instanceof Error ? err.message : String(err))
+      setNotice(null)
+    }
+  }
+
+  const cancelLogin = (): void => {
+    loginRunRef.current += 1
+    clearPoll()
+    setPhase('idle')
+    setError('')
+    setNotice(null)
+  }
+
+  const disconnect = (): void => {
+    loginRunRef.current += 1
+    clearPoll()
+    onCredentialChange('')
+    setPhase('idle')
+    setUserCode('')
+    setVerifyUrl('')
+    setNotice(null)
+  }
+
+  const openVerifyUrl = (): void => {
+    if (!verifyUrl) return
+    if (typeof window.kunGui?.openExternal === 'function') {
+      void window.kunGui.openExternal(verifyUrl).catch(() => {
+        window.open(verifyUrl, '_blank', 'noopener,noreferrer')
+      })
+      return
+    }
+    window.open(verifyUrl, '_blank', 'noopener,noreferrer')
+  }
+
+  if (connected) {
+    return (
+      <div className="flex items-center gap-2">
+        <span className="inline-block h-2 w-2 rounded-full bg-emerald-500" />
+        <span className="text-[13px] text-ds-ink">{identity}</span>
+        <button
+          type="button"
+          className="ml-auto rounded-lg px-3 py-1.5 text-[12px] font-medium text-ds-muted hover:bg-ds-hover"
+          onClick={disconnect}
+        >
+          {t('grokDisconnect')}
+        </button>
+      </div>
+    )
+  }
+
+  if (phase === 'browser') {
+    return (
+      <div className="grid gap-2">
+        <p className="text-[13px] text-ds-muted">{t('grokBrowserOpened')}</p>
+        <div className="flex items-center gap-1.5 text-[12px] text-ds-muted">
+          <Loader2 className="h-3 w-3 animate-spin" />
+          {t('grokWaitingAuth')}
+        </div>
+        <button
+          type="button"
+          className="w-fit text-[12px] font-medium text-ds-muted hover:text-ds-ink"
+          onClick={cancelLogin}
+        >
+          {t('grokCancel')}
+        </button>
+      </div>
+    )
+  }
+
+  if (phase === 'device-starting') {
+    return (
+      <div className="grid gap-2">
+        {notice ? <InlineNoticeView notice={notice} /> : null}
+        <div className="flex items-center gap-1.5 text-[12px] text-ds-muted">
+          <Loader2 className="h-3 w-3 animate-spin" />
+          {t('grokPreparingDeviceLogin')}
+        </div>
+        <button
+          type="button"
+          className="w-fit text-[12px] font-medium text-ds-muted hover:text-ds-ink"
+          onClick={cancelLogin}
+        >
+          {t('grokCancel')}
+        </button>
+      </div>
+    )
+  }
+
+  if (phase === 'polling') {
+    return (
+      <div className="grid gap-2">
+        {notice ? <InlineNoticeView notice={notice} /> : null}
+        <p className="text-[13px] text-ds-muted">{t('grokEnterCode')}</p>
+        <div className="flex flex-wrap items-center gap-2">
+          <code className="rounded-lg bg-ds-hover px-3 py-1.5 text-[16px] font-mono font-bold tracking-widest text-ds-ink">
+            {userCode}
+          </code>
+          <button
+            type="button"
+            className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-accent/10 px-3 py-1.5 text-[12px] font-medium text-accent transition hover:bg-accent/20 disabled:cursor-not-allowed disabled:opacity-60"
+            onClick={openVerifyUrl}
+            disabled={!verifyUrl}
+          >
+            <ExternalLink className="h-3.5 w-3.5" strokeWidth={1.9} />
+            {t('grokOpenBrowser')}
+          </button>
+        </div>
+        <div className="flex items-center gap-1.5 text-[12px] text-ds-muted">
+          <Loader2 className="h-3 w-3 animate-spin" />
+          {t('grokWaitingAuth')}
+        </div>
+        <button
+          type="button"
+          className="w-fit text-[12px] font-medium text-ds-muted hover:text-ds-ink"
+          onClick={cancelLogin}
+        >
+          {t('grokCancel')}
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="grid gap-2">
+      <button
+        type="button"
+        className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-[14px] font-semibold text-white shadow-sm transition hover:bg-accent/90"
+        onClick={startBrowserLogin}
+      >
+        <LogIn className="h-4 w-4" strokeWidth={1.9} />
+        {t('grokLoginButton')}
+      </button>
+      <button
+        type="button"
+        className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-ds-border bg-ds-card px-4 py-2 text-[12px] font-medium text-ds-muted transition hover:bg-ds-hover"
+        onClick={() => void startDeviceCodeLogin()}
+      >
+        <KeyRound className="h-3.5 w-3.5" strokeWidth={1.9} />
+        {t('grokLoginDeviceCodeFallback')}
       </button>
       {phase === 'error' && error ? (
         <InlineNoticeView notice={{ tone: 'error', message: error }} />
@@ -2017,6 +2334,12 @@ export function ProvidersSettingsSection({ ctx }: { ctx: Record<string, any> }):
                       onCredentialChange={(apiKey) => updateModelProvider(activeProvider.id, { apiKey })}
                       t={t}
                     />
+                  ) : isGrokSubscriptionProvider(activeProvider.id) ? (
+                    <GrokLoginSection
+                      provider={activeProvider}
+                      onCredentialChange={(apiKey) => updateModelProvider(activeProvider.id, { apiKey })}
+                      t={t}
+                    />
                   ) : isAgentSdkProvider(activeProvider) ? (
                     <ClaudeSubscriptionSection
                       provider={activeProvider}
@@ -2099,7 +2422,7 @@ export function ProvidersSettingsSection({ ctx }: { ctx: Record<string, any> }):
                     <select
                       className={selectControlClass}
                       value={activeProvider.endpointFormat}
-                      disabled={isCodexProvider(activeProvider.id) || isAgentSdkProvider(activeProvider)}
+                      disabled={isOAuthSubscriptionProvider(activeProvider.id) || isAgentSdkProvider(activeProvider)}
                       onChange={(e) => updateModelProvider(activeProvider.id, {
                         endpointFormat: e.target.value as ModelEndpointFormat
                       })}
@@ -2114,6 +2437,10 @@ export function ProvidersSettingsSection({ ctx }: { ctx: Record<string, any> }):
                   {isCodexProvider(activeProvider.id) ? (
                     <p className="text-[12px] leading-5 text-ds-muted">
                       {t('codexEndpointLocked')}
+                    </p>
+                  ) : isGrokSubscriptionProvider(activeProvider.id) ? (
+                    <p className="text-[12px] leading-5 text-ds-muted">
+                      {t('grokEndpointLocked')}
                     </p>
                   ) : isAgentSdkProvider(activeProvider) ? (
                     <p className="text-[12px] leading-5 text-ds-muted">

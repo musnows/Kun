@@ -81,18 +81,31 @@ export function materializeLegacyProviderCredential(rawApiKey: string): LegacyPr
   try {
     const parsed = JSON.parse(apiKey) as Record<string, unknown>
     const accessToken = typeof parsed.accessToken === 'string' ? parsed.accessToken.trim() : ''
-    const accountId = typeof parsed.accountId === 'string' ? parsed.accountId.trim() : ''
-    if (parsed.kind !== 'codex-oauth' || !accessToken || !accountId) return { apiKey }
-    return {
-      apiKey: accessToken,
-      headers: {
-        'ChatGPT-Account-Id': accountId,
-        originator: 'codex_cli_rs',
-        'OpenAI-Beta': 'responses=experimental',
-        'User-Agent': 'codex_cli_rs/0.0.0 (deepseekgui)',
-        session_id: randomUUID()
+    if (parsed.kind === 'codex-oauth') {
+      const accountId = typeof parsed.accountId === 'string' ? parsed.accountId.trim() : ''
+      if (!accessToken || !accountId) return { apiKey }
+      return {
+        apiKey: accessToken,
+        headers: {
+          'ChatGPT-Account-Id': accountId,
+          originator: 'codex_cli_rs',
+          'OpenAI-Beta': 'responses=experimental',
+          'User-Agent': 'codex_cli_rs/0.0.0 (deepseekgui)',
+          session_id: randomUUID()
+        }
       }
     }
+    if (parsed.kind === 'grok-oauth') {
+      if (!accessToken) return { apiKey }
+      return {
+        apiKey: accessToken,
+        headers: {
+          'X-XAI-Token-Auth': 'xai-grok-cli',
+          'x-authenticateresponse': 'authenticate-response'
+        }
+      }
+    }
+    return { apiKey }
   } catch {
     return { apiKey }
   }

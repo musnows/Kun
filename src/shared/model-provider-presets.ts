@@ -30,6 +30,7 @@ export type ModelProviderPresetId =
   | 'opencode-go'
   | 'codex'
   | 'claude-subscription'
+  | 'grok-subscription'
   | 'moonshot-cn'
   | 'moonshot-global'
   | 'xiaomi'
@@ -37,13 +38,20 @@ export type ModelProviderPresetId =
   | 'aliyun'
   | 'tencentcloud'
   | 'vercel-ai-gateway'
-  | 'claude-subscription'
 
 export const TOKEN_PLAN_PROVIDER_ID_SUFFIX = '-token-plan'
 
 export const CHATGPT_SUBSCRIPTION_PROVIDER_ID = 'codex'
 export const CHATGPT_SUBSCRIPTION_LEGACY_NAME = 'Codex (ChatGPT)'
 export const CHATGPT_SUBSCRIPTION_NAME = 'ChatGPT 订阅'
+export const GROK_SUBSCRIPTION_PROVIDER_ID = 'grok-subscription'
+export const GROK_SUBSCRIPTION_NAME = 'Grok 订阅'
+export const GROK_SUBSCRIPTION_MODEL_IDS = [
+  'grok-4.5',
+  'grok-4-1-fast-reasoning',
+  'grok-4-1-fast-non-reasoning',
+  'grok-code-fast-1'
+] as const
 export const CHATGPT_SUBSCRIPTION_LEGACY_MODEL_IDS = [
   'gpt-5.5',
   'gpt-5.4',
@@ -695,6 +703,24 @@ export const MODEL_PROVIDER_PRESETS: ModelProviderPreset[] = [
     },
     docsUrl: 'https://openai.com/index/codex/',
     apiKeyUrl: 'https://chatgpt.com'
+  },
+  {
+    id: GROK_SUBSCRIPTION_PROVIDER_ID,
+    name: GROK_SUBSCRIPTION_NAME,
+    category: 'subscription',
+    // Session OAuth tokens must hit cli-chat-proxy (subscription quota). Pay-as-you-go
+    // XAI_API_KEY traffic uses https://api.x.ai/v1 instead — keep them separate.
+    baseUrl: 'https://cli-chat-proxy.grok.com/v1',
+    endpointFormat: 'responses',
+    models: [...GROK_SUBSCRIPTION_MODEL_IDS],
+    modelProfiles: {
+      'grok-4.5': visionChatProfile(500_000),
+      'grok-4-1-fast-reasoning': visionChatProfile(2_000_000),
+      'grok-4-1-fast-non-reasoning': visionChatProfile(2_000_000),
+      'grok-code-fast-1': textChatProfile(256_000)
+    },
+    docsUrl: 'https://docs.x.ai/',
+    apiKeyUrl: 'https://accounts.x.ai'
   },
   {
     id: 'vercel-ai-gateway',

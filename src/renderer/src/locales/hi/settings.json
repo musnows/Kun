@@ -1569,5 +1569,16 @@
   "dataMigrationConfirmCancel_stop": "किसी भी गंतव्य डेटा को बदलने से पहले इस माइग्रेशन को रद्द करें?",
   "dataMigrationConfirmCancel_cleanup": "इस माइग्रेशन को रद्द करें और इसके चरणबद्ध अस्थायी डेटा को हटा दें?",
   "dataMigrationConfirmCancel_rollback": "वर्तमान परमाणु कार्रवाई के बाद रद्द करें और पहले से लागू परिवर्तनों को वापस लें? रोलबैक समाप्त होने तक कुन को खुला रखें।",
-  "dataMigrationReportLocation": "स्थानीय रिपोर्ट"
+  "dataMigrationReportLocation": "स्थानीय रिपोर्ट",
+  "grokEndpointLocked": "Grok subscription uses a fixed cli-chat-proxy endpoint and cannot be changed.",
+  "grokLoginButton": "Log in to Grok",
+  "grokLoginDeviceCodeFallback": "Use device code instead",
+  "grokBrowserOpened": "Browser opened. Complete the sign-in to return automatically.",
+  "grokDisconnect": "Disconnect",
+  "grokCancel": "Cancel",
+  "grokEnterCode": "Open the link below and enter the code to authorize:",
+  "grokOpenBrowser": "Open in browser",
+  "grokWaitingAuth": "Waiting for authorization...",
+  "grokPreparingDeviceLogin": "Preparing device-code sign-in...",
+  "grokLoginPortBusyFallback": "Could not bind a local callback port, so device-code sign-in is ready instead."
 }

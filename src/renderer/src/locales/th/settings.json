@@ -1569,5 +1569,16 @@
   "dataMigrationConfirmCancel_stop": "ยกเลิกการย้ายข้อมูลนี้ก่อนที่จะเปลี่ยนข้อมูลปลายทางใดๆ หรือไม่",
   "dataMigrationConfirmCancel_cleanup": "ยกเลิกการย้ายข้อมูลนี้และนำข้อมูลชั่วคราวที่จัดไว้ออกไหม",
   "dataMigrationConfirmCancel_rollback": "ยกเลิกหลังจากการดำเนินการอะตอมมิกปัจจุบันและย้อนกลับการเปลี่ยนแปลงที่ใช้แล้วหรือไม่ เปิด Kun ไว้จนกว่าการย้อนกลับจะเสร็จสิ้น",
-  "dataMigrationReportLocation": "รายงานท้องถิ่น"
+  "dataMigrationReportLocation": "รายงานท้องถิ่น",
+  "grokEndpointLocked": "Grok subscription uses a fixed cli-chat-proxy endpoint and cannot be changed.",
+  "grokLoginButton": "Log in to Grok",
+  "grokLoginDeviceCodeFallback": "Use device code instead",
+  "grokBrowserOpened": "Browser opened. Complete the sign-in to return automatically.",
+  "grokDisconnect": "Disconnect",
+  "grokCancel": "Cancel",
+  "grokEnterCode": "Open the link below and enter the code to authorize:",
+  "grokOpenBrowser": "Open in browser",
+  "grokWaitingAuth": "Waiting for authorization...",
+  "grokPreparingDeviceLogin": "Preparing device-code sign-in...",
+  "grokLoginPortBusyFallback": "Could not bind a local callback port, so device-code sign-in is ready instead."
 }

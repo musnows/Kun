@@ -5,7 +5,10 @@ import { describe, expect, it } from 'vitest'
 import { ExtensionCredentialStore } from './extension-credential-store.js'
 import type { ExtensionPrincipal } from './extension-agent-service.js'
 import { ExtensionProviderAccountStore } from './extension-provider-account-store.js'
-import { LegacyProviderCredentialMigrationService } from './legacy-provider-credential-migration.js'
+import {
+  LegacyProviderCredentialMigrationService,
+  materializeLegacyProviderCredential
+} from './legacy-provider-credential-migration.js'
 
 describe('LegacyProviderCredentialMigrationService', () => {
   it('migrates secret-first, reuses markers, and preserves distinct overrides', async () => {
@@ -129,6 +132,40 @@ describe('LegacyProviderCredentialMigrationService', () => {
 
     await accounts.upsertCoreProvider({ id: 'deepseek', displayName: 'DeepSeek' })
     expect((await migration.resolveApiKey('provider:deepseek'))?.apiKey).toBe('kept-secret')
+  })
+})
+
+describe('materializeLegacyProviderCredential', () => {
+  it('unwraps Codex OAuth credentials into access token + ChatGPT headers', () => {
+    const material = materializeLegacyProviderCredential(JSON.stringify({
+      kind: 'codex-oauth',
+      accessToken: 'codex-access',
+      refreshToken: 'refresh',
+      accountId: 'acct_1',
+      expiresAt: Date.now() + 60_000
+    }))
+    expect(material.apiKey).toBe('codex-access')
+    expect(material.headers).toMatchObject({
+      'ChatGPT-Account-Id': 'acct_1',
+      originator: 'codex_cli_rs'
+    })
+  })
+
+  it('unwraps Grok OAuth credentials into access token + cli-chat-proxy headers', () => {
+    const material = materializeLegacyProviderCredential(JSON.stringify({
+      kind: 'grok-oauth',
+      accessToken: 'grok-access',
+      refreshToken: 'refresh',
+      expiresAt: Date.now() + 60_000,
+      email: 'user@x.ai'
+    }))
+    expect(material).toEqual({
+      apiKey: 'grok-access',
+      headers: {
+        'X-XAI-Token-Auth': 'xai-grok-cli',
+        'x-authenticateresponse': 'authenticate-response'
+      }
+    })
   })
 })
 

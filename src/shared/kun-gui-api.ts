@@ -369,6 +369,26 @@ export type CodexBrowserAuthErrorCode = 'port_in_use'
 export type CodexBrowserAuthResult =
   | { ok: true; credentials: CodexOAuthCredentials }
   | { ok: false; message: string; code?: CodexBrowserAuthErrorCode }
+export type GrokAuthStartResult =
+  | { ok: true; url: string; deviceCode: string; userCode: string; interval: number }
+  | { ok: false; message: string }
+export type GrokOAuthCredentials = {
+  kind: 'grok-oauth'
+  accessToken: string
+  refreshToken: string
+  expiresAt: number
+  email?: string
+  userId?: string
+  issuer?: string
+  clientId?: string
+}
+export type GrokAuthPollResult =
+  | { done: true; credentials: GrokOAuthCredentials }
+  | { done: false; error?: string; slowDown?: boolean }
+export type GrokBrowserAuthErrorCode = 'port_in_use'
+export type GrokBrowserAuthResult =
+  | { ok: true; credentials: GrokOAuthCredentials }
+  | { ok: false; message: string; code?: GrokBrowserAuthErrorCode }
 export type ClawImTelegramConnectErrorCode = 'invalid_format' | 'rejected' | 'network' | 'unknown'
 export type ClawImTelegramConnectResult =
   | { ok: true; botId: number; botUsername: string; botFirstName: string }
@@ -541,6 +561,9 @@ export type KunGuiApi = ExtensionIpcApi & {
   startCodexAuth: () => Promise<CodexAuthStartResult>
   pollCodexAuth: (deviceCode: string, userCode: string) => Promise<CodexAuthPollResult>
   startCodexBrowserAuth: () => Promise<CodexBrowserAuthResult>
+  startGrokAuth: () => Promise<GrokAuthStartResult>
+  pollGrokAuth: (deviceCode: string) => Promise<GrokAuthPollResult>
+  startGrokBrowserAuth: () => Promise<GrokBrowserAuthResult>
   pickWorkspaceDirectory: (defaultPath?: string) => Promise<WorkspacePickResult>
   workspaceDirectoryExists: (workspaceRoot: string) => Promise<boolean>
   pickLocalFiles: (defaultPath?: string) => Promise<LocalFilesPickResult>

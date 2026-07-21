@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AppSettingsV1 } from '../shared/app-settings'
-import { CHATGPT_SUBSCRIPTION_MODEL_IDS } from '../shared/app-settings'
+import { CHATGPT_SUBSCRIPTION_MODEL_IDS, GROK_SUBSCRIPTION_MODEL_IDS } from '../shared/app-settings'
 import { parseModelIds, probeModelProvider, providerProbeHeaders } from './provider-connection'
 
 afterEach(() => {
@@ -49,6 +49,25 @@ describe('probeModelProvider', () => {
     })
 
     expect(result).toEqual({ ok: true, latencyMs: 0, modelIds: [...CHATGPT_SUBSCRIPTION_MODEL_IDS] })
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('validates Grok subscription OAuth locally and returns its shared catalog', async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    const result = await probeModelProvider({
+      baseUrl: 'https://cli-chat-proxy.grok.com/v1',
+      apiKey: JSON.stringify({
+        kind: 'grok-oauth',
+        accessToken: 'access',
+        refreshToken: 'refresh',
+        expiresAt: Date.now() + 60_000,
+        email: 'user@x.ai'
+      }),
+      endpointFormat: 'responses'
+    })
+
+    expect(result).toEqual({ ok: true, latencyMs: 0, modelIds: [...GROK_SUBSCRIPTION_MODEL_IDS] })
     expect(fetchMock).not.toHaveBeenCalled()
   })
 

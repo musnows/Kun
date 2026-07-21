@@ -464,5 +464,23 @@ export function resolveCodexOAuthApiKey(rawApiKey: string): { apiKey: string; he
   const key = rawApiKey.trim()
   const codex = isCodexOAuthCredentials(key) ? parseCodexCredentials(key) : null
   if (codex) return { apiKey: codex.accessToken, headers: codexRequestHeaders(codex) }
+  // Grok subscription credentials also serialize into provider.apiKey as JSON.
+  // Reuse this resolve helper so existing callers unwrap either subscription kind.
+  if (key.startsWith('{')) {
+    try {
+      const parsed = JSON.parse(key) as Record<string, unknown>
+      if (parsed.kind === 'grok-oauth' && typeof parsed.accessToken === 'string' && parsed.accessToken.trim()) {
+        return {
+          apiKey: parsed.accessToken.trim(),
+          headers: {
+            'X-XAI-Token-Auth': 'xai-grok-cli',
+            'x-authenticateresponse': 'authenticate-response'
+          }
+        }
+      }
+    } catch {
+      /* plain key */
+    }
+  }
   return { apiKey: key }
 }

@@ -1569,5 +1569,16 @@
   "dataMigrationConfirmCancel_stop": "Отменить эту миграцию до того, как она изменит какие-либо целевые данные?",
   "dataMigrationConfirmCancel_cleanup": "Отменить эту миграцию и удалить промежуточные временные данные?",
   "dataMigrationConfirmCancel_rollback": "Отменить после текущего атомарного действия и отменить уже примененные изменения? Держите Kun открытым до завершения отката.",
-  "dataMigrationReportLocation": "Локальный отчет"
+  "dataMigrationReportLocation": "Локальный отчет",
+  "grokEndpointLocked": "Grok subscription uses a fixed cli-chat-proxy endpoint and cannot be changed.",
+  "grokLoginButton": "Log in to Grok",
+  "grokLoginDeviceCodeFallback": "Use device code instead",
+  "grokBrowserOpened": "Browser opened. Complete the sign-in to return automatically.",
+  "grokDisconnect": "Disconnect",
+  "grokCancel": "Cancel",
+  "grokEnterCode": "Open the link below and enter the code to authorize:",
+  "grokOpenBrowser": "Open in browser",
+  "grokWaitingAuth": "Waiting for authorization...",
+  "grokPreparingDeviceLogin": "Preparing device-code sign-in...",
+  "grokLoginPortBusyFallback": "Could not bind a local callback port, so device-code sign-in is ready instead."
 }
