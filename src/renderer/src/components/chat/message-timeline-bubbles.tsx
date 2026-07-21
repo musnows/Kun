@@ -28,6 +28,8 @@ import { InjectedMemoryMetaChip } from './injected-memory-meta-chip'
 import { isPresentationArtifactPath } from './presentation-file-artifacts'
 import { readGeneratedWorkspaceImagePreview } from './generated-media-preview'
 import { useTimelineFilePreviewWorkspaceRoot } from './timeline-file-preview-workspace'
+import { attachmentPreviewLoader } from './attachment-preview-loader'
+import { useDeferredRender } from '../../hooks/use-deferred-render'
 
 const COPY_FEEDBACK_RESET_MS = 1600
 const ASSISTANT_EXPORT_FORMATS: WriteExportFormat[] = ['pdf', 'docx', 'png', 'html']
@@ -713,7 +715,10 @@ function isMediaPreviewRequest(entry: MediaPreviewRequest | null): entry is Medi
   return entry !== null
 }
 
-function useMediaPreviewUrls(media: TimelineMediaReference[]): Record<string, string> {
+function useMediaPreviewUrls(
+  media: TimelineMediaReference[],
+  enabled: boolean
+): Record<string, string> {
   const activeThreadId = useChatStore((s) => s.activeThreadId)
   const globalWorkspaceRoot = useChatStore((s) => s.workspaceRoot)
   const timelineWorkspaceRoot = useTimelineFilePreviewWorkspaceRoot()
@@ -745,28 +750,46 @@ function useMediaPreviewUrls(media: TimelineMediaReference[]): Record<string, st
     .join('\n')
 
   useEffect(() => {
-    if (!missingPreviewKey) return
+    if (!enabled || !missingPreviewKey) return
     const provider = getProvider()
     let cancelled = false
     void Promise.all(
       previewRequests.map(async (request) => {
         try {
           if (request.mode === 'attachment' && request.id && typeof provider.getAttachmentContent === 'function') {
-            const content = await provider.getAttachmentContent(request.id, {
+            const attachmentId = request.id
+            const getAttachmentContent = provider.getAttachmentContent.bind(provider)
+            const scope = {
               ...(activeThreadId ? { threadId: activeThreadId } : {}),
               ...(workspaceRoot ? { workspace: workspaceRoot } : {})
-            })
+            }
+            const previewUrl = await attachmentPreviewLoader.load(
+              JSON.stringify(['attachment', attachmentId, activeThreadId ?? '', workspaceRoot]),
+              async () => {
+                const content = await getAttachmentContent(attachmentId, scope)
+                return `data:${content.attachment.mimeType};base64,${content.dataBase64}`
+              }
+            )
             return {
               key: request.key,
-              previewUrl: `data:${content.attachment.mimeType};base64,${content.dataBase64}`
+              previewUrl
             }
           }
           if (request.mode === 'workspace-image' && request.path && typeof window.kunGui?.readWorkspaceImage === 'function') {
-            const previewUrl = await readGeneratedWorkspaceImagePreview({
-              path: request.path,
-              ...(workspaceRoot ? { workspaceRoot } : {}),
-              readImage: window.kunGui.readWorkspaceImage
-            })
+            const imagePath = request.path
+            const readImage = window.kunGui.readWorkspaceImage
+            const previewUrl = await attachmentPreviewLoader.load(
+              JSON.stringify(['workspace-image', imagePath, workspaceRoot]),
+              async () => {
+                const resolved = await readGeneratedWorkspaceImagePreview({
+                  path: imagePath,
+                  ...(workspaceRoot ? { workspaceRoot } : {}),
+                  readImage
+                })
+                if (!resolved) throw new Error(`workspace image preview is unavailable: ${imagePath}`)
+                return resolved
+              }
+            )
             if (previewUrl) return { key: request.key, previewUrl }
           }
           return { key: request.key, failed: true as const }
@@ -796,7 +819,7 @@ function useMediaPreviewUrls(media: TimelineMediaReference[]): Record<string, st
     return () => {
       cancelled = true
     }
-  }, [activeThreadId, missingPreviewKey, previewRequests, workspaceRoot])
+  }, [activeThreadId, enabled, missingPreviewKey, previewRequests, workspaceRoot])
 
   return resolvedPreviewUrls
 }
@@ -1032,7 +1055,13 @@ function MediaAttachmentGallery({
   variant: 'user' | 'tool' | 'conversation'
 }): ReactElement | null {
   const { t } = useTranslation('common')
-  const resolvedPreviewUrls = useMediaPreviewUrls(media)
+  const { ref: previewAdmissionRef, shouldRender: shouldLoadPreviews } = useDeferredRender<HTMLDivElement>({
+    enabled: media.length > 0,
+    rootMargin: '480px',
+    debounceMs: 50,
+    idleTimeoutMs: 250
+  })
+  const resolvedPreviewUrls = useMediaPreviewUrls(media, shouldLoadPreviews)
   const conversationScrollerRef = useRef<HTMLDivElement>(null)
   const [scrollAvailability, setScrollAvailability] = useState<GeneratedMediaScrollAvailability>({
     canScrollBackward: false,
@@ -1102,7 +1131,7 @@ function MediaAttachmentGallery({
     const showCarouselControls = scrollAvailability.canScrollBackward || scrollAvailability.canScrollForward
 
     return (
-      <div className="group/gallery relative min-w-0 w-full" data-extension-attachment-context data-generated-media-carousel>
+      <div ref={previewAdmissionRef} className="group/gallery relative min-w-0 w-full" data-extension-attachment-context data-generated-media-carousel>
         <div
           ref={conversationScrollerRef}
           className="flex w-full snap-x snap-mandatory gap-2 overflow-x-auto px-0.5 pb-1 scroll-smooth [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
@@ -1139,7 +1168,7 @@ function MediaAttachmentGallery({
   }
 
   return (
-    <div className={wrapperClass} data-extension-attachment-context>
+    <div ref={previewAdmissionRef} className={wrapperClass} data-extension-attachment-context>
       {tiles}
     </div>
   )
