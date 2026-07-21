@@ -4,6 +4,8 @@ import { RoutePoolHealthStore } from '../../adapters/model/route-pool-model-clie
 import type { ServerRuntime } from './server-runtime.js'
 import { gatewayChatCompletions, gatewayModels, gatewayResponses } from './openai-model-gateway.js'
 import { DEFAULT_SERVE_OPTIONS, ServeOptionsSchema } from '../../cli/cli-options.js'
+import { LOCAL_MODEL_GATEWAY_PROVIDER_ID } from '../../contracts/model-route-pool.js'
+import { buildRouter } from './index.js'
 
 class GatewayModel implements ModelClient {
   provider = 'test'
@@ -19,6 +21,8 @@ class GatewayModel implements ModelClient {
 function runtime(enabled = true): ServerRuntime {
   const modelClient = new GatewayModel()
   return {
+    runtimeToken: 'gateway-test-token',
+    insecure: false,
     modelClient,
     modelGateway: {
       enabled: () => enabled,
@@ -55,13 +59,15 @@ describe('local OpenAI model gateway', () => {
   })
 
   it('returns a non-streaming chat completion with the public alias', async () => {
-    const response = await gatewayChatCompletions(runtime(), new Request('http://localhost/v1/chat/completions', {
+    const testRuntime = runtime()
+    const response = await gatewayChatCompletions(testRuntime, new Request('http://localhost/v1/chat/completions', {
       method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ model: 'local-model', messages: [{ role: 'user', content: 'hi' }], stream: false })
     }))
     expect(response).not.toBeInstanceOf(Response)
     const body = JSON.parse((response as { body: string }).body)
     expect(body.model).toBe('local-model')
     expect(body.choices[0].message.content).toBe('hello')
+    expect((testRuntime.modelClient as GatewayModel).last?.providerId).toBe(LOCAL_MODEL_GATEWAY_PROVIDER_ID)
   })
 
   it('streams Responses events and rejects unknown models', async () => {
@@ -92,9 +98,35 @@ describe('local OpenAI model gateway', () => {
       })
     }))
     const sent = (testRuntime.modelClient as GatewayModel).last
+    expect(sent?.providerId).toBe(LOCAL_MODEL_GATEWAY_PROVIDER_ID)
     expect(sent?.tools).toEqual([expect.objectContaining({ name: 'read' })])
     expect(sent?.attachments).toEqual([expect.objectContaining({ mimeType: 'image/png' })])
     controller.abort()
     expect(sent?.abortSignal.aborted).toBe(true)
+  })
+
+  it('registers an authenticated complete route test endpoint', async () => {
+    const testRuntime = runtime()
+    const router = buildRouter(testRuntime)
+    const match = router.match('POST', '/v1/model-routes/pool/test')
+    expect(match).toBeDefined()
+
+    const unauthorized = await match!.handler(
+      new Request('http://127.0.0.1/v1/model-routes/pool/test', { method: 'POST' }),
+      { params: match!.params }
+    )
+    expect(unauthorized.status).toBe(401)
+
+    const response = await match!.handler(
+      new Request('http://127.0.0.1/v1/model-routes/pool/test', {
+        method: 'POST',
+        headers: { authorization: 'Bearer gateway-test-token' }
+      }),
+      { params: match!.params }
+    )
+    expect(response.status).toBe(200)
+    const responseBody = response instanceof Response ? await response.text() : response.body
+    expect(JSON.parse(responseBody)).toMatchObject({ ok: true, text: 'hello' })
+    expect((testRuntime.modelClient as GatewayModel).last?.providerId).toBe(LOCAL_MODEL_GATEWAY_PROVIDER_ID)
   })
 })

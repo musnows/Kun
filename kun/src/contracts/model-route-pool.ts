@@ -1,5 +1,7 @@
 import { z } from 'zod'
 
+export const LOCAL_MODEL_GATEWAY_PROVIDER_ID = 'route-gateway:local'
+
 export const ModelRouteStrategySchema = z.enum([
   'priority',
   'round-robin',

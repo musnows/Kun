@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type { ModelCapabilityMetadata } from '../../contracts/capabilities.js'
 import type { ModelRoutePoolConfig } from '../../contracts/model-route-pool.js'
+import { LOCAL_MODEL_GATEWAY_PROVIDER_ID } from '../../contracts/model-route-pool.js'
 import type { ModelClient, ModelRequest, ModelStreamChunk } from '../../ports/model-client.js'
 import { RoutePoolHealthStore, RoutePoolModelClient } from './route-pool-model-client.js'
 
@@ -59,6 +60,18 @@ describe('RoutePoolModelClient', () => {
     const chunks = await drain(client.stream(request()))
     expect(direct.seen).toEqual(['provider-a/kimi', 'provider-b/kimi-vision'])
     expect(chunks.find((chunk) => chunk.kind === 'assistant_text_delta')?.route).toMatchObject({ targetId: 'b', requestedModelId: 'kimi-auto' })
+  })
+
+  it('uses provider identity to disambiguate a routed alias from a concrete model', async () => {
+    const sameAliasPool = { ...pool(), modelId: 'kimi' }
+    const direct = new FakeDirect(() => [{ kind: 'completed', stopReason: 'stop' }])
+    const client = new RoutePoolModelClient(direct, [sameAliasPool], capability)
+
+    await drain(client.stream(request({ model: 'kimi', providerId: 'provider-a' })))
+    await drain(client.stream(request({ model: 'kimi', providerId: LOCAL_MODEL_GATEWAY_PROVIDER_ID })))
+
+    expect(direct.seen).toEqual(['provider-a/kimi', 'provider-a/kimi'])
+    expect(client.health.snapshot(sameAliasPool.id).events).toHaveLength(1)
   })
 
   it('never replays after content starts', async () => {

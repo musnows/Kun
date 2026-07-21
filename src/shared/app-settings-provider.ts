@@ -191,7 +191,6 @@ export function normalizeModelRoutePools(
   providers: readonly ModelProviderProfileV1[]
 ): ModelRoutePoolV1[] {
   const providerById = new Map(providers.map((provider) => [provider.id.toLowerCase(), provider]))
-  const concreteModels = new Set(providers.flatMap((provider) => provider.models.map((model) => model.toLowerCase())))
   const usedIds = new Set<string>()
   const usedModels = new Set<string>()
   const out: ModelRoutePoolV1[] = []
@@ -227,7 +226,11 @@ export function normalizeModelRoutePools(
       id,
       name: typeof raw.name === 'string' && raw.name.trim() ? raw.name.trim().slice(0, 80) : modelId,
       modelId,
-      enabled: raw.enabled !== false && !concreteModels.has(modelId.toLowerCase()) && targets.length > 0,
+      // A public route alias may intentionally match a concrete model id
+      // (for example, a routed `kimi-k3` backed by several providers). Kun
+      // disambiguates the virtual route from a direct provider selection with
+      // the request's provider id, so only duplicate route aliases are invalid.
+      enabled: raw.enabled !== false && targets.length > 0,
       strategy,
       targets,
       failurePolicy: {

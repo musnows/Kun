@@ -91,7 +91,7 @@ describe('model route pool settings', () => {
     }).localGateway).toEqual({ enabled: true, name: 'Team Relay' })
   })
 
-  it('keeps valid concrete targets and disables colliding aliases', () => {
+  it('keeps valid concrete targets and allows a routed alias to match a concrete model', () => {
     const settings = normalizeModelProviderSettings({
       providers: [{ id: 'provider-a', name: 'A', baseUrl: 'https://a.example', models: ['kimi-k3'] }],
       routePools: [{
@@ -107,7 +107,7 @@ describe('model route pool settings', () => {
       }]
     })
     expect(settings.routePools[0]).toMatchObject({ enabled: true, strategy: 'adaptive', targets: [{ providerId: 'provider-a', weight: 100 }] })
-    expect(settings.routePools[1].enabled).toBe(false)
+    expect(settings.routePools[1]).toMatchObject({ modelId: 'kimi-k3', enabled: true })
   })
 })
 

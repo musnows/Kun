@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type DragEvent, type ReactElement } from 'react'
 import type { ModelProviderSettingsV1, ModelRoutePoolV1, ModelRouteStrategy } from '@shared/app-settings'
 import { DEFAULT_MODEL_ROUTE_FAILURE_POLICY, DEFAULT_MODEL_ROUTE_HEALTH_POLICY } from '@shared/app-settings'
+import { KUN_MODEL_ROUTES_PATH, kunModelRouteTestPath } from '@shared/kun-endpoints'
 import { Activity, AlertTriangle, Boxes, GripVertical, Loader2, Plus, Play, Route, Server, Trash2 } from 'lucide-react'
 import { Toggle } from './settings-controls'
 
@@ -36,7 +37,7 @@ export function ModelRoutesSettings({
 
   const refreshStatus = async (): Promise<void> => {
     try {
-      const response = await window.kunGui.runtimeRequest('/v1/model-routes', 'GET')
+      const response = await window.kunGui.runtimeRequest(KUN_MODEL_ROUTES_PATH, 'GET')
       if (response.ok) setStatus(JSON.parse(response.body) as RouteStatus)
     } catch {
       // Runtime may be stopped while settings are edited.
@@ -83,7 +84,7 @@ export function ModelRoutesSettings({
     setTesting(true)
     setTestMessage('')
     try {
-      const response = await window.kunGui.runtimeRequest(`/v1/model-routes/${encodeURIComponent(selected.id)}/test`, 'POST')
+      const response = await window.kunGui.runtimeRequest(kunModelRouteTestPath(selected.id), 'POST')
       const body = JSON.parse(response.body) as { ok?: boolean; text?: string; error?: { message?: string } }
       setTestMessage(response.ok && body.ok ? `链路测试成功${body.text ? `：${body.text}` : ''}` : body.error?.message ?? '链路测试失败')
       await refreshStatus()

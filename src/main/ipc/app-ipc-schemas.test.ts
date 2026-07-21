@@ -78,6 +78,21 @@ describe('app-ipc-schemas', () => {
     expect(payload.path).toBe('/v1/runtime/tools')
   })
 
+  it('accepts only the modeled Kun route diagnostics operations', () => {
+    expect(runtimeRequestPayloadSchema.parse({
+      path: '/v1/model-routes',
+      method: 'GET'
+    }).path).toBe('/v1/model-routes')
+    expect(runtimeRequestPayloadSchema.parse({
+      path: '/v1/model-routes/kimi%20pool/test',
+      method: 'POST'
+    }).path).toBe('/v1/model-routes/kimi%20pool/test')
+    expect(() => runtimeRequestPayloadSchema.parse({
+      path: '/v1/model-routes',
+      method: 'DELETE'
+    })).toThrow(/runtime request path is not allowed/)
+  })
+
   it('accepts Kun supply-chain audit endpoints', () => {
     expect(runtimeRequestPayloadSchema.parse({
       path: '/v1/supply-chain/audit',

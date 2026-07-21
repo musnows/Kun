@@ -6,6 +6,7 @@ import type {
   ModelRoutePoolConfig,
   ModelRouteTargetConfig
 } from '../../contracts/model-route-pool.js'
+import { LOCAL_MODEL_GATEWAY_PROVIDER_ID } from '../../contracts/model-route-pool.js'
 import type {
   ModelClient,
   ModelRequest,
@@ -187,7 +188,9 @@ export class RoutePoolModelClient implements ModelClient {
 
   stream(request: ModelRequest): AsyncIterable<ModelStreamChunk> {
     const pool = this.pools.get(request.model.trim().toLowerCase())
-    return pool ? this.streamPool(pool, request) : this.direct.stream(request)
+    return pool && shouldRouteRequest(pool, request)
+      ? this.streamPool(pool, request)
+      : this.direct.stream(request)
   }
 
   private async *streamPool(pool: ModelRoutePoolConfig, request: ModelRequest): AsyncIterable<ModelStreamChunk> {
@@ -286,6 +289,12 @@ export class RoutePoolModelClient implements ModelClient {
     const first = wheel[cursor % wheel.length]
     return [first, ...targets.filter((target) => target.id !== first.id)]
   }
+}
+
+function shouldRouteRequest(pool: ModelRoutePoolConfig, request: ModelRequest): boolean {
+  const providerId = request.providerId?.trim().toLowerCase()
+  if (!providerId) return true
+  return providerId === LOCAL_MODEL_GATEWAY_PROVIDER_ID || providerId === `route-pool:${pool.id}`.toLowerCase()
 }
 
 function targetSupportsRequest(target: ModelRouteTargetConfig, request: ModelRequest, resolve: (model: string) => ModelCapabilityMetadata): boolean {

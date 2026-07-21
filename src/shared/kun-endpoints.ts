@@ -17,6 +17,13 @@ export const KUN_RUNTIME_INFO_TEMPLATE = '/v1/runtime/info'
 export const KUN_RUNTIME_TOOLS_PATH = '/v1/runtime/tools'
 export const KUN_RUNTIME_TOOLS_TEMPLATE = '/v1/runtime/tools'
 
+export const KUN_MODEL_ROUTES_PATH = '/v1/model-routes'
+export const KUN_MODEL_ROUTES_TEMPLATE = '/v1/model-routes'
+export const KUN_MODEL_ROUTE_TEST_TEMPLATE = '/v1/model-routes/{id}/test'
+export function kunModelRouteTestPath(poolId: string): string {
+  return `/v1/model-routes/${encodeURIComponent(poolId)}/test`
+}
+
 export const KUN_SUPPLY_CHAIN_AUDIT_PATH = '/v1/supply-chain/audit'
 export const KUN_SUPPLY_CHAIN_AUDIT_TEMPLATE = '/v1/supply-chain/audit'
 export const KUN_SUPPLY_CHAIN_UPDATE_CHECK_PATH = '/v1/supply-chain/update-check'

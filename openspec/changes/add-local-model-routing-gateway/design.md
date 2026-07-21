@@ -24,7 +24,7 @@ The change must preserve the single-runtime architecture, existing provider sett
 
 ### Route pools are separate settings entities
 
-`ModelProviderSettingsV1` gains `routePools`. Each pool represents one public model beneath the single local relay provider and has a stable id, public model id, strategy, targets, failover policy, and health policy. The local gateway settings retain the relay provider's display name and API enablement. Targets reference concrete provider ids and concrete model ids only. Normalization drops duplicate target ids, disables dangling references, clamps weights/thresholds, and rejects public model ids that collide with concrete models or another enabled pool.
+`ModelProviderSettingsV1` gains `routePools`. Each pool represents one public model beneath the single local relay provider and has a stable id, public model id, strategy, targets, failover policy, and health policy. The local gateway settings retain the relay provider's display name and API enablement. Targets reference concrete provider ids and concrete model ids only. Normalization drops duplicate target ids, disables dangling references, clamps weights/thresholds, and rejects duplicate public model ids across route pools. A public route id may intentionally match a concrete model id; the virtual local-relay provider identity disambiguates routed requests from direct provider selections.
 
 Keeping pools separate from `ModelProviderProfileV1` avoids recursive provider resolution and prevents virtual credentials from being mistaken for upstream secrets. Existing settings without pools normalize to an empty list.
 

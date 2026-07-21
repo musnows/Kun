@@ -262,6 +262,52 @@ describe('runtimeSettingsApplyMode', () => {
     expect(runtimeSettingsApplyMode(prev, withRemoved)).toBe('hot')
   })
 
+  it('hot-applies route pool and local gateway enablement changes', () => {
+    const prev = multiProviderSettings()
+    const targetProvider = prev.provider.providers.find((provider) => provider.id === 'minimax')!
+    const withPool = {
+      ...prev,
+      provider: {
+        ...prev.provider,
+        routePools: [{
+          id: 'minimax-pool',
+          name: 'MiniMax pool',
+          modelId: targetProvider.models[0]!,
+          enabled: true,
+          strategy: 'priority' as const,
+          targets: [{
+            id: 'primary',
+            providerId: targetProvider.id,
+            modelId: targetProvider.models[0]!,
+            enabled: true,
+            weight: 1
+          }],
+          failurePolicy: {
+            failoverHttpStatusCodes: [429, 503],
+            failoverOnNetworkError: true,
+            failoverOnTimeout: true,
+            failoverOnAuthError: true
+          },
+          healthPolicy: {
+            failureThreshold: 3,
+            cooldownMs: 60_000,
+            halfOpenMaxAttempts: 1
+          }
+        }]
+      }
+    }
+    const withGateway = {
+      ...withPool,
+      provider: {
+        ...withPool.provider,
+        localGateway: { ...withPool.provider.localGateway, enabled: true }
+      }
+    }
+
+    expect(runtimeSettingsApplyMode(prev, withPool)).toBe('hot')
+    expect(runtimeSettingsApplyMode(withPool, withGateway)).toBe('hot')
+  })
+
   it('ignores provider order and display-name-only changes', () => {
     const prev = multiProviderSettings()
     const reordered = {
@@ -272,9 +318,17 @@ describe('runtimeSettingsApplyMode', () => {
       }
     }
     const renamed = updateProvider(prev, 'minimax', { name: 'MiniMax Renamed' })
+    const gatewayRenamed = {
+      ...prev,
+      provider: {
+        ...prev.provider,
+        localGateway: { ...prev.provider.localGateway, name: 'Team Relay' }
+      }
+    }
 
     expect(runtimeSettingsApplyMode(prev, reordered)).toBe('none')
     expect(runtimeSettingsApplyMode(prev, renamed)).toBe('none')
+    expect(runtimeSettingsApplyMode(prev, gatewayRenamed)).toBe('none')
   })
 
   it('requires restart for process-level runtime changes', () => {

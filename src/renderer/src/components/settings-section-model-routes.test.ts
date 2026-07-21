@@ -1,6 +1,7 @@
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { describe, expect, it } from 'vitest'
+import { act, create as createRenderer, type ReactTestInstance, type ReactTestRenderer } from 'react-test-renderer'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { defaultModelProviderSettings, type ModelProviderSettingsV1 } from '@shared/app-settings'
 import { ModelRoutesSettings } from './settings-section-model-routes'
 
@@ -27,6 +28,10 @@ function settings(): ModelProviderSettingsV1 {
 }
 
 describe('ModelRoutesSettings', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
   it('renders one local provider with multiple routed models and safety policy', () => {
     const html = renderToStaticMarkup(createElement(ModelRoutesSettings, { settings: settings(), onChange: () => undefined }))
     expect(html).toContain('本地中转供应商')
@@ -42,4 +47,60 @@ describe('ModelRoutesSettings', () => {
     expect(html).toContain('流式输出开始后固定停止')
     expect(html).toContain('127.0.0.1 · 无鉴权')
   })
+
+  it('dispatches local API and route pool enable switches', async () => {
+    const draft = settings()
+    draft.localGateway.enabled = false
+    draft.routePools[0].enabled = false
+    const onChange = vi.fn()
+    vi.stubGlobal('window', {
+      kunGui: {
+        runtimeRequest: vi.fn(async () => ({ ok: true, status: 200, body: '{"pools":[],"metrics":{},"events":[]}' }))
+      }
+    })
+    let renderer: ReactTestRenderer
+    await act(async () => {
+      renderer = createRenderer(createElement(ModelRoutesSettings, { settings: draft, onChange }))
+    })
+
+    await act(async () => {
+      renderer!.root.findByProps({ 'aria-label': '开放本地 API' }).props.onClick()
+    })
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({
+      localGateway: expect.objectContaining({ enabled: true })
+    }))
+
+    await act(async () => {
+      renderer!.root.findByProps({ 'aria-label': '启用路由池' }).props.onClick()
+    })
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({
+      routePools: expect.arrayContaining([expect.objectContaining({ id: 'kimi-pool', enabled: true })])
+    }))
+  })
+
+  it('calls the full-chain route endpoint and renders its result', async () => {
+    const runtimeRequest = vi.fn(async (_path: string, method?: string) => method === 'POST'
+      ? { ok: true, status: 200, body: '{"ok":true,"text":"OK","metrics":{},"events":[]}' }
+      : { ok: true, status: 200, body: '{"pools":[],"metrics":{},"events":[]}' })
+    vi.stubGlobal('window', { kunGui: { runtimeRequest } })
+    let renderer: ReactTestRenderer
+    await act(async () => {
+      renderer = createRenderer(createElement(ModelRoutesSettings, { settings: settings(), onChange: () => undefined }))
+    })
+    const testButton = renderer!.root.findAllByType('button').find((button) => textContent(button).includes('测试完整链路'))
+    expect(testButton).toBeDefined()
+
+    await act(async () => {
+      testButton!.props.onClick()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(runtimeRequest).toHaveBeenCalledWith('/v1/model-routes/kimi-pool/test', 'POST')
+    expect(textContent(renderer!.root)).toContain('链路测试成功：OK')
+  })
 })
+
+function textContent(node: ReactTestInstance): string {
+  return node.children.map((child) => typeof child === 'string' ? child : textContent(child)).join('')
+}

@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type { TurnItem } from '../../contracts/items.js'
+import { LOCAL_MODEL_GATEWAY_PROVIDER_ID } from '../../contracts/model-route-pool.js'
 import type { ModelRequest, ModelStreamChunk, ModelToolSpec } from '../../ports/model-client.js'
 import { readJsonBody } from '../read-json-body.js'
 import { jsonResponse, type JsonResponse } from '../response.js'
@@ -117,6 +118,7 @@ function makeModelRequest(input: Record<string, unknown>, signal: AbortSignal): 
     threadId,
     turnId,
     model,
+    providerId: LOCAL_MODEL_GATEWAY_PROVIDER_ID,
     systemPrompt,
     prefix: [],
     history,

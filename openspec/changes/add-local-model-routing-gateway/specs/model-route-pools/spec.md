@@ -7,6 +7,10 @@ The application SHALL persist enabled or disabled route pools with a unique publ
 - **WHEN** a user adds the same model id from three concrete providers to one pool
 - **THEN** the pool is saved as one selectable public model without copying provider credentials
 
+#### Scenario: Public alias matches a concrete model
+- **WHEN** a user names a route pool `kimi-k3` while a concrete provider also exposes `kimi-k3`
+- **THEN** selecting `kimi-k3` under the local relay routes through the pool while selecting it under the concrete provider remains a direct request
+
 #### Scenario: Target reference is invalid
 - **WHEN** a target references a missing provider, missing model, or another route pool
 - **THEN** the application marks the target invalid and does not route requests to it
