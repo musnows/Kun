@@ -914,11 +914,11 @@ export function resolveKunVideoGenerationSettings(settings: AppSettingsV1): KunV
   const videoGeneration = runtime.videoGeneration
   const providerId = normalizeModelProviderId(videoGeneration.providerId)
   if (!providerId || providerId === CUSTOM_VIDEO_GENERATION_PROVIDER_ID) {
-    return {
+    return normalizeResolvedGrokVideoDefaults({
       ...videoGeneration,
       providerId,
       protocol: normalizeVideoGenerationProtocol(videoGeneration.protocol)
-    }
+    })
   }
   const provider = getModelProviderProfile(settings, providerId)
   const capability = provider.video
@@ -929,13 +929,41 @@ export function resolveKunVideoGenerationSettings(settings: AppSettingsV1): KunV
       protocol: normalizeVideoGenerationProtocol(videoGeneration.protocol)
     }
   }
-  return {
+  return normalizeResolvedGrokVideoDefaults({
     ...videoGeneration,
     providerId: provider.id,
     protocol: capability.protocol,
     baseUrl: resolveProviderCapabilityBaseUrl(provider, capability, 'video'),
     apiKey: provider.apiKey.trim(),
-    model: resolveProviderCapabilityModel(videoGeneration.model, capability.models)
+    model: resolveVideoProviderCapabilityModel(videoGeneration.model, capability)
+  })
+}
+
+function resolveVideoProviderCapabilityModel(
+  configuredModel: string,
+  capability: ModelProviderVideoCapabilityV1
+): string {
+  const fallback = capability.protocol === 'grok-imagine-video' &&
+    capability.models.includes('grok-imagine-video-1.5-preview')
+    ? 'grok-imagine-video-1.5-preview'
+    : capability.models[0] ?? ''
+  const model = configuredModel.trim()
+  if (!model) return fallback
+  if (capability.models.length === 0) return model
+  return capability.models.some((providerModel) => providerModel.trim().toLowerCase() === model.toLowerCase())
+    ? model
+    : fallback || model
+}
+
+function normalizeResolvedGrokVideoDefaults(
+  value: KunVideoGenerationSettingsV1
+): KunVideoGenerationSettingsV1 {
+  if (value.protocol !== 'grok-imagine-video') return value
+  const resolution = value.defaultResolution.trim().toUpperCase()
+  return {
+    ...value,
+    defaultDuration: value.defaultDuration === 10 ? 10 : 6,
+    defaultResolution: resolution === '720P' ? '720P' : '480P'
   }
 }
 
@@ -1399,6 +1427,7 @@ function normalizeModelProviderImageCapability(
 export function normalizeImageGenerationProtocol(value: unknown): ImageGenerationProtocol {
   if (value === 'minimax-image') return 'minimax-image'
   if (value === 'codex-responses-image') return 'codex-responses-image'
+  if (value === 'grok-imagine-image') return 'grok-imagine-image'
   return DEFAULT_IMAGE_GENERATION_PROTOCOL
 }
 
@@ -1482,6 +1511,7 @@ function normalizeModelProviderVideoCapability(
 }
 
 export function normalizeVideoGenerationProtocol(value: unknown): VideoGenerationProtocol {
+  if (value === 'grok-imagine-video') return 'grok-imagine-video'
   return value === 'minimax-video' ? 'minimax-video' : DEFAULT_VIDEO_GENERATION_PROTOCOL
 }
 

@@ -680,6 +680,7 @@ function normalizeKunImageGenerationQuality(value: unknown): ImageGenerationQual
 function normalizeKunImageGenerationProtocol(value: unknown): ImageGenerationProtocol {
   if (value === 'minimax-image') return 'minimax-image'
   if (value === 'codex-responses-image') return 'codex-responses-image'
+  if (value === 'grok-imagine-image') return 'grok-imagine-image'
   return DEFAULT_IMAGE_GENERATION_PROTOCOL
 }
 
@@ -789,6 +790,7 @@ function normalizeKunVideoGenerationSettings(
 }
 
 function normalizeKunVideoGenerationProtocol(value: unknown): VideoGenerationProtocol {
+  if (value === 'grok-imagine-video') return 'grok-imagine-video'
   return value === 'minimax-video' ? 'minimax-video' : DEFAULT_VIDEO_GENERATION_PROTOCOL
 }
 

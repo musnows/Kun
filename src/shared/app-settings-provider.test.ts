@@ -24,6 +24,7 @@ import {
   defaultWriteSettings,
   defaultModelRequestRetrySettings,
   CHATGPT_SUBSCRIPTION_MODEL_IDS,
+  GROK_SUBSCRIPTION_PROVIDER_ID,
   listMusicGenerationProviderProfiles,
   listSpeechToTextProviderProfiles,
   listTextToSpeechProviderProfiles,
@@ -194,6 +195,57 @@ describe('ChatGPT subscription migration', () => {
     expect(normalized.providers.find((item) => item.id === 'codex')).toMatchObject({
       name: 'Team subscription',
       models: ['gpt-5.5', 'team-model']
+    })
+  })
+})
+
+describe('Grok subscription media capabilities', () => {
+  it('exposes the Grok Build image and video models on the subscription profile', () => {
+    const preset = getModelProviderPreset(GROK_SUBSCRIPTION_PROVIDER_ID)
+    expect(preset).toBeDefined()
+    const provider = modelProviderPresetProfile(preset!, 'grok-oauth-json')
+
+    expect(provider.image).toEqual({
+      protocol: 'grok-imagine-image',
+      baseUrl: 'https://api.x.ai/v1',
+      models: ['grok-imagine-image-quality', 'grok-imagine-image']
+    })
+    expect(provider.video).toEqual({
+      protocol: 'grok-imagine-video',
+      baseUrl: 'https://api.x.ai/v1',
+      models: ['grok-imagine-video-1.5-preview', 'grok-imagine-video']
+    })
+
+    const defaults = defaultKunRuntimeSettings()
+    const appSettings: AppSettingsV1 = {
+      ...settings(),
+      provider: {
+        ...defaultModelProviderSettings(),
+        providers: [
+          ...defaultModelProviderSettings().providers.filter((item) => item.id !== provider.id),
+          provider
+        ]
+      },
+      agents: {
+        kun: {
+          ...defaults,
+          videoGeneration: {
+            ...defaults.videoGeneration,
+            enabled: true,
+            providerId: provider.id,
+            defaultDuration: 8,
+            defaultResolution: '1080P'
+          }
+        }
+      }
+    }
+    expect(resolveKunVideoGenerationSettings(appSettings)).toMatchObject({
+      protocol: 'grok-imagine-video',
+      baseUrl: 'https://api.x.ai/v1',
+      apiKey: 'grok-oauth-json',
+      model: 'grok-imagine-video-1.5-preview',
+      defaultDuration: 6,
+      defaultResolution: '480P'
     })
   })
 })

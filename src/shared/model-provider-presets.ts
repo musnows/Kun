@@ -720,6 +720,18 @@ export const MODEL_PROVIDER_PRESETS: ModelProviderPreset[] = [
       'grok-4-1-fast-non-reasoning': visionChatProfile(2_000_000),
       'grok-code-fast-1': textChatProfile(256_000)
     },
+    // Grok Build deliberately sends subscription OAuth bearers directly to the
+    // public xAI media API. Chat remains on cli-chat-proxy above.
+    image: {
+      protocol: 'grok-imagine-image',
+      baseUrl: 'https://api.x.ai/v1',
+      models: ['grok-imagine-image-quality', 'grok-imagine-image']
+    },
+    video: {
+      protocol: 'grok-imagine-video',
+      baseUrl: 'https://api.x.ai/v1',
+      models: ['grok-imagine-video-1.5-preview', 'grok-imagine-video']
+    },
     docsUrl: 'https://docs.x.ai/',
     apiKeyUrl: 'https://accounts.x.ai'
   },

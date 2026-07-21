@@ -815,6 +815,66 @@ describe('syncGuiManagedKunConfig', () => {
     expect(KunConfigSchema.safeParse(parsed).success).toBe(true)
   })
 
+  it('unwraps Grok OAuth credentials for direct Imagine image and video requests', async () => {
+    if (!tempRoot) throw new Error('temp root not initialized')
+    const configPath = join(tempRoot, 'config.json')
+    const module = await import('./kun-process')
+    const grokCredentials = JSON.stringify({
+      kind: 'grok-oauth',
+      accessToken: 'grok-access-token',
+      refreshToken: 'grok-refresh-token',
+      expiresAt: Date.now() + 3600_000,
+      email: 'grok@example.com'
+    })
+    const defaults = defaultKunRuntimeSettings()
+
+    await module.syncGuiManagedKunConfig(tempRoot, {
+      ...defaults,
+      imageGeneration: {
+        ...defaults.imageGeneration,
+        enabled: true,
+        providerId: 'grok-subscription',
+        protocol: 'grok-imagine-image',
+        baseUrl: 'https://api.x.ai/v1',
+        apiKey: grokCredentials,
+        model: 'grok-imagine-image-quality'
+      },
+      videoGeneration: {
+        ...defaults.videoGeneration,
+        enabled: true,
+        providerId: 'grok-subscription',
+        protocol: 'grok-imagine-video',
+        baseUrl: 'https://api.x.ai/v1',
+        apiKey: grokCredentials,
+        model: 'grok-imagine-video-1.5-preview',
+        defaultResolution: '480P'
+      }
+    })
+
+    const parsed = JSON.parse(readFileSync(configPath, 'utf8')) as any
+    for (const capability of [parsed.capabilities.imageGen, parsed.capabilities.videoGen]) {
+      expect(capability.apiKey).toBe('grok-access-token')
+      expect(capability.headers).toMatchObject({
+        'x-grok-client-version': expect.any(String),
+        'x-grok-client-identifier': 'kun'
+      })
+      expect(capability.headers['X-XAI-Token-Auth']).toBeUndefined()
+      expect(capability.headers['x-authenticateresponse']).toBeUndefined()
+    }
+    expect(parsed.capabilities.imageGen).toMatchObject({
+      protocol: 'grok-imagine-image',
+      baseUrl: 'https://api.x.ai/v1',
+      model: 'grok-imagine-image-quality'
+    })
+    expect(parsed.capabilities.videoGen).toMatchObject({
+      protocol: 'grok-imagine-video',
+      baseUrl: 'https://api.x.ai/v1',
+      model: 'grok-imagine-video-1.5-preview',
+      defaultResolution: '480P'
+    })
+    expect(KunConfigSchema.safeParse(parsed).success).toBe(true)
+  })
+
   it('replaces stale GUI-managed model profile fields while preserving compaction overrides', async () => {
     if (!tempRoot) throw new Error('temp root not initialized')
     const configPath = join(tempRoot, 'config.json')

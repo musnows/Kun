@@ -573,6 +573,18 @@ export function grokRequestHeaders(): Record<string, string> {
 }
 
 /**
+ * Headers used by Grok Build when Imagine requests go directly to api.x.ai.
+ * Proxy-only authentication headers must not be forwarded to this endpoint.
+ */
+export function grokMediaRequestHeaders(): Record<string, string> {
+  return {
+    'User-Agent': `xai-grok-build/${GROK_CLIENT_VERSION}`,
+    'x-grok-client-version': GROK_CLIENT_VERSION,
+    'x-grok-client-identifier': 'kun'
+  }
+}
+
+/**
  * Unwrap JSON-encoded Grok (or pass-through plain) credentials for runtime
  * clients. Codex credentials are handled separately by resolveCodexOAuthApiKey.
  */
@@ -580,5 +592,12 @@ export function resolveGrokOAuthApiKey(rawApiKey: string): { apiKey: string; hea
   const key = rawApiKey.trim()
   const grok = isGrokOAuthCredentials(key) ? parseGrokCredentials(key) : null
   if (grok) return { apiKey: grok.accessToken, headers: grokRequestHeaders() }
+  return { apiKey: key }
+}
+
+export function resolveGrokMediaOAuthApiKey(rawApiKey: string): { apiKey: string; headers?: Record<string, string> } {
+  const key = rawApiKey.trim()
+  const grok = isGrokOAuthCredentials(key) ? parseGrokCredentials(key) : null
+  if (grok) return { apiKey: grok.accessToken, headers: grokMediaRequestHeaders() }
   return { apiKey: key }
 }

@@ -104,7 +104,8 @@ const MODEL_ENDPOINT_FORMAT_LABEL_KEYS: Record<ModelEndpointFormat, string> = {
 const IMAGE_GENERATION_PROTOCOL_LABEL_KEYS: Record<ImageGenerationProtocol, string> = {
   'openai-images': 'imageGenProtocolOpenAi',
   'minimax-image': 'imageGenProtocolMiniMax',
-  'codex-responses-image': 'imageGenProtocolCodex'
+  'codex-responses-image': 'imageGenProtocolCodex',
+  'grok-imagine-image': 'imageGenProtocolGrok'
 }
 
 const SPEECH_TO_TEXT_PROTOCOL_LABEL_KEYS: Partial<Record<SpeechToTextProtocol, string>> = {
@@ -123,7 +124,8 @@ const MUSIC_GENERATION_PROTOCOL_LABEL_KEYS: Record<MusicGenerationProtocol, stri
 }
 
 const VIDEO_GENERATION_PROTOCOL_LABEL_KEYS: Record<VideoGenerationProtocol, string> = {
-  'minimax-video': 'videoGenerationProtocolMiniMax'
+  'minimax-video': 'videoGenerationProtocolMiniMax',
+  'grok-imagine-video': 'videoGenerationProtocolGrok'
 }
 
 type ProviderTaskTab = 'connection' | 'models' | 'capabilities' | 'advanced'

@@ -374,7 +374,12 @@ export const MemoryCapabilityConfig = CapabilityToggleConfig.extend({
 }).strict()
 export type MemoryCapabilityConfig = z.infer<typeof MemoryCapabilityConfig>
 
-export const ImageGenerationProtocol = z.enum(['openai-images', 'minimax-image', 'codex-responses-image'])
+export const ImageGenerationProtocol = z.enum([
+  'openai-images',
+  'minimax-image',
+  'codex-responses-image',
+  'grok-imagine-image'
+])
 export type ImageGenerationProtocol = z.infer<typeof ImageGenerationProtocol>
 export const ImageGenerationQuality = z.enum(['auto', 'low', 'medium', 'high'])
 export type ImageGenerationQuality = z.infer<typeof ImageGenerationQuality>
@@ -422,13 +427,14 @@ export const MusicGenCapabilityConfig = CapabilityToggleConfig.extend({
 }).strict()
 export type MusicGenCapabilityConfig = z.infer<typeof MusicGenCapabilityConfig>
 
-export const VideoGenerationProtocol = z.enum(['minimax-video'])
+export const VideoGenerationProtocol = z.enum(['minimax-video', 'grok-imagine-video'])
 export type VideoGenerationProtocol = z.infer<typeof VideoGenerationProtocol>
 
 export const VideoGenCapabilityConfig = CapabilityToggleConfig.extend({
   protocol: VideoGenerationProtocol.default('minimax-video'),
   baseUrl: z.string().min(1).optional(),
   apiKey: z.string().min(1).optional(),
+  headers: z.record(z.string(), z.string()).optional(),
   model: z.string().min(1).optional(),
   defaultDuration: z.number().int().positive().default(6),
   defaultResolution: z.string().min(1).default('1080P'),
