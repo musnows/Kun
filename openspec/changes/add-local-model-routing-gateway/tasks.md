@@ -35,3 +35,4 @@
 - [x] 5.5 Run typecheck, targeted tests, `build:kun`, top-level build, lint/diff checks, then create the requested local Angular-style commit.
 - [x] 5.6 Correct the relay information architecture so one named local relay provider manages multiple independently routed models and appears as one provider group in model selectors.
 - [x] 5.7 Fix route enablement, runtime hot apply, diagnostic IPC access, full-chain testing, and concrete-model alias disambiguation.
+- [x] 5.8 Make complete route tests Runtime-owned asynchronous jobs with resumable page progress, bounded result history, and hot-configuration synchronization gating.

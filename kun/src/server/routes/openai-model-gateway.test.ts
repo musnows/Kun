@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { ModelClient, ModelRequest, ModelStreamChunk } from '../../ports/model-client.js'
 import { RoutePoolHealthStore } from '../../adapters/model/route-pool-model-client.js'
 import type { ServerRuntime } from './server-runtime.js'
@@ -6,6 +6,7 @@ import { gatewayChatCompletions, gatewayModels, gatewayResponses } from './opena
 import { DEFAULT_SERVE_OPTIONS, ServeOptionsSchema } from '../../cli/cli-options.js'
 import { LOCAL_MODEL_GATEWAY_PROVIDER_ID } from '../../contracts/model-route-pool.js'
 import { buildRouter } from './index.js'
+import { RoutePoolTestService } from '../../services/route-pool-test-service.js'
 
 class GatewayModel implements ModelClient {
   provider = 'test'
@@ -20,27 +21,31 @@ class GatewayModel implements ModelClient {
 
 function runtime(enabled = true): ServerRuntime {
   const modelClient = new GatewayModel()
+  const health = new RoutePoolHealthStore()
+  const pools = [
+    {
+      id: 'pool', name: 'Pool', modelId: 'local-model', enabled: true, strategy: 'priority' as const,
+      targets: [{ id: 'target', providerId: 'provider', modelId: 'real', enabled: true, weight: 1 }],
+      failurePolicy: { failoverHttpStatusCodes: [429, 503], failoverOnNetworkError: true, failoverOnTimeout: true, failoverOnAuthError: true },
+      healthPolicy: { failureThreshold: 3, cooldownMs: 60_000, halfOpenMaxAttempts: 1 }
+    },
+    {
+      id: 'coding-pool', name: 'Coding Pool', modelId: 'local-coding', enabled: true, strategy: 'adaptive' as const,
+      targets: [{ id: 'coding-target', providerId: 'provider', modelId: 'real-coding', enabled: true, weight: 1 }],
+      failurePolicy: { failoverHttpStatusCodes: [429, 503], failoverOnNetworkError: true, failoverOnTimeout: true, failoverOnAuthError: true },
+      healthPolicy: { failureThreshold: 3, cooldownMs: 60_000, halfOpenMaxAttempts: 1 }
+    }
+  ]
+  const tests = new RoutePoolTestService(modelClient, () => pools, health)
   return {
     runtimeToken: 'gateway-test-token',
     insecure: false,
     modelClient,
     modelGateway: {
       enabled: () => enabled,
-      pools: () => [
-        {
-          id: 'pool', name: 'Pool', modelId: 'local-model', enabled: true, strategy: 'priority',
-          targets: [{ id: 'target', providerId: 'provider', modelId: 'real', enabled: true, weight: 1 }],
-          failurePolicy: { failoverHttpStatusCodes: [429, 503], failoverOnNetworkError: true, failoverOnTimeout: true, failoverOnAuthError: true },
-          healthPolicy: { failureThreshold: 3, cooldownMs: 60_000, halfOpenMaxAttempts: 1 }
-        },
-        {
-          id: 'coding-pool', name: 'Coding Pool', modelId: 'local-coding', enabled: true, strategy: 'adaptive',
-          targets: [{ id: 'coding-target', providerId: 'provider', modelId: 'real-coding', enabled: true, weight: 1 }],
-          failurePolicy: { failoverHttpStatusCodes: [429, 503], failoverOnNetworkError: true, failoverOnTimeout: true, failoverOnAuthError: true },
-          healthPolicy: { failureThreshold: 3, cooldownMs: 60_000, halfOpenMaxAttempts: 1 }
-        }
-      ],
-      health: new RoutePoolHealthStore()
+      pools: () => pools,
+      health,
+      tests
     }
   } as unknown as ServerRuntime
 }
@@ -124,9 +129,12 @@ describe('local OpenAI model gateway', () => {
       }),
       { params: match!.params }
     )
-    expect(response.status).toBe(200)
+    expect(response.status).toBe(202)
     const responseBody = response instanceof Response ? await response.text() : response.body
-    expect(JSON.parse(responseBody)).toMatchObject({ ok: true, text: 'hello' })
+    expect(JSON.parse(responseBody)).toMatchObject({ test: { poolId: 'pool', status: 'queued' } })
+    await vi.waitFor(() => {
+      expect(testRuntime.modelGateway!.tests.list('pool')[0]).toMatchObject({ status: 'succeeded', output: 'hello' })
+    })
     expect((testRuntime.modelClient as GatewayModel).last?.providerId).toBe(LOCAL_MODEL_GATEWAY_PROVIDER_ID)
   })
 })

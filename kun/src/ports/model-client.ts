@@ -45,6 +45,8 @@ export type ModelRequest = {
    * reusing the single Kun process (kun#workflow-multi-provider).
    */
   providerId?: string
+  /** Runtime-owned diagnostic run id used to correlate route-test progress. */
+  routeTestId?: string
   /** Opaque account selection for custom/extension providers. Never a credential. */
   accountId?: string
   systemPrompt?: string

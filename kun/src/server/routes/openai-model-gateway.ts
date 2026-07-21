@@ -30,23 +30,19 @@ export async function gatewayResponses(runtime: ServerRuntime, request: Request)
 }
 
 export function routePoolStatus(runtime: ServerRuntime): JsonResponse {
-  if (!runtime.modelGateway) return jsonResponse({ pools: [], metrics: {}, events: [] })
-  return jsonResponse({ pools: runtime.modelGateway.pools(), ...runtime.modelGateway.health.snapshot() })
+  if (!runtime.modelGateway) return jsonResponse({ pools: [], metrics: {}, events: [], tests: [] })
+  return jsonResponse({
+    pools: runtime.modelGateway.pools(),
+    ...runtime.modelGateway.health.snapshot(),
+    tests: runtime.modelGateway.tests.list()
+  })
 }
 
-export async function testRoutePool(runtime: ServerRuntime, poolId: string, signal: AbortSignal): Promise<JsonResponse> {
+export function testRoutePool(runtime: ServerRuntime, poolId: string): JsonResponse {
   const gateway = runtime.modelGateway
-  const pool = gateway?.pools().find((candidate) => candidate.id === poolId)
-  if (!gateway || !pool || !runtime.modelClient) return openAiError('Route pool not found.', 'model_not_found', 404)
-  const request = makeModelRequest({ model: pool.modelId, messages: [{ role: 'user', content: 'Reply with OK.' }] }, signal)
-  let text = ''
-  let error: Extract<ModelStreamChunk, { kind: 'error' }> | undefined
-  for await (const chunk of runtime.modelClient.stream(request)) {
-    if (chunk.kind === 'assistant_text_delta') text += chunk.text
-    if (chunk.kind === 'error') error = chunk
-  }
-  const snapshot = gateway.health.snapshot(pool.id)
-  return jsonResponse({ ok: !error, text, error, ...snapshot }, error ? 502 : 200)
+  const test = gateway?.tests.start(poolId)
+  if (!gateway || !test) return openAiError('Route pool is not ready in the runtime.', 'model_not_ready', 409)
+  return jsonResponse({ test }, 202)
 }
 
 async function gatewayGenerate(runtime: ServerRuntime, request: Request, shape: 'chat' | 'responses'): Promise<Response | JsonResponse> {

@@ -133,7 +133,7 @@ export function buildRouter(runtime: ServerRuntime): Router {
   })
   router.add('POST', '/v1/model-routes/:id/test', (request, ctx) => {
     if (!authorize(request, runtime)) return ERRORS.unauthorized()
-    return testRoutePool(runtime, ctx.params.id, request.signal)
+    return testRoutePool(runtime, ctx.params.id)
   })
   if (runtime.extensionPlatform) {
     // Static public extension paths must precede `/v1/extensions/:id` because

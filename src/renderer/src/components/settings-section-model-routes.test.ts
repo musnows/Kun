@@ -76,16 +76,25 @@ describe('ModelRoutesSettings', () => {
     expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({
       routePools: expect.arrayContaining([expect.objectContaining({ id: 'kimi-pool', enabled: true })])
     }))
+
+    await act(async () => { renderer!.unmount() })
   })
 
-  it('calls the full-chain route endpoint and renders its result', async () => {
-    const runtimeRequest = vi.fn(async (_path: string, method?: string) => method === 'POST'
-      ? { ok: true, status: 200, body: '{"ok":true,"text":"OK","metrics":{},"events":[]}' }
-      : { ok: true, status: 200, body: '{"pools":[],"metrics":{},"events":[]}' })
+  it('starts an asynchronous full-chain test and renders server-owned progress', async () => {
+    const draft = settings()
+    const running = testRecord('running')
+    let tests: ReturnType<typeof testRecord>[] = []
+    const runtimeRequest = vi.fn(async (_path: string, method?: string) => {
+      if (method === 'POST') {
+        tests = [running]
+        return { ok: true, status: 202, body: JSON.stringify({ test: running }) }
+      }
+      return { ok: true, status: 200, body: routeStatus(draft, tests) }
+    })
     vi.stubGlobal('window', { kunGui: { runtimeRequest } })
     let renderer: ReactTestRenderer
     await act(async () => {
-      renderer = createRenderer(createElement(ModelRoutesSettings, { settings: settings(), onChange: () => undefined }))
+      renderer = createRenderer(createElement(ModelRoutesSettings, { settings: draft, onChange: () => undefined }))
     })
     const testButton = renderer!.root.findAllByType('button').find((button) => textContent(button).includes('测试完整链路'))
     expect(testButton).toBeDefined()
@@ -97,9 +106,97 @@ describe('ModelRoutesSettings', () => {
     })
 
     expect(runtimeRequest).toHaveBeenCalledWith('/v1/model-routes/kimi-pool/test', 'POST')
-    expect(textContent(renderer!.root)).toContain('链路测试成功：OK')
+    expect(textContent(renderer!.root)).toContain('测试进行中')
+    expect(textContent(renderer!.root)).toContain('已尝试 2 / 2 个目标')
+    expect(textContent(renderer!.root)).toContain('正在测试：provider-backup / kimi-backup')
+
+    await act(async () => { renderer!.unmount() })
+  })
+
+  it('restores asynchronous test progress and results after leaving the page', async () => {
+    const draft = settings()
+    let statusBody = routeStatus(draft, [testRecord('running')])
+    const runtimeRequest = vi.fn(async () => ({ ok: true, status: 200, body: statusBody }))
+    vi.stubGlobal('window', { kunGui: { runtimeRequest } })
+
+    let renderer: ReactTestRenderer
+    await act(async () => {
+      renderer = createRenderer(createElement(ModelRoutesSettings, { settings: draft, onChange: () => undefined }))
+    })
+    expect(textContent(renderer!.root)).toContain('测试进行中')
+    expect(textContent(renderer!.root)).toContain('正在测试：provider-backup / kimi-backup')
+    await act(async () => { renderer!.unmount() })
+
+    statusBody = routeStatus(draft, [testRecord('succeeded')])
+    await act(async () => {
+      renderer = createRenderer(createElement(ModelRoutesSettings, { settings: draft, onChange: () => undefined }))
+    })
+    const restored = textContent(renderer!.root)
+    expect(restored).toContain('链路测试成功')
+    expect(restored).toContain('最终目标：provider-backup / kimi-backup')
+    expect(restored).toContain('模型响应：OK')
+    expect(restored).toContain('最近测试记录')
+
+    await act(async () => { renderer!.unmount() })
+  })
+
+  it('waits for the saved route pool to reach the runtime before testing', async () => {
+    const draft = settings()
+    const runtimeRequest = vi.fn(async (_path: string, _method?: string) => ({ ok: true, status: 200, body: routeStatus(draft, [], []) }))
+    vi.stubGlobal('window', { kunGui: { runtimeRequest } })
+    let renderer: ReactTestRenderer
+    await act(async () => {
+      renderer = createRenderer(createElement(ModelRoutesSettings, { settings: draft, onChange: () => undefined }))
+    })
+
+    const testButton = renderer!.root.findAllByType('button').find((button) => textContent(button).includes('等待配置同步'))
+    expect(testButton?.props.disabled).toBe(true)
+    expect(textContent(renderer!.root)).toContain('当前编辑内容还没有同步到 Kun Runtime')
+    expect(runtimeRequest.mock.calls.some((call) => call[1] === 'POST')).toBe(false)
+
+    await act(async () => { renderer!.unmount() })
   })
 })
+
+function routeStatus(draft: ModelProviderSettingsV1, tests: ReturnType<typeof testRecord>[] = [], pools = draft.routePools): string {
+  return JSON.stringify({ pools, metrics: {}, events: [], tests })
+}
+
+function testRecord(status: 'running' | 'succeeded') {
+  const target = { targetId: 'backup-target', providerId: 'provider-backup', modelId: 'kimi-backup' }
+  return {
+    id: 'route-test-1',
+    poolId: 'kimi-pool',
+    modelId: 'kimi-auto',
+    status,
+    createdAt: '2026-07-22T08:00:00.000Z',
+    startedAt: '2026-07-22T08:00:00.010Z',
+    ...(status === 'succeeded' ? { completedAt: '2026-07-22T08:00:00.200Z', selectedTarget: target, output: 'OK' } : { currentTarget: target }),
+    totalTargets: 2,
+    attemptedTargets: 2,
+    attempts: [
+      {
+        index: 1,
+        targetId: 'primary-target',
+        providerId: 'provider-primary',
+        modelId: 'kimi-primary',
+        status: 'failed',
+        startedAt: '2026-07-22T08:00:00.010Z',
+        completedAt: '2026-07-22T08:00:00.100Z',
+        latencyMs: 90,
+        category: 'rate_limit',
+        message: '429 quota exhausted'
+      },
+      {
+        index: 2,
+        ...target,
+        status: status === 'succeeded' ? 'succeeded' : 'running',
+        startedAt: '2026-07-22T08:00:00.110Z',
+        ...(status === 'succeeded' ? { completedAt: '2026-07-22T08:00:00.200Z', latencyMs: 90 } : {})
+      }
+    ]
+  } as const
+}
 
 function textContent(node: ReactTestInstance): string {
   return node.children.map((child) => typeof child === 'string' ? child : textContent(child)).join('')

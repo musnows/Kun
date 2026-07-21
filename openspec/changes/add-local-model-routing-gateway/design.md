@@ -56,6 +56,12 @@ Settings > Providers gains a top workspace switch. The relay workspace first pre
 
 Enabled pools are appended as models within one virtual local relay provider group for composer, workflow, schedule, and IM selection. Each public model retains its own aggregated capability metadata, while runtime eligibility remains request-specific.
 
+### Complete route tests are Runtime-owned asynchronous jobs
+
+Starting a complete route test creates a bounded diagnostic job inside the active Kun Runtime and returns immediately. The job owns its cancellation lifetime, so closing or switching the settings page and completing the initiating HTTP request do not stop upstream attempts. A test id is attached only to diagnostic route events, allowing the Runtime to reconstruct the current target, every normalized attempt, latency, final target, output, and terminal error without changing ordinary route telemetry.
+
+The route status control endpoint returns the newest bounded test records together with pool, health, and event state. The renderer polls this endpoint while the relay workspace is mounted and derives all progress and history from Runtime state rather than component-local state. Active starts for the same pool are deduplicated. The test control stays disabled until the saved pool definition exactly matches the Runtime's hot-applied operational definition, preventing a newly enabled or edited pool from being tested against stale configuration. Diagnostic jobs survive page navigation but are intentionally reset with the Runtime process.
+
 ## Risks / Trade-offs
 
 - [Unauthenticated local API can be used by any local process] → Hard-bind it to loopback, refuse unsafe host combinations, and display a persistent warning.

@@ -98,4 +98,12 @@ Settings > Providers SHALL provide a dedicated Advanced Local Relay workspace th
 
 #### Scenario: User tests a pool
 - **WHEN** the user runs a complete route test
-- **THEN** the UI reports each attempted target, latency, normalized result, and final selected target
+- **THEN** Kun starts a Runtime-owned asynchronous test and the UI reports its live attempted targets, latency, normalized result, and final selected target
+
+#### Scenario: User leaves during a route test
+- **WHEN** the user switches away from provider settings while a complete route test is queued or running and later returns
+- **THEN** the test continues independently and the UI restores its current progress or retained result and recent history from Kun Runtime state
+
+#### Scenario: Edited pool is not hot-applied yet
+- **WHEN** the saved route-pool definition does not yet match the definition loaded by Kun Runtime
+- **THEN** the UI disables complete route testing and reports that configuration synchronization is pending instead of testing stale or missing configuration

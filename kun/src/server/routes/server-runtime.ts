@@ -41,6 +41,7 @@ import type { BackgroundShellRuntime } from '../../services/background-shell-run
 import type { ModelClient } from '../../ports/model-client.js'
 import type { ModelRoutePoolConfig } from '../../contracts/model-route-pool.js'
 import type { RoutePoolHealthStore } from '../../adapters/model/route-pool-model-client.js'
+import type { RoutePoolTestService } from '../../services/route-pool-test-service.js'
 import type { RolesConfig } from '../../config/kun-config.js'
 import type { ImmutablePrefix } from '../../cache/immutable-prefix.js'
 import type { PublisherTrustStore } from '../../supplychain/publisher-trust-store.js'
@@ -172,6 +173,7 @@ export type ServerRuntime = {
     enabled(): boolean
     pools(): ModelRoutePoolConfig[]
     health: RoutePoolHealthStore
+    tests: RoutePoolTestService
   }
   defaultModel?: string
   /**

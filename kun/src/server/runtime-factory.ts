@@ -99,6 +99,7 @@ import { ThreadService } from '../services/thread-service.js'
 import { TurnService } from '../services/turn-service.js'
 import { ReviewService } from '../services/review-service.js'
 import { UsageService } from '../services/usage-service.js'
+import { RoutePoolTestService } from '../services/route-pool-test-service.js'
 import type { UsageEvent } from '../contracts/events.js'
 import type {
   RuntimeConfigApplyRequest,
@@ -397,6 +398,11 @@ export async function createKunServeRuntime(
     directModelClient,
     activeOptions.routePools ?? [],
     modelCapabilities,
+    routeHealth
+  )
+  const routePoolTests = new RoutePoolTestService(
+    modelClient,
+    () => modelClient.routePools(),
     routeHealth
   )
   const replaceRoutedModelClients = (): void => {
@@ -1641,7 +1647,8 @@ export async function createKunServeRuntime(
 	    modelGateway: {
 	      enabled: () => activeOptions.localModelGateway?.enabled === true,
 	      pools: () => modelClient.routePools(),
-	      health: routeHealth
+	      health: routeHealth,
+	      tests: routePoolTests
 	    },
 	    get defaultModel() {
 	      return activeOptions.model

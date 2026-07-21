@@ -30,7 +30,8 @@ export type ModelRouteEvent = {
   providerId: string
   modelId: string
   latencyMs: number
-  result: 'success' | 'failure' | 'skipped'
+  result: 'started' | 'success' | 'failure' | 'skipped'
+  testId?: string
   category?: string
   message?: string
 }
@@ -85,13 +86,14 @@ export class RoutePoolHealthStore {
     return state.halfOpenAttempts < pool.healthPolicy.halfOpenMaxAttempts
   }
 
-  begin(pool: ModelRoutePoolConfig, target: ModelRouteTargetConfig): void {
+  begin(pool: ModelRoutePoolConfig, target: ModelRouteTargetConfig, testId?: string): void {
     const state = this.state(pool.id, target.id)
     if (state.circuitOpenUntil && state.circuitOpenUntil <= this.now()) state.halfOpenAttempts += 1
     state.lastAttemptAt = new Date(this.now()).toISOString()
+    if (testId) this.event(pool, target, 0, 'started', undefined, undefined, testId)
   }
 
-  success(pool: ModelRoutePoolConfig, target: ModelRouteTargetConfig, latencyMs: number): void {
+  success(pool: ModelRoutePoolConfig, target: ModelRouteTargetConfig, latencyMs: number, testId?: string): void {
     const state = this.state(pool.id, target.id)
     state.successes += 1
     state.consecutiveFailures = 0
@@ -99,10 +101,10 @@ export class RoutePoolHealthStore {
     state.circuitOpenUntil = undefined
     state.ewmaLatencyMs = state.ewmaLatencyMs === undefined ? latencyMs : state.ewmaLatencyMs * 0.7 + latencyMs * 0.3
     state.lastError = undefined
-    this.event(pool, target, latencyMs, 'success')
+    this.event(pool, target, latencyMs, 'success', undefined, undefined, testId)
   }
 
-  failure(pool: ModelRoutePoolConfig, target: ModelRouteTargetConfig, latencyMs: number, failure: ModelFailureMetadata | undefined, message: string): void {
+  failure(pool: ModelRoutePoolConfig, target: ModelRouteTargetConfig, latencyMs: number, failure: ModelFailureMetadata | undefined, message: string, testId?: string): void {
     const state = this.state(pool.id, target.id)
     state.failures += 1
     state.consecutiveFailures += 1
@@ -112,7 +114,7 @@ export class RoutePoolHealthStore {
       state.circuitOpenUntil = this.now() + Math.max(pool.healthPolicy.cooldownMs, failure?.retryAfterMs ?? 0)
       state.halfOpenAttempts = 0
     }
-    this.event(pool, target, latencyMs, 'failure', failure?.category, message)
+    this.event(pool, target, latencyMs, 'failure', failure?.category, message, testId)
   }
 
   snapshot(poolId?: string): { metrics: Record<string, RouteTargetMetrics>; events: ModelRouteEvent[] } {
@@ -131,7 +133,7 @@ export class RoutePoolHealthStore {
     this.persist()
   }
 
-  private event(pool: ModelRoutePoolConfig, target: ModelRouteTargetConfig, latencyMs: number, result: ModelRouteEvent['result'], category?: string, message?: string): void {
+  private event(pool: ModelRoutePoolConfig, target: ModelRouteTargetConfig, latencyMs: number, result: ModelRouteEvent['result'], category?: string, message?: string, testId?: string): void {
     this.events_.push({
       at: new Date(this.now()).toISOString(),
       poolId: pool.id,
@@ -140,6 +142,7 @@ export class RoutePoolHealthStore {
       modelId: target.modelId,
       latencyMs,
       result,
+      ...(testId ? { testId } : {}),
       ...(category ? { category } : {}),
       ...(message ? { message: message.slice(0, 500) } : {})
     })
@@ -208,7 +211,7 @@ export class RoutePoolModelClient implements ModelClient {
     const failures: string[] = []
     for (const target of ordered) {
       const started = this.now()
-      this.health.begin(pool, target)
+      this.health.begin(pool, target, request.routeTestId)
       const route: ModelRouteTargetMetadata = {
         routePoolId: pool.id,
         targetId: target.id,
@@ -225,7 +228,7 @@ export class RoutePoolModelClient implements ModelClient {
           failed = true
           const latency = Math.max(0, this.now() - started)
           const failure = withRouteFailure(chunk.failure, route)
-          this.health.failure(pool, target, latency, failure, chunk.message)
+          this.health.failure(pool, target, latency, failure, chunk.message, request.routeTestId)
           if (!committed && routeFailureAllowed(pool, failure)) {
             failures.push(`${target.providerId}/${target.modelId}: ${chunk.message}`)
             break
@@ -254,7 +257,7 @@ export class RoutePoolModelClient implements ModelClient {
         failed = true
         const message = error instanceof Error ? error.message : String(error)
         const failure = withRouteFailure({ category: 'unavailable', failoverAllowed: true }, route)
-        this.health.failure(pool, target, Math.max(0, this.now() - started), failure, message)
+        this.health.failure(pool, target, Math.max(0, this.now() - started), failure, message, request.routeTestId)
         if (committed) {
           yield { kind: 'error', message, code: 'route_target_error', failure, route }
           return
@@ -262,7 +265,7 @@ export class RoutePoolModelClient implements ModelClient {
         failures.push(`${target.providerId}/${target.modelId}: ${message}`)
       }
       if (!failed) {
-        this.health.success(pool, target, Math.max(0, this.now() - started))
+        this.health.success(pool, target, Math.max(0, this.now() - started), request.routeTestId)
         return
       }
     }

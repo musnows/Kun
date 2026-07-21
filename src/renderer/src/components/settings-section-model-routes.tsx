@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type DragEvent, type ReactElement } from 'react'
+import { useCallback, useEffect, useMemo, useState, type DragEvent, type ReactElement } from 'react'
 import type { ModelProviderSettingsV1, ModelRoutePoolV1, ModelRouteStrategy } from '@shared/app-settings'
 import { DEFAULT_MODEL_ROUTE_FAILURE_POLICY, DEFAULT_MODEL_ROUTE_HEALTH_POLICY } from '@shared/app-settings'
 import { KUN_MODEL_ROUTES_PATH, kunModelRouteTestPath } from '@shared/kun-endpoints'
@@ -6,9 +6,43 @@ import { Activity, AlertTriangle, Boxes, GripVertical, Loader2, Plus, Play, Rout
 import { Toggle } from './settings-controls'
 
 type RouteStatus = {
+  pools?: ModelRoutePoolV1[]
   metrics?: Record<string, { successes: number; failures: number; ewmaLatencyMs?: number; lastError?: string }>
-  events?: Array<{ at: string; poolId: string; providerId: string; modelId: string; result: string; latencyMs: number; category?: string }>
+  events?: Array<{ at: string; poolId: string; targetId: string; providerId: string; modelId: string; result: string; latencyMs: number; testId?: string; category?: string; message?: string }>
+  tests?: RoutePoolTestRecord[]
 }
+
+type RoutePoolTestAttempt = {
+  index: number
+  targetId: string
+  providerId: string
+  modelId: string
+  status: 'running' | 'succeeded' | 'failed'
+  startedAt: string
+  completedAt?: string
+  latencyMs?: number
+  category?: string
+  message?: string
+}
+
+type RoutePoolTestRecord = {
+  id: string
+  poolId: string
+  modelId: string
+  status: 'queued' | 'running' | 'succeeded' | 'failed'
+  createdAt: string
+  startedAt?: string
+  completedAt?: string
+  totalTargets: number
+  attemptedTargets: number
+  attempts: RoutePoolTestAttempt[]
+  currentTarget?: RouteTestTarget
+  selectedTarget?: RouteTestTarget
+  output?: string
+  error?: { message: string; code?: string; category?: string }
+}
+
+type RouteTestTarget = { targetId: string; providerId: string; modelId: string }
 
 const strategies: Array<{ id: ModelRouteStrategy; label: string }> = [
   { id: 'priority', label: '优先级故障转移' },
@@ -26,24 +60,29 @@ export function ModelRoutesSettings({
   onChange: (next: ModelProviderSettingsV1) => void
 }): ReactElement {
   const [selectedId, setSelectedId] = useState(settings.routePools[0]?.id ?? '')
-  const [status, setStatus] = useState<RouteStatus>({})
-  const [testing, setTesting] = useState(false)
-  const [testMessage, setTestMessage] = useState('')
+  const [status, setStatus] = useState<RouteStatus | null>(null)
+  const [startPending, setStartPending] = useState(false)
+  const [startError, setStartError] = useState('')
   const selected = settings.routePools.find((pool) => pool.id === selectedId) ?? settings.routePools[0]
 
   useEffect(() => {
     if (!selected && settings.routePools[0]) setSelectedId(settings.routePools[0].id)
   }, [selected, settings.routePools])
 
-  const refreshStatus = async (): Promise<void> => {
+  const refreshStatus = useCallback(async (): Promise<void> => {
     try {
       const response = await window.kunGui.runtimeRequest(KUN_MODEL_ROUTES_PATH, 'GET')
       if (response.ok) setStatus(JSON.parse(response.body) as RouteStatus)
     } catch {
       // Runtime may be stopped while settings are edited.
     }
-  }
-  useEffect(() => { void refreshStatus() }, [settings.routePools.length])
+  }, [])
+  useEffect(() => {
+    void refreshStatus()
+    const interval = globalThis.setInterval(() => { void refreshStatus() }, 1_000)
+    return () => globalThis.clearInterval(interval)
+  }, [refreshStatus])
+  useEffect(() => { setStartError('') }, [selected?.id])
 
   const updatePool = (patch: Partial<ModelRoutePoolV1>): void => {
     if (!selected) return
@@ -80,22 +119,42 @@ export function ModelRoutesSettings({
   }
 
   const runTest = async (): Promise<void> => {
-    if (!selected) return
-    setTesting(true)
-    setTestMessage('')
+    if (!selected || !runtimePoolMatches(selected, status?.pools?.find((pool) => pool.id === selected.id))) return
+    setStartPending(true)
+    setStartError('')
     try {
       const response = await window.kunGui.runtimeRequest(kunModelRouteTestPath(selected.id), 'POST')
-      const body = JSON.parse(response.body) as { ok?: boolean; text?: string; error?: { message?: string } }
-      setTestMessage(response.ok && body.ok ? `链路测试成功${body.text ? `：${body.text}` : ''}` : body.error?.message ?? '链路测试失败')
+      const body = JSON.parse(response.body) as { test?: RoutePoolTestRecord; error?: { message?: string } }
+      if (!response.ok || !body.test) throw new Error(body.error?.message ?? '无法创建链路测试')
+      setStatus((current) => ({
+        ...(current ?? {}),
+        tests: [body.test!, ...(current?.tests ?? []).filter((test) => test.id !== body.test!.id)]
+      }))
       await refreshStatus()
     } catch (error) {
-      setTestMessage(error instanceof Error ? error.message : String(error))
+      setStartError(error instanceof Error ? error.message : String(error))
     } finally {
-      setTesting(false)
+      setStartPending(false)
     }
   }
 
-  const events = useMemo(() => (status.events ?? []).filter((event) => !selected || event.poolId === selected.id).slice(-8).reverse(), [selected, status.events])
+  const events = useMemo(() => (status?.events ?? []).filter((event) => !selected || event.poolId === selected.id).slice(-8).reverse(), [selected, status?.events])
+  const selectedTests = useMemo(() => (status?.tests ?? []).filter((test) => test.poolId === selected?.id), [selected?.id, status?.tests])
+  const latestTest = selectedTests[0]
+  const activeTest = latestTest?.status === 'queued' || latestTest?.status === 'running'
+  const runtimePool = status?.pools?.find((pool) => pool.id === selected?.id)
+  const runtimeReady = Boolean(selected?.enabled && runtimePoolMatches(selected, runtimePool))
+  const testButtonLabel = startPending
+    ? '正在创建测试'
+    : activeTest
+      ? '测试进行中'
+      : !selected?.enabled
+        ? '启用后可测试'
+        : !status
+          ? '读取 Runtime 状态'
+          : !runtimeReady
+            ? '等待配置同步'
+            : '测试完整链路'
 
   return (
     <div className="grid min-h-[620px] gap-4 p-4 lg:grid-cols-[280px_minmax(0,1fr)]">
@@ -189,7 +248,7 @@ export function ModelRoutesSettings({
             <div className="grid gap-2">
               {selected.targets.map((target, index) => {
                 const provider = settings.providers.find((candidate) => candidate.id === target.providerId) ?? settings.providers[0]
-                const metric = status.metrics?.[`${selected.id}:${target.id}`]
+                const metric = status?.metrics?.[`${selected.id}:${target.id}`]
                 return (
                   <div key={target.id} draggable onDragStart={(event) => event.dataTransfer.setData('text/route-target-index', String(index))} onDragOver={(event) => event.preventDefault()} onDrop={(event) => reorderTarget(event, index, selected, updatePool)} className="grid items-center gap-2 rounded-xl border border-ds-border bg-ds-card p-3 md:grid-cols-[24px_28px_minmax(150px,1fr)_minmax(150px,1fr)_80px_110px_32px]">
                     <GripVertical className="h-4 w-4 cursor-grab text-ds-faint" />
@@ -213,7 +272,93 @@ export function ModelRoutesSettings({
             <section className="rounded-xl border border-ds-border p-4"><h3 className="flex items-center gap-2 text-[13px] font-semibold text-ds-ink"><Activity className="h-4 w-4 text-emerald-500" />健康与熔断</h3><div className="mt-3 grid grid-cols-3 gap-3"><Field label="连续失败"><input type="number" min={1} max={20} value={selected.healthPolicy.failureThreshold} onChange={(event) => updatePool({ healthPolicy: { ...selected.healthPolicy, failureThreshold: Number(event.target.value) } })} className={compactInputClass} /></Field><Field label="冷却秒数"><input type="number" min={1} value={Math.round(selected.healthPolicy.cooldownMs / 1000)} onChange={(event) => updatePool({ healthPolicy: { ...selected.healthPolicy, cooldownMs: Number(event.target.value) * 1000 } })} className={compactInputClass} /></Field><Field label="半开探测"><input type="number" min={1} max={10} value={selected.healthPolicy.halfOpenMaxAttempts} onChange={(event) => updatePool({ healthPolicy: { ...selected.healthPolicy, halfOpenMaxAttempts: Number(event.target.value) } })} className={compactInputClass} /></Field></div></section>
           </div>
 
-          <section className="grid gap-3 border-t border-ds-border-muted pt-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="text-[13px] font-semibold text-ds-ink">路由验证</h3><p className="mt-1 text-[11px] text-ds-faint">本地 API 默认无鉴权，仅允许回环地址访问。</p></div><button type="button" disabled={testing || !selected.enabled} onClick={() => void runTest()} className="inline-flex h-9 items-center gap-2 rounded-full border border-accent px-4 text-[12px] font-medium text-accent disabled:opacity-40">{testing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}{testing ? '测试中' : '测试完整链路'}</button></div>{testMessage ? <div className="rounded-lg bg-ds-main px-3 py-2 text-[12px] text-ds-muted">{testMessage}</div> : null}<div className="overflow-hidden rounded-xl border border-ds-border"><table className="w-full text-left text-[11.5px]"><thead className="bg-ds-main text-ds-faint"><tr><th className="px-3 py-2">时间</th><th className="px-3 py-2">目标</th><th className="px-3 py-2">结果</th><th className="px-3 py-2">延迟</th></tr></thead><tbody>{events.map((event) => <tr key={`${event.at}-${event.providerId}-${event.modelId}`} className="border-t border-ds-border-muted text-ds-muted"><td className="px-3 py-2">{new Date(event.at).toLocaleTimeString()}</td><td className="px-3 py-2">{event.providerId} / {event.modelId}</td><td className="px-3 py-2">{event.result}{event.category ? ` · ${event.category}` : ''}</td><td className="px-3 py-2">{event.latencyMs} ms</td></tr>)}</tbody></table>{events.length === 0 ? <div className="px-3 py-6 text-center text-[11px] text-ds-faint">暂无路由事件</div> : null}</div></section>
+          <section className="grid gap-3 border-t border-ds-border-muted pt-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h3 className="text-[13px] font-semibold text-ds-ink">路由验证</h3>
+                <p className="mt-1 text-[11px] text-ds-faint">测试由 Kun Runtime 异步执行，离开页面后仍会继续，返回时自动恢复进度和结果。</p>
+              </div>
+              <button
+                type="button"
+                disabled={startPending || activeTest || !runtimeReady}
+                onClick={() => void runTest()}
+                className="inline-flex h-9 items-center gap-2 rounded-full border border-accent px-4 text-[12px] font-medium text-accent disabled:opacity-40"
+              >
+                {startPending || activeTest ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+                {testButtonLabel}
+              </button>
+            </div>
+
+            {startError ? <div className="rounded-lg bg-red-50 px-3 py-2 text-[12px] text-red-700">{startError}</div> : null}
+            {status && selected.enabled && !runtimeReady ? (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11.5px] text-amber-700">
+                当前编辑内容还没有同步到 Kun Runtime，保存并完成热更新后即可测试，避免测试旧配置。
+              </div>
+            ) : null}
+
+            {latestTest ? (
+              <div className="grid gap-3 rounded-xl border border-ds-border bg-ds-card p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    {activeTest ? <Loader2 className="h-4 w-4 animate-spin text-accent" /> : <Activity className="h-4 w-4 text-accent" />}
+                    <span className={`rounded-full px-2 py-1 text-[11px] font-medium ${testStatusClass(latestTest.status)}`}>{testStatusLabel(latestTest.status)}</span>
+                    <span className="text-[11px] text-ds-faint">{new Date(latestTest.createdAt).toLocaleString()}</span>
+                  </div>
+                  <span className="text-[11px] text-ds-muted">已尝试 {latestTest.attemptedTargets} / {latestTest.totalTargets} 个目标</span>
+                </div>
+                <div className="h-1.5 overflow-hidden rounded-full bg-ds-main">
+                  <div className="h-full rounded-full bg-accent transition-all" style={{ width: `${testProgress(latestTest)}%` }} />
+                </div>
+                {latestTest.currentTarget ? <p className="text-[12px] text-ds-muted">正在测试：{formatTarget(latestTest.currentTarget)}</p> : null}
+                {latestTest.selectedTarget ? <p className="text-[12px] text-emerald-700">最终目标：{formatTarget(latestTest.selectedTarget)}</p> : null}
+                {latestTest.output ? <div className="rounded-lg bg-ds-main px-3 py-2 text-[12px] text-ds-muted">模型响应：{latestTest.output}</div> : null}
+                {latestTest.error ? <div className="rounded-lg bg-red-50 px-3 py-2 text-[12px] text-red-700">{latestTest.error.message}{latestTest.error.category ? ` · ${latestTest.error.category}` : ''}</div> : null}
+              </div>
+            ) : status ? <div className="rounded-xl border border-dashed border-ds-border px-3 py-6 text-center text-[11px] text-ds-faint">暂无链路测试记录</div> : null}
+
+            {latestTest?.attempts.length ? (
+              <div className="overflow-hidden rounded-xl border border-ds-border">
+                <div className="bg-ds-main px-3 py-2 text-[11px] font-medium text-ds-muted">本次目标进度</div>
+                <table className="w-full text-left text-[11.5px]">
+                  <thead className="text-ds-faint"><tr><th className="px-3 py-2">顺序</th><th className="px-3 py-2">目标</th><th className="px-3 py-2">状态</th><th className="px-3 py-2">延迟 / 错误</th></tr></thead>
+                  <tbody>{latestTest.attempts.map((attempt) => (
+                    <tr key={`${latestTest.id}-${attempt.targetId}`} className="border-t border-ds-border-muted text-ds-muted">
+                      <td className="px-3 py-2">{attempt.index}</td>
+                      <td className="px-3 py-2">{attempt.providerId} / {attempt.modelId}</td>
+                      <td className="px-3 py-2">{attemptStatusLabel(attempt.status)}</td>
+                      <td className="max-w-[320px] truncate px-3 py-2" title={attempt.message}>{attempt.latencyMs === undefined ? '—' : `${attempt.latencyMs} ms`}{attempt.category ? ` · ${attempt.category}` : ''}{attempt.message ? ` · ${attempt.message}` : ''}</td>
+                    </tr>
+                  ))}</tbody>
+                </table>
+              </div>
+            ) : null}
+
+            {selectedTests.length ? (
+              <div className="overflow-hidden rounded-xl border border-ds-border">
+                <div className="bg-ds-main px-3 py-2 text-[11px] font-medium text-ds-muted">最近测试记录</div>
+                <table className="w-full text-left text-[11.5px]">
+                  <thead className="text-ds-faint"><tr><th className="px-3 py-2">时间</th><th className="px-3 py-2">结果</th><th className="px-3 py-2">尝试</th><th className="px-3 py-2">最终目标</th></tr></thead>
+                  <tbody>{selectedTests.slice(0, 5).map((test) => (
+                    <tr key={test.id} className="border-t border-ds-border-muted text-ds-muted">
+                      <td className="px-3 py-2">{new Date(test.createdAt).toLocaleString()}</td>
+                      <td className="px-3 py-2">{testStatusLabel(test.status)}</td>
+                      <td className="px-3 py-2">{test.attemptedTargets} / {test.totalTargets}</td>
+                      <td className="px-3 py-2">{test.selectedTarget ? formatTarget(test.selectedTarget) : '—'}</td>
+                    </tr>
+                  ))}</tbody>
+                </table>
+              </div>
+            ) : null}
+
+            <div className="overflow-hidden rounded-xl border border-ds-border">
+              <div className="bg-ds-main px-3 py-2 text-[11px] font-medium text-ds-muted">最近路由事件</div>
+              <table className="w-full text-left text-[11.5px]">
+                <thead className="text-ds-faint"><tr><th className="px-3 py-2">时间</th><th className="px-3 py-2">目标</th><th className="px-3 py-2">结果</th><th className="px-3 py-2">延迟</th></tr></thead>
+                <tbody>{events.map((event) => <tr key={`${event.at}-${event.targetId}-${event.result}`} className="border-t border-ds-border-muted text-ds-muted"><td className="px-3 py-2">{new Date(event.at).toLocaleTimeString()}</td><td className="px-3 py-2">{event.providerId} / {event.modelId}</td><td className="px-3 py-2">{event.result}{event.category ? ` · ${event.category}` : ''}</td><td className="px-3 py-2">{event.latencyMs} ms</td></tr>)}</tbody>
+              </table>
+              {events.length === 0 ? <div className="px-3 py-6 text-center text-[11px] text-ds-faint">暂无路由事件</div> : null}
+            </div>
+          </section>
 
           <div className="flex justify-end"><button type="button" onClick={removePool} className="inline-flex items-center gap-2 rounded-full border border-red-200 px-3 py-2 text-[12px] text-red-600"><Trash2 className="h-3.5 w-3.5" /> 删除模型</button></div>
         </main>
@@ -229,3 +374,40 @@ function ToggleRow({ label, checked, onChange }: { label: string; checked: boole
 function uniqueValue(base: string, values: Set<string>): string { let value = base; let i = 2; while (values.has(value)) value = `${base}-${i++}`; return value }
 function parseCodes(value: string): number[] { return [...new Set(value.split(/[\s,]+/).map(Number).filter((code) => Number.isInteger(code) && code >= 400 && code <= 599))] }
 function reorderTarget(event: DragEvent, destination: number, pool: ModelRoutePoolV1, update: (patch: Partial<ModelRoutePoolV1>) => void): void { event.preventDefault(); const source = Number(event.dataTransfer.getData('text/route-target-index')); if (!Number.isInteger(source) || source === destination) return; const targets = [...pool.targets]; const [moved] = targets.splice(source, 1); targets.splice(destination, 0, moved); update({ targets }) }
+function runtimePoolMatches(selected: ModelRoutePoolV1 | undefined, runtime: ModelRoutePoolV1 | undefined): boolean {
+  if (!selected || !runtime) return false
+  const comparable = (pool: ModelRoutePoolV1): unknown => ({
+    id: pool.id,
+    modelId: pool.modelId,
+    enabled: pool.enabled,
+    strategy: pool.strategy,
+    targets: pool.targets.map((target) => ({
+      id: target.id,
+      providerId: target.providerId,
+      modelId: target.modelId,
+      enabled: target.enabled,
+      weight: target.weight
+    })),
+    failurePolicy: {
+      failoverHttpStatusCodes: pool.failurePolicy.failoverHttpStatusCodes,
+      failoverOnNetworkError: pool.failurePolicy.failoverOnNetworkError,
+      failoverOnTimeout: pool.failurePolicy.failoverOnTimeout,
+      failoverOnAuthError: pool.failurePolicy.failoverOnAuthError
+    },
+    healthPolicy: {
+      failureThreshold: pool.healthPolicy.failureThreshold,
+      cooldownMs: pool.healthPolicy.cooldownMs,
+      halfOpenMaxAttempts: pool.healthPolicy.halfOpenMaxAttempts
+    }
+  })
+  return JSON.stringify(comparable(selected)) === JSON.stringify(comparable(runtime))
+}
+function testStatusLabel(status: RoutePoolTestRecord['status']): string { return ({ queued: '等待执行', running: '测试进行中', succeeded: '链路测试成功', failed: '链路测试失败' })[status] }
+function testStatusClass(status: RoutePoolTestRecord['status']): string { return status === 'succeeded' ? 'bg-emerald-50 text-emerald-700' : status === 'failed' ? 'bg-red-50 text-red-700' : 'bg-accent/10 text-accent' }
+function attemptStatusLabel(status: RoutePoolTestAttempt['status']): string { return ({ running: '测试中', succeeded: '成功', failed: '失败，已切换' })[status] }
+function testProgress(test: RoutePoolTestRecord): number {
+  if (test.status === 'succeeded' || test.status === 'failed') return 100
+  if (test.status === 'queued' || test.totalTargets === 0) return 4
+  return Math.max(8, Math.min(92, Math.round((test.attemptedTargets / test.totalTargets) * 100)))
+}
+function formatTarget(target: RouteTestTarget): string { return `${target.providerId} / ${target.modelId}` }
