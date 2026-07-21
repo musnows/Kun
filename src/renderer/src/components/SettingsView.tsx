@@ -1235,6 +1235,7 @@ export function SettingsView(): ReactElement {
     activeApiKey,
     saveStatus,
     saveError,
+    retrySave: () => { void flushPendingSave() },
     update,
     updateKun,
     updateSharedCredential,

@@ -1,11 +1,17 @@
 import { useCallback, useEffect, useMemo, useState, type DragEvent, type ReactElement } from 'react'
 import type { ModelProviderSettingsV1, ModelRoutePoolV1, ModelRouteStrategy } from '@shared/app-settings'
-import { DEFAULT_MODEL_ROUTE_FAILURE_POLICY, DEFAULT_MODEL_ROUTE_HEALTH_POLICY } from '@shared/app-settings'
+import {
+  DEFAULT_MODEL_ROUTE_FAILURE_POLICY,
+  DEFAULT_MODEL_ROUTE_HEALTH_POLICY,
+  projectExecutableModelRoutePools,
+  resolveModelRouteTargetReference
+} from '@shared/app-settings'
 import { KUN_MODEL_ROUTES_PATH, kunModelRouteTestPath } from '@shared/kun-endpoints'
 import { Activity, AlertTriangle, Boxes, GripVertical, Loader2, Plus, Play, Route, Server, Trash2 } from 'lucide-react'
 import { Toggle } from './settings-controls'
 
 type RouteStatus = {
+  localGateway?: { enabled: boolean }
   pools?: ModelRoutePoolV1[]
   metrics?: Record<string, { successes: number; failures: number; ewmaLatencyMs?: number; lastError?: string }>
   events?: Array<{ at: string; poolId: string; targetId: string; providerId: string; modelId: string; result: string; latencyMs: number; testId?: string; category?: string; message?: string }>
@@ -54,16 +60,31 @@ const strategies: Array<{ id: ModelRouteStrategy; label: string }> = [
 
 export function ModelRoutesSettings({
   settings,
-  onChange
+  onChange,
+  saveStatus = 'idle',
+  saveError,
+  onRetrySave
 }: {
   settings: ModelProviderSettingsV1
   onChange: (next: ModelProviderSettingsV1) => void
+  saveStatus?: 'idle' | 'saving' | 'saved' | 'error'
+  saveError?: string | null
+  onRetrySave?: () => void
 }): ReactElement {
   const [selectedId, setSelectedId] = useState(settings.routePools[0]?.id ?? '')
   const [status, setStatus] = useState<RouteStatus | null>(null)
+  const [statusError, setStatusError] = useState('')
+  const [syncWaitExpired, setSyncWaitExpired] = useState(false)
   const [startPending, setStartPending] = useState(false)
   const [startError, setStartError] = useState('')
   const selected = settings.routePools.find((pool) => pool.id === selectedId) ?? settings.routePools[0]
+  const executablePools = useMemo(() => projectExecutableModelRoutePools(settings), [settings])
+  const executableSelected = executablePools.find((pool) => pool.id === selected?.id)
+  const configurationSynced = useMemo(
+    () => runtimeConfigurationMatches(executablePools, settings.localGateway.enabled, status),
+    [executablePools, settings.localGateway.enabled, status]
+  )
+  const runtimeStatusAvailable = status !== null
 
   useEffect(() => {
     if (!selected && settings.routePools[0]) setSelectedId(settings.routePools[0].id)
@@ -72,9 +93,13 @@ export function ModelRoutesSettings({
   const refreshStatus = useCallback(async (): Promise<void> => {
     try {
       const response = await window.kunGui.runtimeRequest(KUN_MODEL_ROUTES_PATH, 'GET')
-      if (response.ok) setStatus(JSON.parse(response.body) as RouteStatus)
-    } catch {
-      // Runtime may be stopped while settings are edited.
+      if (!response.ok) throw new Error(routeStatusError(response.body, response.status))
+      setStatus(JSON.parse(response.body) as RouteStatus)
+      setStatusError('')
+    } catch (error) {
+      // Local settings remain durable while Runtime is stopped or unavailable.
+      setStatus(null)
+      setStatusError(error instanceof Error ? error.message : String(error))
     }
   }, [])
   useEffect(() => {
@@ -83,6 +108,14 @@ export function ModelRoutesSettings({
     return () => globalThis.clearInterval(interval)
   }, [refreshStatus])
   useEffect(() => { setStartError('') }, [selected?.id])
+  useEffect(() => {
+    if (!runtimeStatusAvailable || configurationSynced || saveStatus === 'saving' || saveStatus === 'error') {
+      setSyncWaitExpired(false)
+      return
+    }
+    const timeout = globalThis.setTimeout(() => setSyncWaitExpired(true), 8_000)
+    return () => globalThis.clearTimeout(timeout)
+  }, [runtimeStatusAvailable, configurationSynced, saveStatus])
 
   const updatePool = (patch: Partial<ModelRoutePoolV1>): void => {
     if (!selected) return
@@ -119,7 +152,7 @@ export function ModelRoutesSettings({
   }
 
   const runTest = async (): Promise<void> => {
-    if (!selected || !runtimePoolMatches(selected, status?.pools?.find((pool) => pool.id === selected.id))) return
+    if (!selected || !runtimeReady) return
     setStartPending(true)
     setStartError('')
     try {
@@ -143,18 +176,48 @@ export function ModelRoutesSettings({
   const latestTest = selectedTests[0]
   const activeTest = latestTest?.status === 'queued' || latestTest?.status === 'running'
   const runtimePool = status?.pools?.find((pool) => pool.id === selected?.id)
-  const runtimeReady = Boolean(selected?.enabled && runtimePoolMatches(selected, runtimePool))
+  const selectedHasExecutableTarget = Boolean(executableSelected?.enabled && executableSelected.targets.some((target) => target.enabled))
+  const persistenceReady = saveStatus !== 'saving' && saveStatus !== 'error'
+  const runtimeReady = Boolean(
+    selected?.enabled &&
+    selectedHasExecutableTarget &&
+    persistenceReady &&
+    configurationSynced &&
+    runtimePoolMatches(executableSelected, runtimePool)
+  )
+  const invalidTargetCount = selected?.targets.filter((target) =>
+    resolveModelRouteTargetReference(target, settings.providers).status !== 'valid'
+  ).length ?? 0
   const testButtonLabel = startPending
     ? '正在创建测试'
     : activeTest
       ? '测试进行中'
-      : !selected?.enabled
+      : saveStatus === 'error'
+        ? '先修复保存失败'
+        : saveStatus === 'saving'
+          ? '等待本地保存'
+          : !selected?.enabled
         ? '启用后可测试'
+        : !selectedHasExecutableTarget
+          ? '修复无效目标后测试'
         : !status
-          ? '读取 Runtime 状态'
+          ? 'Kun Runtime 不可用'
           : !runtimeReady
             ? '等待配置同步'
             : '测试完整链路'
+
+  const localSaveLabel = saveStatus === 'saving'
+    ? '正在保存到本地'
+    : saveStatus === 'error'
+      ? '本地保存失败'
+      : '已保存到本地'
+  const runtimeSyncLabel = !status
+    ? 'Kun Runtime 未连接'
+    : configurationSynced
+      ? 'Kun Runtime 已同步'
+      : syncWaitExpired
+        ? 'Kun Runtime 同步失败'
+        : '正在同步到 Kun Runtime'
 
   return (
     <div className="grid min-h-[620px] gap-4 p-4 lg:grid-cols-[280px_minmax(0,1fr)]">
@@ -194,6 +257,29 @@ export function ModelRoutesSettings({
             ariaLabel="开放本地 API"
           />
         </div>
+        <div className="flex basis-full flex-wrap items-center gap-2 border-t border-ds-border-muted pt-3">
+          <span className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${
+            saveStatus === 'error'
+              ? 'bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-200'
+              : saveStatus === 'saving'
+                ? 'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-200'
+                : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-200'
+          }`}>{localSaveLabel}</span>
+          <span className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${
+            configurationSynced
+              ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-200'
+              : status
+                ? 'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-200'
+                : 'bg-ds-card text-ds-muted'
+          }`}>{runtimeSyncLabel}</span>
+          {saveStatus === 'error' && onRetrySave ? (
+            <button type="button" onClick={onRetrySave} className="rounded-full border border-red-200 px-2.5 py-1 text-[11px] font-medium text-red-700">
+              重试保存
+            </button>
+          ) : null}
+          {saveStatus === 'error' && saveError ? <span className="min-w-0 truncate text-[11px] text-red-600" title={saveError}>{saveError}</span> : null}
+          {!status && statusError ? <span className="min-w-0 truncate text-[11px] text-ds-faint" title={statusError}>本地配置不受影响；Kun 启动后会自动同步。</span> : null}
+        </div>
       </section>
       <aside className="grid min-w-0 content-start gap-3 border-b border-ds-border-muted pb-4 lg:border-b-0 lg:border-r lg:pb-0 lg:pr-4">
         <div className="flex items-start justify-between gap-2">
@@ -207,15 +293,17 @@ export function ModelRoutesSettings({
         </button>
         <div className="grid gap-2">
           {settings.routePools.map((pool) => {
-            const available = pool.targets.filter((target) => target.enabled).length
+            const executablePool = executablePools.find((candidate) => candidate.id === pool.id)
+            const available = executablePool?.targets.filter((target) => target.enabled).length ?? 0
+            const invalid = pool.targets.length - (executablePool?.targets.length ?? 0)
             return (
               <button key={pool.id} type="button" onClick={() => setSelectedId(pool.id)} className={`rounded-xl border px-3 py-3 text-left transition ${selected?.id === pool.id ? 'border-accent bg-accent/5' : 'border-ds-border bg-ds-card hover:bg-ds-hover'}`}>
                 <div className="flex items-center justify-between gap-2">
                   <span className="truncate font-mono text-[13px] font-semibold text-ds-ink">{pool.modelId}</span>
-                  <span className={`h-2 w-2 rounded-full ${pool.enabled ? 'bg-emerald-500' : 'bg-ds-faint'}`} />
+                  <span className={`h-2 w-2 rounded-full ${executablePool?.enabled ? 'bg-emerald-500' : invalid > 0 ? 'bg-amber-500' : 'bg-ds-faint'}`} />
                 </div>
                 <div className="mt-1 truncate text-[11px] text-ds-faint">{pool.name}</div>
-                <div className="mt-2 flex items-center justify-between text-[11px] text-ds-muted"><span>{available}/{pool.targets.length} 目标</span><span>{strategies.find((item) => item.id === pool.strategy)?.label}</span></div>
+                <div className="mt-2 flex items-center justify-between text-[11px] text-ds-muted"><span>{available}/{pool.targets.length} 可用{invalid > 0 ? ` · ${invalid} 个待修复` : ''}</span><span>{strategies.find((item) => item.id === pool.strategy)?.label}</span></div>
               </button>
             )
           })}
@@ -247,20 +335,35 @@ export function ModelRoutesSettings({
             }} className="inline-flex items-center gap-1 rounded-full border border-ds-border px-3 py-1.5 text-[12px] text-ds-muted"><Plus className="h-3.5 w-3.5" /> 添加目标</button></div>
             <div className="grid gap-2">
               {selected.targets.map((target, index) => {
-                const provider = settings.providers.find((candidate) => candidate.id === target.providerId) ?? settings.providers[0]
+                const resolution = resolveModelRouteTargetReference(target, settings.providers)
+                const provider = resolution.provider
                 const metric = status?.metrics?.[`${selected.id}:${target.id}`]
                 return (
-                  <div key={target.id} draggable onDragStart={(event) => event.dataTransfer.setData('text/route-target-index', String(index))} onDragOver={(event) => event.preventDefault()} onDrop={(event) => reorderTarget(event, index, selected, updatePool)} className="grid items-center gap-2 rounded-xl border border-ds-border bg-ds-card p-3 md:grid-cols-[24px_28px_minmax(150px,1fr)_minmax(150px,1fr)_80px_110px_32px]">
+                  <div key={target.id} draggable onDragStart={(event) => event.dataTransfer.setData('text/route-target-index', String(index))} onDragOver={(event) => event.preventDefault()} onDrop={(event) => reorderTarget(event, index, selected, updatePool)} className={`grid items-center gap-2 rounded-xl border bg-ds-card p-3 md:grid-cols-[24px_28px_minmax(150px,1fr)_minmax(150px,1fr)_80px_110px_32px] ${resolution.status === 'valid' ? 'border-ds-border' : 'border-amber-300/80'}`}>
                     <GripVertical className="h-4 w-4 cursor-grab text-ds-faint" />
                     <span className="grid h-6 w-6 place-items-center rounded-full bg-ds-main text-[11px] text-ds-muted">{index + 1}</span>
                     <select value={target.providerId} onChange={(event) => {
                       const nextProvider = settings.providers.find((candidate) => candidate.id === event.target.value)
                       updatePool({ targets: selected.targets.map((item) => item.id === target.id ? { ...item, providerId: event.target.value, modelId: nextProvider?.models[0] ?? '' } : item) })
-                    }} className={compactInputClass}>{settings.providers.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
-                    <select value={target.modelId} onChange={(event) => updatePool({ targets: selected.targets.map((item) => item.id === target.id ? { ...item, modelId: event.target.value } : item) })} className={compactInputClass}>{(provider?.models ?? []).map((model) => <option key={model} value={model}>{model}</option>)}</select>
+                    }} className={compactInputClass}>
+                      {resolution.status === 'provider-missing' ? <option value={target.providerId}>供应商已删除：{target.providerId}</option> : null}
+                      {settings.providers.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+                    </select>
+                    <select value={target.modelId} onChange={(event) => updatePool({ targets: selected.targets.map((item) => item.id === target.id ? { ...item, modelId: event.target.value } : item) })} className={compactInputClass}>
+                      {resolution.status !== 'valid' ? <option value={target.modelId}>{resolution.status === 'provider-missing' ? '原模型' : '模型已删除'}：{target.modelId}</option> : null}
+                      {(provider?.models ?? []).map((model) => <option key={model} value={model}>{model}</option>)}
+                    </select>
                     <input type="number" min={1} max={100} title="权重" value={target.weight} onChange={(event) => updatePool({ targets: selected.targets.map((item) => item.id === target.id ? { ...item, weight: Number(event.target.value) || 1 } : item) })} className={compactInputClass} />
                     <div className="text-[11px] text-ds-muted">{metric?.ewmaLatencyMs ? `${Math.round(metric.ewmaLatencyMs)} ms` : '未探测'}<br /><span className="text-ds-faint">{metric ? `${metric.successes}/${metric.successes + metric.failures} 成功` : ''}</span></div>
                     <button type="button" onClick={() => updatePool({ targets: selected.targets.filter((item) => item.id !== target.id) })} className="rounded-full p-1.5 text-ds-faint hover:bg-red-50 hover:text-red-600"><Trash2 className="h-4 w-4" /></button>
+                    {resolution.status !== 'valid' ? (
+                      <div className="flex items-center gap-1.5 text-[11px] text-amber-700 md:col-span-5 md:col-start-3">
+                        <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                        {resolution.status === 'provider-missing'
+                          ? `供应商 ${target.providerId} 已不存在；引用已保留，请选择替代供应商或删除目标。`
+                          : `模型 ${target.modelId} 已不在 ${target.providerId} 中；引用已保留，请选择替代模型或删除目标。`}
+                      </div>
+                    ) : null}
                   </div>
                 )
               })}
@@ -290,9 +393,9 @@ export function ModelRoutesSettings({
             </div>
 
             {startError ? <div className="rounded-lg bg-red-50 px-3 py-2 text-[12px] text-red-700">{startError}</div> : null}
-            {status && selected.enabled && !runtimeReady ? (
+            {selected.enabled && !runtimeReady ? (
               <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11.5px] text-amber-700">
-                当前编辑内容还没有同步到 Kun Runtime，保存并完成热更新后即可测试，避免测试旧配置。
+                {chainTestBlockedReason({ saveStatus, status, statusError, configurationSynced, selectedHasExecutableTarget, invalidTargetCount })}
               </div>
             ) : null}
 
@@ -378,6 +481,7 @@ function runtimePoolMatches(selected: ModelRoutePoolV1 | undefined, runtime: Mod
   if (!selected || !runtime) return false
   const comparable = (pool: ModelRoutePoolV1): unknown => ({
     id: pool.id,
+    name: pool.name,
     modelId: pool.modelId,
     enabled: pool.enabled,
     strategy: pool.strategy,
@@ -401,6 +505,43 @@ function runtimePoolMatches(selected: ModelRoutePoolV1 | undefined, runtime: Mod
     }
   })
   return JSON.stringify(comparable(selected)) === JSON.stringify(comparable(runtime))
+}
+function runtimeConfigurationMatches(
+  expectedPools: readonly ModelRoutePoolV1[],
+  expectedGatewayEnabled: boolean,
+  status: RouteStatus | null
+): boolean {
+  if (!status || status.localGateway?.enabled !== expectedGatewayEnabled) return false
+  const runtimePools = status.pools ?? []
+  return expectedPools.length === runtimePools.length &&
+    expectedPools.every((pool, index) => runtimePoolMatches(pool, runtimePools[index]))
+}
+function routeStatusError(body: string, status: number): string {
+  try {
+    const parsed = JSON.parse(body) as { error?: { message?: string }; message?: string }
+    return parsed.error?.message?.trim() || parsed.message?.trim() || `Kun Runtime 状态请求失败 (${status})`
+  } catch {
+    return body.trim() || `Kun Runtime 状态请求失败 (${status})`
+  }
+}
+function chainTestBlockedReason(input: {
+  saveStatus: 'idle' | 'saving' | 'saved' | 'error'
+  status: RouteStatus | null
+  statusError: string
+  configurationSynced: boolean
+  selectedHasExecutableTarget: boolean
+  invalidTargetCount: number
+}): string {
+  if (input.saveStatus === 'error') return '本地保存失败，请先重试保存；未持久化的配置不会用于链路测试。'
+  if (input.saveStatus === 'saving') return '配置正在保存到本地，保存完成并同步到 Kun Runtime 后即可测试。'
+  if (!input.selectedHasExecutableTarget) {
+    return input.invalidTargetCount > 0
+      ? `当前路由有 ${input.invalidTargetCount} 个失效引用且没有可执行目标，请先替换供应商或模型。`
+      : '当前路由没有已启用的有效目标，请先添加或启用一个目标。'
+  }
+  if (!input.status) return `本地配置已保存，但 Kun Runtime 当前不可用；启动后会自动同步。${input.statusError ? ` ${input.statusError}` : ''}`
+  if (!input.configurationSynced) return '本地配置已保存，正在等待 Kun Runtime 应用相同的路由池和本地 API 状态。'
+  return 'Kun Runtime 尚未准备好执行该路由的完整链路测试。'
 }
 function testStatusLabel(status: RoutePoolTestRecord['status']): string { return ({ queued: '等待执行', running: '测试进行中', succeeded: '链路测试成功', failed: '链路测试失败' })[status] }
 function testStatusClass(status: RoutePoolTestRecord['status']): string { return status === 'succeeded' ? 'bg-emerald-50 text-emerald-700' : status === 'failed' ? 'bg-red-50 text-red-700' : 'bg-accent/10 text-accent' }

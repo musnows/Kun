@@ -297,6 +297,30 @@ describe('registerAppIpcHandlers', () => {
     expect(applySettingsPatch).toHaveBeenCalledWith(payload)
   })
 
+  it('accepts strict multi-account provider source metadata with routing settings', async () => {
+    const applySettingsPatch = vi.fn(async () => settings())
+    registerAppIpcHandlers(registerOptions({ applySettingsPatch }))
+    const payload = {
+      provider: {
+        providers: [{
+          id: 'kimi-code-2',
+          name: 'Kimi Code 2',
+          presetSource: { presetId: 'kimi-code', mode: 'api' as const },
+          models: ['kimi-for-coding']
+        }],
+        routePools: [{
+          id: 'kimi-route', name: 'Kimi Route', modelId: 'kimi-auto', enabled: true, strategy: 'priority' as const,
+          targets: [{ id: 'target-2', providerId: 'kimi-code-2', modelId: 'kimi-for-coding', enabled: true, weight: 1 }],
+          failurePolicy: { failoverHttpStatusCodes: [429], failoverOnNetworkError: true, failoverOnTimeout: true, failoverOnAuthError: true },
+          healthPolicy: { failureThreshold: 3, cooldownMs: 60_000, halfOpenMaxAttempts: 1 }
+        }]
+      }
+    }
+
+    await expect(handlers.get('settings:set')?.({}, payload)).resolves.toEqual(settings())
+    expect(applySettingsPatch).toHaveBeenCalledWith(payload)
+  })
+
   it('preserves project grants instead of accepting them through generic settings writes', async () => {
     const applySettingsPatch = vi.fn(async () => settings())
     registerAppIpcHandlers(registerOptions({ applySettingsPatch }))

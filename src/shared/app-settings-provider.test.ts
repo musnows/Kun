@@ -33,6 +33,8 @@ import {
   modelSupportsImageInput,
   defaultDesignSettings,
   normalizeModelProviderSettings,
+  projectExecutableModelRoutePools,
+  resolveModelRouteTargetReference,
   resolveKunImageGenerationSettings,
   resolveKunMusicGenerationSettings,
   resolveModelProviderBaseUrl,
@@ -111,6 +113,40 @@ describe('model route pool settings', () => {
     })
     expect(settings.routePools[0]).toMatchObject({ enabled: true, strategy: 'adaptive', targets: [{ providerId: 'provider-a', weight: 100 }] })
     expect(settings.routePools[1]).toMatchObject({ modelId: 'kimi-k3', enabled: true })
+  })
+
+  it('preserves dangling targets while excluding them from the executable projection', () => {
+    const settings = normalizeModelProviderSettings({
+      providers: [{ id: 'provider-a', name: 'A', baseUrl: 'https://a.example', models: ['kimi-k3'] }],
+      routePools: [{
+        id: 'pool', name: 'Pool', modelId: 'kimi-auto', enabled: true, strategy: 'priority',
+        targets: [
+          { id: 'valid', providerId: 'provider-a', modelId: 'kimi-k3', enabled: true, weight: 1 },
+          { id: 'provider-missing', providerId: 'provider-gone', modelId: 'kimi-k3', enabled: true, weight: 1 },
+          { id: 'model-missing', providerId: 'provider-a', modelId: 'kimi-removed', enabled: true, weight: 1 }
+        ],
+        failurePolicy: { failoverHttpStatusCodes: [429], failoverOnNetworkError: true, failoverOnTimeout: true, failoverOnAuthError: true },
+        healthPolicy: { failureThreshold: 3, cooldownMs: 60_000, halfOpenMaxAttempts: 1 }
+      }]
+    })
+
+    expect(settings.routePools[0].targets).toHaveLength(3)
+    expect(resolveModelRouteTargetReference(settings.routePools[0].targets[0], settings.providers).status).toBe('valid')
+    expect(resolveModelRouteTargetReference(settings.routePools[0].targets[1], settings.providers).status).toBe('provider-missing')
+    expect(resolveModelRouteTargetReference(settings.routePools[0].targets[2], settings.providers).status).toBe('model-missing')
+    expect(projectExecutableModelRoutePools(settings)[0]).toMatchObject({
+      enabled: true,
+      targets: [{ id: 'valid', providerId: 'provider-a', modelId: 'kimi-k3' }]
+    })
+
+    const withoutProvider = normalizeModelProviderSettings({
+      ...settings,
+      providers: [],
+      routePools: settings.routePools
+    })
+    expect(withoutProvider.routePools[0]).toMatchObject({ enabled: true })
+    expect(withoutProvider.routePools[0].targets).toHaveLength(3)
+    expect(projectExecutableModelRoutePools(withoutProvider)[0]).toMatchObject({ enabled: false, targets: [] })
   })
 })
 

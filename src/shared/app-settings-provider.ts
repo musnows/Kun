@@ -45,6 +45,8 @@ import {
   type ModelRouteFailurePolicyV1,
   type ModelRouteHealthPolicyV1,
   type ModelRoutePoolV1,
+  type ModelRouteTargetResolutionV1,
+  type ModelRouteTargetV1,
   type ModelRouteStrategy,
   type ModelProviderSettingsPatchV1,
   type ModelProviderSettingsV1,
@@ -189,9 +191,8 @@ export const DEFAULT_MODEL_ROUTE_HEALTH_POLICY: ModelRouteHealthPolicyV1 = {
 
 export function normalizeModelRoutePools(
   input: readonly Partial<ModelRoutePoolV1>[] | undefined,
-  providers: readonly ModelProviderProfileV1[]
+  _providers?: readonly ModelProviderProfileV1[]
 ): ModelRoutePoolV1[] {
-  const providerById = new Map(providers.map((provider) => [provider.id.toLowerCase(), provider]))
   const usedIds = new Set<string>()
   const usedModels = new Set<string>()
   const out: ModelRoutePoolV1[] = []
@@ -202,16 +203,15 @@ export function normalizeModelRoutePools(
     const targetIds = new Set<string>()
     const targets = (Array.isArray(raw.targets) ? raw.targets : []).slice(0, 50).flatMap((target: ModelRoutePoolV1['targets'][number], index: number) => {
       const providerId = normalizeModelProviderId(target?.providerId)
-      const provider = providerById.get(providerId)
       const targetModel = typeof target?.modelId === 'string' ? target.modelId.trim().slice(0, 512) : ''
-      if (!provider || !targetModel || !provider.models.some((model) => model.toLowerCase() === targetModel.toLowerCase())) return []
+      if (!providerId || !targetModel) return []
       const targetId = normalizeModelProviderId(target?.id) || `${id}-target-${index + 1}`
       if (targetIds.has(targetId)) return []
       targetIds.add(targetId)
       return [{
         id: targetId,
-        providerId: provider.id,
-        modelId: provider.models.find((model) => model.toLowerCase() === targetModel.toLowerCase()) ?? targetModel,
+        providerId,
+        modelId: targetModel,
         enabled: target?.enabled !== false,
         weight: Math.min(100, Math.max(1, boundedNonNegativeInteger(target?.weight, 1, 100)))
       }]
@@ -231,7 +231,7 @@ export function normalizeModelRoutePools(
       // (for example, a routed `kimi-k3` backed by several providers). Kun
       // disambiguates the virtual route from a direct provider selection with
       // the request's provider id, so only duplicate route aliases are invalid.
-      enabled: raw.enabled !== false && targets.length > 0,
+      enabled: raw.enabled !== false,
       strategy,
       targets,
       failurePolicy: {
@@ -251,6 +251,44 @@ export function normalizeModelRoutePools(
     out.push(pool)
   }
   return out
+}
+
+export function resolveModelRouteTargetReference(
+  target: Pick<ModelRouteTargetV1, 'providerId' | 'modelId'>,
+  providers: readonly ModelProviderProfileV1[]
+): ModelRouteTargetResolutionV1 {
+  const providerId = normalizeModelProviderId(target.providerId)
+  const provider = providers.find((candidate) => candidate.id.toLowerCase() === providerId)
+  if (!provider) return { status: 'provider-missing' }
+  const requestedModel = target.modelId.trim().toLowerCase()
+  const modelId = provider.models.find((candidate) => candidate.trim().toLowerCase() === requestedModel)
+  if (!modelId) return { status: 'model-missing', provider }
+  return { status: 'valid', provider, modelId }
+}
+
+/**
+ * Projects durable user intent into the concrete configuration Kun may run.
+ * Missing references remain in settings but never reach the Runtime.
+ */
+export function projectExecutableModelRoutePools(
+  settings: Pick<ModelProviderSettingsV1, 'providers' | 'routePools'>
+): ModelRoutePoolV1[] {
+  return settings.routePools.map((pool) => {
+    const targets = pool.targets.flatMap((target) => {
+      const resolved = resolveModelRouteTargetReference(target, settings.providers)
+      if (resolved.status !== 'valid' || !resolved.provider || !resolved.modelId) return []
+      return [{
+        ...target,
+        providerId: resolved.provider.id,
+        modelId: resolved.modelId
+      }]
+    })
+    return {
+      ...pool,
+      enabled: pool.enabled && targets.some((target) => target.enabled),
+      targets
+    }
+  })
 }
 
 export function getModelProviderSettings(settings: AppSettingsV1): ModelProviderSettingsV1 {
@@ -305,7 +343,7 @@ export function listModelProviderModelIds(settings: AppSettingsV1): string[] {
       ids.add(trimmed)
     }
   }
-  for (const pool of providerSettings.routePools) {
+  for (const pool of projectExecutableModelRoutePools(providerSettings)) {
     if (pool.enabled && pool.targets.some((target) => target.enabled)) ids.add(pool.modelId)
   }
   return [...ids].sort((a, b) => a.localeCompare(b))

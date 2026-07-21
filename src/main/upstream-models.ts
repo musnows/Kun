@@ -8,6 +8,7 @@ import {
   listNonTextModelIds,
   modelProfileSupportsTextChat,
   modelProviderModelProfile,
+  projectExecutableModelRoutePools,
   resolveKunRuntimeSettings,
   type AppSettingsV1,
   type ModelProviderModelProfileV1
@@ -110,7 +111,7 @@ async function readConfiguredModelGroups(settings: AppSettingsV1): Promise<Model
   const providerSettings = getModelProviderSettings(settings)
   const routeModelIds: string[] = []
   const routeModelProfiles: Record<string, ModelProviderModelProfileV1> = {}
-  for (const pool of providerSettings.routePools) {
+  for (const pool of projectExecutableModelRoutePools(providerSettings)) {
     if (!pool.enabled || pool.targets.length === 0) continue
     const profiles = pool.targets.flatMap((target) => {
       const provider = providerSettings.providers.find((candidate) => candidate.id === target.providerId)

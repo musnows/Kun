@@ -122,6 +122,10 @@ const modelProviderPatchSchema = z.object({
   providers: z.array(z.object({
     id: z.string().trim().min(1).max(64).optional(),
     name: z.string().trim().min(1).max(80).optional(),
+    presetSource: z.object({
+      presetId: z.string().trim().min(1).max(64),
+      mode: z.enum(['api', 'token-plan'])
+    }).strict().optional(),
     apiKey: z.string().max(MAX_BODY_BYTES).optional(),
     baseUrl: z.string().trim().max(MAX_URL_LENGTH).optional(),
     endpointFormat: modelEndpointFormatSchema.optional(),

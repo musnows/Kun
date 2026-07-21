@@ -110,6 +110,7 @@ import {
 } from './claw-schedule-mcp-config'
 import {
   runtimeProcessConfigChanged,
+  runtimeSettingsRollbackPatch,
   runtimeSettingsApplyMode,
   stableSettingsStringify
 } from './runtime-settings-apply-mode'
@@ -1426,7 +1427,7 @@ async function restartManagedRuntimeForSettingsChange(
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e)
     logWarn('settings-apply', `Kun restart failed after settings change: ${message}`)
-    await rollbackRuntimeSettingsAfterFailedApply(prev, message)
+    await rollbackRuntimeSettingsAfterFailedApply(prev, next, message)
   }
 }
 
@@ -1438,15 +1439,16 @@ async function restartManagedRuntimeForSettingsChange(
  */
 async function rollbackRuntimeSettingsAfterFailedApply(
   prev: AppSettingsV1,
+  desired: AppSettingsV1,
   failureMessage: string
 ): Promise<void> {
   const adapter = kunRuntimeAdapter
   let base: AppSettingsV1 = prev
   try {
-    base = await store.patch({
-      agents: { kun: getKunRuntimeSettings(prev) },
-      provider: prev.provider
-    })
+    // Route definitions are durable user intent, not process-critical launch
+    // settings. Keep the newest routes repairable while restoring the previous
+    // Runtime/provider transport configuration.
+    base = await store.patch(runtimeSettingsRollbackPatch(prev, desired))
     runtimeSupervisor.noteLatest(base)
   } catch (error) {
     logWarn('settings-apply', 'failed to restore previous runtime settings on disk', {

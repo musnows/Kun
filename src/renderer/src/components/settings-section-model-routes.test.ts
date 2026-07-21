@@ -103,6 +103,61 @@ describe('ModelRoutesSettings', () => {
     await act(async () => { renderer!.unmount() })
   })
 
+  it('shows separate local save and Runtime synchronization states with retry', async () => {
+    const draft = settings()
+    const onRetrySave = vi.fn()
+    vi.stubGlobal('window', {
+      kunGui: {
+        runtimeRequest: vi.fn(async () => ({ ok: false, status: 503, body: '{"error":{"message":"Kun stopped"}}' }))
+      }
+    })
+    let renderer: ReactTestRenderer
+    await act(async () => {
+      renderer = createRenderer(createElement(ModelRoutesSettings, {
+        settings: draft,
+        onChange: () => undefined,
+        saveStatus: 'error',
+        saveError: 'disk write failed',
+        onRetrySave
+      }))
+    })
+
+    const content = textContent(renderer!.root)
+    expect(content).toContain('本地保存失败')
+    expect(content).toContain('Kun Runtime 未连接')
+    expect(content).toContain('disk write failed')
+    const retry = renderer!.root.findAllByType('button').find((button) => textContent(button).includes('重试保存'))
+    await act(async () => { retry!.props.onClick() })
+    expect(onRetrySave).toHaveBeenCalledOnce()
+
+    await act(async () => { renderer!.unmount() })
+  })
+
+  it('keeps missing route references visible and blocks stale chain tests', async () => {
+    const draft = settings()
+    draft.routePools[0].targets = [{
+      id: 'missing-target', providerId: 'removed-provider', modelId: 'removed-model', enabled: true, weight: 1
+    }]
+    vi.stubGlobal('window', {
+      kunGui: {
+        runtimeRequest: vi.fn(async () => ({ ok: true, status: 200, body: routeStatus(draft, [], [{ ...draft.routePools[0], enabled: false, targets: [] }, draft.routePools[1]]) }))
+      }
+    })
+    let renderer: ReactTestRenderer
+    await act(async () => {
+      renderer = createRenderer(createElement(ModelRoutesSettings, { settings: draft, onChange: () => undefined, saveStatus: 'saved' }))
+    })
+
+    const content = textContent(renderer!.root)
+    expect(content).toContain('供应商已删除：removed-provider')
+    expect(content).toContain('原模型：removed-model')
+    expect(content).toContain('引用已保留')
+    expect(content).toContain('修复无效目标后测试')
+    expect(content).toContain('没有可执行目标')
+
+    await act(async () => { renderer!.unmount() })
+  })
+
   it('starts an asynchronous full-chain test and renders server-owned progress', async () => {
     const draft = settings()
     const running = testRecord('running')
@@ -174,7 +229,7 @@ describe('ModelRoutesSettings', () => {
 
     const testButton = renderer!.root.findAllByType('button').find((button) => textContent(button).includes('等待配置同步'))
     expect(testButton?.props.disabled).toBe(true)
-    expect(textContent(renderer!.root)).toContain('当前编辑内容还没有同步到 Kun Runtime')
+    expect(textContent(renderer!.root)).toContain('本地配置已保存，正在等待 Kun Runtime')
     expect(runtimeRequest.mock.calls.some((call) => call[1] === 'POST')).toBe(false)
 
     await act(async () => { renderer!.unmount() })
@@ -182,7 +237,7 @@ describe('ModelRoutesSettings', () => {
 })
 
 function routeStatus(draft: ModelProviderSettingsV1, tests: ReturnType<typeof testRecord>[] = [], pools = draft.routePools): string {
-  return JSON.stringify({ pools, metrics: {}, events: [], tests })
+  return JSON.stringify({ localGateway: { enabled: draft.localGateway.enabled }, pools, metrics: {}, events: [], tests })
 }
 
 function testRecord(status: 'running' | 'succeeded') {

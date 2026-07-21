@@ -1,6 +1,7 @@
 import {
   defaultKunTokenEconomySettings,
   getModelProviderSettings,
+  projectExecutableModelRoutePools,
   resolveModelProviderProxyUrl,
   type AppSettingsV1,
   type KunRuntimeSettingsV1,
@@ -80,7 +81,8 @@ export function providersConfigForRuntime(
 }
 
 export function routePoolsConfigForRuntime(settings: AppSettingsV1) {
-  return getModelProviderSettings(settings).routePools
+  const providerSettings = getModelProviderSettings(settings)
+  return projectExecutableModelRoutePools(providerSettings)
 }
 
 export function localModelGatewayConfigForRuntime(settings: AppSettingsV1) {

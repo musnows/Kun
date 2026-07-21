@@ -1108,7 +1108,8 @@ export function ProvidersSettingsSection({ ctx }: { ctx: Record<string, any> }):
     setShowApiKey,
     selectControlClass,
     saveStatus,
-    saveError
+    saveError,
+    retrySave
   } = ctx
   const provider = providerFromContext ?? defaultModelProviderSettings()
   const modelProviders = provider.providers as ModelProviderProfileV1[]
@@ -2042,6 +2043,9 @@ export function ProvidersSettingsSection({ ctx }: { ctx: Record<string, any> }):
           <ModelRoutesSettings
             settings={provider}
             onChange={(next) => update({ provider: { routePools: next.routePools, localGateway: next.localGateway } })}
+            saveStatus={saveStatus}
+            saveError={saveError}
+            onRetrySave={retrySave}
           />
         ) : <div className="grid gap-4 p-4">
           <label className="grid gap-1.5 lg:hidden">

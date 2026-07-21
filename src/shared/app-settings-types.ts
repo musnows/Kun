@@ -277,6 +277,12 @@ export type ModelRouteTargetV1 = {
   enabled: boolean
   weight: number
 }
+export type ModelRouteTargetReferenceStatus = 'valid' | 'provider-missing' | 'model-missing'
+export type ModelRouteTargetResolutionV1 = {
+  status: ModelRouteTargetReferenceStatus
+  provider?: ModelProviderProfileV1
+  modelId?: string
+}
 export type ModelRouteFailurePolicyV1 = {
   failoverHttpStatusCodes: number[]
   failoverOnNetworkError: boolean

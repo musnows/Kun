@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { ModelClient, ModelRequest, ModelStreamChunk } from '../../ports/model-client.js'
 import { RoutePoolHealthStore } from '../../adapters/model/route-pool-model-client.js'
 import type { ServerRuntime } from './server-runtime.js'
-import { gatewayChatCompletions, gatewayModels, gatewayResponses } from './openai-model-gateway.js'
+import { gatewayChatCompletions, gatewayModels, gatewayResponses, routePoolStatus } from './openai-model-gateway.js'
 import { DEFAULT_SERVE_OPTIONS, ServeOptionsSchema } from '../../cli/cli-options.js'
 import { LOCAL_MODEL_GATEWAY_PROVIDER_ID } from '../../contracts/model-route-pool.js'
 import { buildRouter } from './index.js'
@@ -61,6 +61,16 @@ describe('local OpenAI model gateway', () => {
       expect.objectContaining({ id: 'local-model', owned_by: 'kun-route-pool' }),
       expect.objectContaining({ id: 'local-coding', owned_by: 'kun-route-pool' })
     ])
+  })
+
+  it('reports the effective local gateway state with route status', () => {
+    expect(JSON.parse(routePoolStatus(runtime(true)).body)).toMatchObject({
+      localGateway: { enabled: true },
+      pools: expect.arrayContaining([expect.objectContaining({ id: 'pool' })])
+    })
+    expect(JSON.parse(routePoolStatus(runtime(false)).body)).toMatchObject({
+      localGateway: { enabled: false }
+    })
   })
 
   it('returns a non-streaming chat completion with the public alias', async () => {

@@ -1285,6 +1285,7 @@ export function migrateLegacyAppSettings(parsed: LegacyAppSettingsShape): Partia
     sandboxMode: isReasoningLegacy ? kunDefaults.sandboxMode : legacyLocalHttp.sandboxMode
   }
   const provider = normalizeModelProviderSettings({
+    ...parsed.provider,
     apiKey: hasProviderSettings
       ? parsed.provider?.apiKey
       : nonEmptyStringOrFallback(explicitKun.apiKey, legacySeed.apiKey),
@@ -1292,7 +1293,9 @@ export function migrateLegacyAppSettings(parsed: LegacyAppSettingsShape): Partia
       ? parsed.provider?.baseUrl
       : nonEmptyStringOrFallback(explicitKun.baseUrl, legacySeed.baseUrl),
     proxy: parsed.provider?.proxy,
-    providers: parsed.provider?.providers
+    providers: parsed.provider?.providers,
+    routePools: parsed.provider?.routePools,
+    localGateway: parsed.provider?.localGateway
   })
   const kun = {
     ...kunDefaults,
