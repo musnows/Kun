@@ -1,4 +1,4 @@
-import type { ReviewTarget } from '../agent/types'
+import type { ChatBlock, ReviewTarget } from '../agent/types'
 import { getProvider } from '../agent/registry'
 import { rendererRuntimeClient } from '../agent/runtime-client'
 import {
@@ -9,7 +9,7 @@ import {
 import i18n from '../i18n'
 import { applyTheme, applyUiFontScale } from '../lib/apply-theme'
 import { formatWorkspacePickerError } from '../lib/format-workspace-picker-error'
-import { formatRuntimeError, getRuntimeErrorCode } from '../lib/format-runtime-error'
+import { describeRuntimeError, formatRuntimeError, getRuntimeErrorCode } from '../lib/format-runtime-error'
 import {
   deriveThreadTitleFromPrompt,
   getDefaultThreadTitle,
@@ -141,6 +141,20 @@ type StoreActionContext = {
 let drainingQueuedMessages = false
 const guidingQueuedMessageIds = new Set<string>()
 const checkpointGitAvailability = new GitCheckpointAvailabilityCache()
+
+function localConversationErrorBlock(error: unknown, id: string): Extract<ChatBlock, { kind: 'system' }> {
+  const view = describeRuntimeError(error)
+  return {
+    kind: 'system',
+    id,
+    createdAt: new Date().toISOString(),
+    text: view.message,
+    ...(view.code ? { code: view.code } : {}),
+    ...(view.detail ? { detail: view.detail } : {}),
+    severity: 'error',
+    runtimeError: true
+  }
+}
 
 function activeChatWorkspaceRoot(state: ChatState): string {
   const activeThread = state.activeThreadId
@@ -1122,6 +1136,7 @@ export function createThreadActions(
     sseAbortRef.current?.abort()
     sseAbortRef.current = null
     clearBusyWatchdog()
+    let runtimeTurnAccepted = false
     try {
       const seqAtSend = get().lastSeq
       const channel = get().route === 'claw' ? activeClawChannel(get()) : null
@@ -1194,6 +1209,7 @@ export function createThreadActions(
         ...(fileReferences.length ? { fileReferences } : {}),
         ...(composerContexts.length ? { composerContexts } : {})
       })
+      runtimeTurnAccepted = true
       if (queued) {
         set((state) => ({
           queuedMessages: state.queuedMessages.map((message) => message.id === queued.id
@@ -1337,15 +1353,19 @@ export function createThreadActions(
         await get().refreshThreads()
         return false
       }
-      set({
-        error: formatRuntimeError(e),
+      const view = describeRuntimeError(e)
+      set((state) => ({
+        blocks: runtimeTurnAccepted
+          ? state.blocks
+          : [...state.blocks, localConversationErrorBlock(e, `local_error_${userBlockId}`)],
+        error: view.summary,
         busy: false,
         currentTurnId: null,
         queuedMessages: previousQueuedMessages,
         ...(shouldOpenSettingsForError(e)
           ? { route: 'settings' as const, settingsSection: 'agents' as const }
           : {})
-      })
+      }))
       persistActiveQueuedMessages()
       await get().refreshThreads()
       return false

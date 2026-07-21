@@ -446,6 +446,28 @@ describe('create_plan tool mapping', () => {
     })
   })
 
+  it('marks persisted error items for direct conversation rendering', () => {
+    const block = chatBlockFromItem({
+      id: 'item_error_persisted',
+      turnId: 'turn_1',
+      threadId: 'thr_1',
+      role: 'system',
+      status: 'failed',
+      createdAt: '2024-01-01T00:00:00.000Z',
+      kind: 'error',
+      message: 'provider rejected the request',
+      code: 'provider_error'
+    })
+
+    expect(block).toMatchObject({
+      kind: 'system',
+      id: 'item_error_persisted',
+      text: 'provider rejected the request',
+      code: 'provider_error',
+      runtimeError: true
+    })
+  })
+
   it('maps a successful create_plan result to a tool block with plan metadata', () => {
     const item: CoreTurnItemJson = {
       id: 'item_plan_1',

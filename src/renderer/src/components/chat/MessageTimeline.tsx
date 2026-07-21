@@ -1,13 +1,13 @@
 import type { ReactElement, RefObject } from 'react'
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { GitCommitHorizontal, Hash } from 'lucide-react'
+import { CircleAlert, GitCommitHorizontal, Hash } from 'lucide-react'
 import type { ChatBlock, RuntimeConnectionStatus } from '../../agent/types'
 import { useChatStore } from '../../store/chat-store'
 import { threadHasPendingRuntimeWork } from '../../store/chat-store-runtime-helpers'
 import { useTimelineStores } from './use-timeline-stores'
 import { useTimelineScroll } from './use-timeline-scroll'
-import { deriveTurnSections } from './derive-turn-sections'
+import { deriveTurnSections, type TurnRuntimeErrorBlock } from './derive-turn-sections'
 import { MessageTimelineEmptyHero, ThreadForkBanner, ThreadForkPoint } from './message-timeline-empty'
 import { GeneratedFilesPanel, MessageBubble } from './message-timeline-bubbles'
 import { PresentationFilesPanel } from './PresentationFilesPanel'
@@ -338,6 +338,37 @@ function CompactionDivider({ block }: { block: CompactionTimelineBlock }): React
         {compactionDividerLabel(block, t)}
       </span>
       <span className={`h-px min-w-8 flex-1 ${error ? 'bg-red-200/80 dark:bg-red-900/50' : 'bg-ds-border-muted/80'}`} />
+    </div>
+  )
+}
+
+/** Non-interactive runtime error rendered directly in the conversation flow. */
+export function TimelineRuntimeError({ block }: { block: TurnRuntimeErrorBlock }): ReactElement {
+  const message = block.text.trim() || block.detail?.trim() || block.code?.trim() || ''
+  const code = block.code?.trim() ?? ''
+  const showCode = Boolean(code && !message.toLowerCase().includes(code.toLowerCase()))
+
+  return (
+    <div
+      role="alert"
+      data-testid="timeline-runtime-error"
+      className="flex min-w-0 items-start gap-3 border-l-2 border-orange-300/80 py-1 pl-4 dark:border-orange-700/70"
+    >
+      <CircleAlert
+        aria-hidden="true"
+        className="mt-1 h-4 w-4 shrink-0 text-orange-600 dark:text-orange-300"
+        strokeWidth={1.9}
+      />
+      <div className="min-w-0 flex-1">
+        <p className="whitespace-pre-wrap break-words font-mono text-[13.5px] leading-6 text-orange-900 dark:text-orange-100">
+          {message}
+        </p>
+        {showCode ? (
+          <p className="mt-1 font-mono text-[11.5px] leading-5 text-orange-700/75 dark:text-orange-300/75">
+            {code}
+          </p>
+        ) : null}
+      </div>
     </div>
   )
 }
@@ -917,7 +948,14 @@ function MessageTurn({
   const liveProcessText = [liveReasoning, liveThink].filter(Boolean).join('\n\n')
   const [workExpandedOverride, setWorkExpandedOverride] = useState<boolean | null>(null)
 
-  const { processBlocks, assistantContentBlocks, componentPrototypeBlocks, generatedFileBlocks, turnFileChanges } = useMemo(
+  const {
+    processBlocks,
+    assistantContentBlocks,
+    runtimeErrorBlocks,
+    componentPrototypeBlocks,
+    generatedFileBlocks,
+    turnFileChanges
+  } = useMemo(
     () =>
       deriveTurnSections({
         turn,
@@ -947,8 +985,8 @@ function MessageTurn({
   )
   const onlyCompactionProcess = processBlocks.length > 0 && workProcessBlocks.length === 0
   const hasProcessError = workProcessBlocks.some(processBlockHasError)
-  // Keep active failures visible while a turn is still running, but fold
-  // completed failures into the normal work summary until the user opens it.
+  // Keep active process/tool failures visible while a turn is still running,
+  // then fold those execution details into the normal work summary.
   const forceExpandForError = isProcessing && hasProcessError
   const workExpanded = forceExpandForError || (workExpandedOverride ?? isProcessing)
   const reviewBlocks = useMemo(
@@ -992,7 +1030,10 @@ function MessageTurn({
   // Keep completed reasoning/tool work tucked away, but make the active turn's
   // work visible unless the user explicitly collapses it.
 
-  const hasProcess = (isProcessing && !onlyCompactionProcess) || workProcessBlocks.length > 0
+  const hasProcess =
+    (isProcessing && !onlyCompactionProcess) ||
+    workProcessBlocks.length > 0 ||
+    (runtimeErrorBlocks.length > 0 && typeof durationMs === 'number')
   const showLiveProgress = isProcessing && !onlyCompactionProcess
   const forkFromTurn = async (): Promise<void> => {
     if (!forkTurnId || forking) return
@@ -1026,7 +1067,7 @@ function MessageTurn({
             durationMs={durationMs}
             reasoningDurationMs={reasoningDurationMs}
             expanded={workExpanded}
-            collapsible={!forceExpandForError}
+            collapsible={workProcessBlocks.length > 0 && !forceExpandForError}
             onToggle={() => setWorkExpandedOverride((value) => !(value ?? isProcessing))}
           />
           {workExpanded && processSections.length > 0 ? (
@@ -1094,6 +1135,10 @@ function MessageTurn({
 
       {reviewBlocks.map((review) => (
         <ReviewSummaryCard key={review.id} review={review} />
+      ))}
+
+      {runtimeErrorBlocks.map((block) => (
+        <TimelineRuntimeError key={block.id} block={block} />
       ))}
 
       {showLiveProgress ? <LiveTurnProgressRow hasActiveGoal={Boolean(activeThreadGoal)} /> : null}

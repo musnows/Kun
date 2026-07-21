@@ -339,6 +339,8 @@ export type ChatBlock =
       code?: string
       detail?: string
       severity?: RuntimeErrorSeverity
+      /** Distinguishes durable runtime failures from ordinary system status rows. */
+      runtimeError?: true
     }
   | {
       kind: 'approval'

@@ -1255,7 +1255,8 @@ function systemErrorBlockFromItem(item: CoreTurnItemJson): ChatBlock {
     text: redactSecretText(message),
     ...(item.code ? { code: item.code } : {}),
     ...(detail ? { detail } : {}),
-    severity: errorSeverity(item.severity, item.code)
+    severity: errorSeverity(item.severity, item.code),
+    runtimeError: true
   }
 }
 

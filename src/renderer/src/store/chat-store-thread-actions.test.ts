@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { NormalizedThread, ThreadEventSink } from '../agent/types'
+import type { ChatBlock, NormalizedThread, ThreadEventSink } from '../agent/types'
 import type { ChatState, ChatStoreGet, ChatStoreSet, GuiPlanMessageContext } from './chat-store-types'
 import { rendererRuntimeClient } from '../agent/runtime-client'
 import { useWriteWorkspaceStore } from '../write/write-workspace-store'
@@ -598,6 +598,45 @@ describe('chat-store-thread-actions queued messages', () => {
       'hello',
       expect.objectContaining({ model: 'mimo-v2.5', providerId: 'xiaomi-token-plan' })
     )
+  })
+
+  it('keeps a rejected send visible as a non-interactive conversation error', async () => {
+    const provider = {
+      sendUserMessage: vi.fn(async () => {
+        throw new Error('Authorization: Bearer secret-token failed with HTTP 429')
+      })
+    }
+    registryMock.getProvider.mockReturnValue(provider)
+    vi.stubGlobal('window', {
+      kunGui: {
+        getSettings: vi.fn(async () => ({
+          agents: { kun: { providerId: 'deepseek', model: 'deepseek-v4-pro' } },
+          codePromptPrefix: ''
+        })),
+        logError: vi.fn(async () => undefined)
+      }
+    })
+    const { actions, state } = buildHarness()
+    state.busy = false
+
+    await expect(actions.sendMessage('hello', 'agent')).resolves.toBe(false)
+
+    expect(state.blocks).toContainEqual(expect.objectContaining({
+      kind: 'user',
+      text: 'hello'
+    }))
+    const errorBlock = state.blocks.find(
+      (block): block is Extract<ChatBlock, { kind: 'system' }> =>
+        block.kind === 'system' && block.runtimeError === true
+    )
+    expect(errorBlock).toMatchObject({
+      kind: 'system',
+      severity: 'error',
+      runtimeError: true
+    })
+    expect(errorBlock?.text).toContain('HTTP 429')
+    expect(errorBlock?.text).toContain('<redacted>')
+    expect(errorBlock?.text).not.toContain('secret-token')
   })
 
   it('forwards GUI design canvas turns to the runtime provider', async () => {
