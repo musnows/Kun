@@ -114,6 +114,7 @@ export function runtimeTuningConfigForRuntime(
     ...existing,
     turnLimits: {
       ...objectValue(existing.turnLimits),
+      maxConcurrentTurns: value.maxConcurrentTurns,
       maxWallTimeMs: value.maxWallTimeMs
     },
     streamIdleTimeoutMs: value.streamIdleTimeoutMs,

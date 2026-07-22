@@ -26,7 +26,7 @@ export function subagentProfilesForRuntime(
   const candidate = {
     enabled: subagents.enabled !== false,
     useExistingAgents: subagents.useExistingAgents !== false,
-    maxParallel: subagents.maxParallel && subagents.maxParallel > 0 ? subagents.maxParallel : 5,
+    maxParallel: validMaxParallel(subagents.maxParallel) ? subagents.maxParallel : 256,
     maxChildRuns: subagents.maxChildRuns && subagents.maxChildRuns > 0 ? subagents.maxChildRuns : 25,
     ...(subagents.defaultToolPolicy ? { defaultToolPolicy: subagents.defaultToolPolicy } : {}),
     ...(subagents.defaultProfile ? { defaultProfile: subagents.defaultProfile } : {}),
@@ -47,6 +47,10 @@ export function subagentProfilesForRuntime(
     maxChildRuns: candidate.maxChildRuns,
     ...(subagents.defaultToolPolicy ? { defaultToolPolicy: subagents.defaultToolPolicy } : {})
   })
+}
+
+function validMaxParallel(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 256
 }
 
 function stripBlankProfileFields(profile: Record<string, unknown>): Record<string, unknown> {

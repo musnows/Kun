@@ -333,7 +333,7 @@ describe('app-ipc-schemas', () => {
           },
           subagents: {
             useExistingAgents: false,
-            maxParallel: 5
+            maxParallel: 256
           }
         }
       },
@@ -369,7 +369,7 @@ describe('app-ipc-schemas', () => {
     expect(payload.agents?.kun?.toolOutputLimits?.maxBytes).toBe(1048576)
     expect(payload.agents?.kun?.subagents).toEqual({
       useExistingAgents: false,
-      maxParallel: 5
+      maxParallel: 256
     })
     expect(payload.write?.autoSaveEnabled).toBe(false)
     expect(payload.write?.autoSaveDelayMs).toBe(180000)
@@ -794,10 +794,32 @@ describe('app-ipc-schemas', () => {
     expect(payload.agents?.kun?.runtimeTuning?.maxWallTimeMs).toBe(7_200_000)
   })
 
+  it('accepts the maximum concurrent turns cap in runtime tuning patches', () => {
+    const payload = settingsPatchSchema.parse({
+      agents: {
+        kun: {
+          runtimeTuning: {
+            maxConcurrentTurns: 256
+          }
+        }
+      }
+    })
+
+    expect(payload.agents?.kun?.runtimeTuning?.maxConcurrentTurns).toBe(256)
+  })
+
   it('rejects an out-of-range maximum turn duration', () => {
     expect(() =>
       settingsPatchSchema.parse({
         agents: { kun: { runtimeTuning: { maxWallTimeMs: 86_400_001 } } }
+      })
+    ).toThrow()
+  })
+
+  it('rejects an out-of-range maximum concurrent turns cap', () => {
+    expect(() =>
+      settingsPatchSchema.parse({
+        agents: { kun: { runtimeTuning: { maxConcurrentTurns: 257 } } }
       })
     ).toThrow()
   })

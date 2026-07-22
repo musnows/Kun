@@ -858,6 +858,8 @@
   "kunCompactionSummaryTimeout": "सारांश समयबाह्य एमएस",
   "kunCompactionSummaryMaxTokens": "सारांश अधिकतम टोकन",
   "kunCompactionSummaryInputBytes": "सारांश इनपुट बाइट्स",
+  "kunMaxConcurrentTurns": "अधिकतम समवर्ती टर्न",
+  "kunMaxConcurrentTurnsDesc": "इस Kun रनटाइम में एक साथ चलने वाले टर्न की संख्या। डिफ़ॉल्ट और अधिकतम: 256।",
   "kunMaxWallTime": "अधिकतम टर्न अवधि (एमएस)",
   "kunMaxWallTimeDesc": "मॉडल प्रतिक्रियाओं और टूल कार्य सहित, एक मोड़ के लिए हार्ड वॉल-क्लॉक सीमा। डिफ़ॉल्ट और अधिकतम: 86400000 (24 घंटे)।",
   "kunStreamIdleTimeout": "स्ट्रीम निष्क्रिय समयबाह्य (एमएस)",

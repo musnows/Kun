@@ -336,7 +336,7 @@ export const SubagentsCapabilityConfig = CapabilityToggleConfig.extend({
   /** Reuse configured profiles instead of requiring the parent to define a one-run role. */
   useExistingAgents: z.boolean().default(true),
   /** Max children running at once; extra spawns queue instead of erroring. */
-  maxParallel: z.number().int().nonnegative().default(0),
+  maxParallel: z.number().int().nonnegative().default(256),
   /** Hard cap on total children per parent thread. */
   maxChildRuns: z.number().int().nonnegative().default(0),
   /**

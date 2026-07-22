@@ -237,7 +237,7 @@ const subagentsPatchSchema = z
   .object({
     enabled: z.boolean().optional(),
     useExistingAgents: z.boolean().optional(),
-    maxParallel: z.number().int().nonnegative().max(64).optional(),
+    maxParallel: z.number().int().positive().max(256).optional(),
     maxChildRuns: z.number().int().nonnegative().max(10_000).optional(),
     defaultToolPolicy: z.enum(['readOnly', 'inherit']).optional(),
     defaultProfile: z.string().max(128).optional(),
@@ -312,6 +312,7 @@ const kunRuntimePatchSchema = z.object({
     summaryProviderId: z.string().trim().max(64).optional()
   }).strict().optional(),
   runtimeTuning: z.object({
+    maxConcurrentTurns: z.number().int().positive().max(256).optional(),
     maxWallTimeMs: z.number().int().positive().max(86_400_000).optional(),
     streamIdleTimeoutMs: z.number().int().min(0).max(3_600_000).optional(),
     toolStorm: z.object({

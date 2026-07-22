@@ -130,6 +130,10 @@ describe('WorkbenchSideRail', () => {
     expect(html.indexOf('data-tooltip="MCP &amp; Skills"')).toBeLessThan(
       html.indexOf('data-tooltip="Files"')
     )
+    expect(html.indexOf('data-tooltip="Files"')).toBeLessThan(
+      html.indexOf('data-contribution-id="extension:acme.issues/summary"')
+    )
+    expect(html).toContain('ds-extension-side-rail-group')
     expect(html).not.toContain('data-tooltip="Extension Views"')
     expect(html).not.toContain('aria-label="Open extension Views"')
     expect(html).not.toContain('data-contribution-id="extension:acme.issues/dashboard"')

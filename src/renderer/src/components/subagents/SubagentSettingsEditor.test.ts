@@ -451,7 +451,7 @@ describe('SubagentSettingsEditor', () => {
     })
 
     const maxParallelInput = renderer.root.findAllByType('input')
-      .find((input) => input.props.type === 'number' && input.props.max === 64)
+      .find((input) => input.props.type === 'number' && input.props.max === 256)
     expect(maxParallelInput).toBeDefined()
     await act(async () => {
       maxParallelInput!.props.onChange({ target: { value: '7' } })

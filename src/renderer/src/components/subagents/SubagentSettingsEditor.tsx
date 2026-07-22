@@ -37,6 +37,7 @@ export type SubagentSettingsEditorProps = {
 const EMPTY_SUBAGENTS: KunSubagentsSettingsV1 = {
   enabled: true,
   useExistingAgents: true,
+  maxParallel: 256,
   profiles: []
 }
 const PRESET_COLORS = ['#3b82d8', '#1d9e75', '#e8943a', '#7f77dd', '#d4537e', '#d85a30']
@@ -794,9 +795,9 @@ export function SubagentSettingsEditor({
               description={tSettings('subagentsMaxParallelDesc')}
             >
               <BoundedNumberInput
-                value={subagents.maxParallel ?? 5}
+                value={subagents.maxParallel ?? 256}
                 min={1}
-                max={64}
+                max={256}
                 onCommit={(maxParallel) => patchSubagents({ maxParallel })}
               />
             </CompactPolicySetting>

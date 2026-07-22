@@ -747,6 +747,8 @@ export type KunToolArgumentRepairSettingsV1 = {
 }
 
 export type KunRuntimeTuningSettingsV1 = {
+  /** Global admission cap for concurrently active turns in one Kun runtime. */
+  maxConcurrentTurns: number
   /**
    * 单轮代理任务的总运行时长上限（毫秒），包含模型响应和工具执行。
    */
@@ -774,6 +776,7 @@ export type KunSettingsEnvelopeV1 = {
 export type AgentRuntimeSettingsMapV1 = KunSettingsEnvelopeV1
 
 export type KunRuntimeTuningSettingsPatchV1 = {
+  maxConcurrentTurns?: number
   maxWallTimeMs?: number
   streamIdleTimeoutMs?: number
   toolStorm?: Partial<KunToolStormSettingsV1>

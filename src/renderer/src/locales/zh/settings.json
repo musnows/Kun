@@ -858,6 +858,8 @@
   "kunCompactionSummaryTimeout": "摘要超时 ms",
   "kunCompactionSummaryMaxTokens": "摘要最大 token",
   "kunCompactionSummaryInputBytes": "摘要输入字节",
+  "kunMaxConcurrentTurns": "最大并行轮数",
+  "kunMaxConcurrentTurnsDesc": "此 Kun 运行时可同时运行的轮数。默认值和最大值均为 256。",
   "kunMaxWallTime": "单轮最大运行时长（毫秒）",
   "kunMaxWallTimeDesc": "单轮对话的总运行时长上限，包含模型响应和工具执行。默认值和最大值均为 86400000（24 小时）。",
   "kunStreamIdleTimeout": "流式空闲超时（毫秒）",

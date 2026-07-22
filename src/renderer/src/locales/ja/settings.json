@@ -858,6 +858,8 @@
   "kunCompactionSummaryTimeout": "サマリータイムアウトミリ秒",
   "kunCompactionSummaryMaxTokens": "最大トークンの概要",
   "kunCompactionSummaryInputBytes": "入力バイトの概要",
+  "kunMaxConcurrentTurns": "最大同時ターン数",
+  "kunMaxConcurrentTurnsDesc": "この Kun ランタイムで同時に実行できるターン数です。既定値と最大値は 256 です。",
   "kunMaxWallTime": "最大ターン持続時間 (ミリ秒)",
   "kunMaxWallTimeDesc": "モデルの応答やツールの作業を含む、1 ターンの厳しい壁時計制限。デフォルトおよび最大値: 86400000 (24 時間)。",
   "kunStreamIdleTimeout": "ストリームアイドルタイムアウト(ミリ秒)",

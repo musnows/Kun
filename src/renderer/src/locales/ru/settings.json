@@ -858,6 +858,8 @@
   "kunCompactionSummaryTimeout": "Тайм-аут сводки (мс)",
   "kunCompactionSummaryMaxTokens": "Макс. токенов сводки",
   "kunCompactionSummaryInputBytes": "Байт на входе сводки",
+  "kunMaxConcurrentTurns": "Максимум одновременных ходов",
+  "kunMaxConcurrentTurnsDesc": "Число ходов, которые могут выполняться одновременно в этом рантайме Kun. По умолчанию и максимум: 256.",
   "kunMaxWallTime": "Максимальная длительность поворота (мс)",
   "kunMaxWallTimeDesc": "Жесткий лимит настенных часов на один ход, включая реакцию модели и работу с инструментом. По умолчанию и максимум: 86400000 (24 часа).",
   "kunStreamIdleTimeout": "Тайм-аут простоя потока (мс)",

@@ -351,6 +351,7 @@ export function defaultKunContextCompactionSettings(): KunContextCompactionSetti
 
 export function defaultKunRuntimeTuningSettings(): KunRuntimeTuningSettingsV1 {
   return {
+    maxConcurrentTurns: 256,
     maxWallTimeMs: 86_400_000,
     streamIdleTimeoutMs: 450_000,
     toolStorm: {
@@ -486,6 +487,9 @@ export function mergeKunRuntimeSettings(
       ? {
           ...(patch.runtimeTuning.maxWallTimeMs !== undefined
             ? { maxWallTimeMs: patch.runtimeTuning.maxWallTimeMs }
+            : {}),
+          ...(patch.runtimeTuning.maxConcurrentTurns !== undefined
+            ? { maxConcurrentTurns: patch.runtimeTuning.maxConcurrentTurns }
             : {}),
           ...(patch.runtimeTuning.streamIdleTimeoutMs !== undefined
             ? { streamIdleTimeoutMs: patch.runtimeTuning.streamIdleTimeoutMs }
@@ -960,6 +964,11 @@ function normalizeKunRuntimeTuningSettings(
 ): KunRuntimeTuningSettingsV1 {
   const defaults = defaultKunRuntimeTuningSettings()
   return {
+    maxConcurrentTurns: boundedPositiveInt(
+      input?.maxConcurrentTurns,
+      defaults.maxConcurrentTurns,
+      256
+    ),
     maxWallTimeMs: boundedPositiveInt(
       input?.maxWallTimeMs,
       defaults.maxWallTimeMs,

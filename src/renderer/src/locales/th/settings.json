@@ -858,6 +858,8 @@
   "kunCompactionSummaryTimeout": "หมดเวลาสรุป นางสาว",
   "kunCompactionSummaryMaxTokens": "สรุปโทเค็นสูงสุด",
   "kunCompactionSummaryInputBytes": "ไบต์อินพุตสรุป",
+  "kunMaxConcurrentTurns": "จำนวนเทิร์นพร้อมกันสูงสุด",
+  "kunMaxConcurrentTurnsDesc": "จำนวนเทิร์นที่ทำงานพร้อมกันได้ในรันไทม์ Kun นี้ ค่าเริ่มต้นและค่าสูงสุดคือ 256",
   "kunMaxWallTime": "ระยะเวลาการหมุนสูงสุด (ms)",
   "kunMaxWallTimeDesc": "นาฬิกาติดผนังจำกัดหนึ่งเทิร์น รวมถึงการตอบสนองของโมเดลและการทำงานของเครื่องมือ ค่าเริ่มต้นและสูงสุด: 86400000 (24 ชั่วโมง)",
   "kunStreamIdleTimeout": "หมดเวลาการสตรีมที่ไม่ได้ใช้งาน (มิลลิวินาที)",

@@ -615,6 +615,7 @@ export class AgentLoop {
       } finally {
         this.modelRouting.clear(threadId, turnId)
         this.toolStormBreakers.delete(turnId)
+        this.modelRoundEngine.clearTurn(turnId)
         this.roundOutcome.clearTurn(turnId)
         this.goalTurns.clearTurn(turnId)
         if (typeof this.opts.skillRuntime?.clearTurnActivation === 'function') {

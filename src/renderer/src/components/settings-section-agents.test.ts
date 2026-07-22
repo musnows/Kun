@@ -270,6 +270,8 @@ const labels: Record<string, string> = {
   kunCompactionSummaryTimeout: 'Summary timeout',
   kunCompactionSummaryMaxTokens: 'Summary max tokens',
   kunCompactionSummaryInputBytes: 'Summary input bytes',
+  kunMaxConcurrentTurns: 'Maximum concurrent turns',
+  kunMaxConcurrentTurnsDesc: 'Maximum concurrent turns description',
   kunMaxWallTime: 'Maximum turn duration',
   kunMaxWallTimeDesc: 'Maximum turn duration description',
   kunStreamIdleTimeout: 'Stream idle timeout',
@@ -1533,6 +1535,8 @@ describe('AgentsSettingsSection Kun diagnostics smoke', () => {
 
     expect(html).toContain('Assistant advanced settings')
     expect(html).toContain('Storage, model context, and tool guards')
+    expect(html).toContain('Maximum concurrent turns')
+    expect(html).toContain('value="256"')
     expect(html).toContain('Maximum turn duration')
     expect(html).toContain('value="86400000"')
     expect(html).toContain('MCP advanced settings')

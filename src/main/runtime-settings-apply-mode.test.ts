@@ -177,6 +177,18 @@ describe('runtimeSettingsApplyMode', () => {
       ...prev,
       agents: { kun: { ...prev.agents.kun, memoryEnabled: true } }
     }
+    const withTurnCapacity = {
+      ...prev,
+      agents: {
+        kun: {
+          ...prev.agents.kun,
+          runtimeTuning: {
+            ...prev.agents.kun.runtimeTuning,
+            maxConcurrentTurns: 32
+          }
+        }
+      }
+    }
     const withSubagents = {
       ...prev,
       agents: {
@@ -206,6 +218,7 @@ describe('runtimeSettingsApplyMode', () => {
     expect(runtimeSettingsApplyMode(prev, withMcp)).toBe('hot')
     expect(runtimeSettingsApplyMode(prev, withProjectGrant)).toBe('hot')
     expect(runtimeSettingsApplyMode(prev, withMemory)).toBe('hot')
+    expect(runtimeSettingsApplyMode(prev, withTurnCapacity)).toBe('hot')
     expect(runtimeSettingsApplyMode(prev, withSubagents)).toBe('hot')
   })
 
