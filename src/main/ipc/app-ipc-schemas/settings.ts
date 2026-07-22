@@ -236,6 +236,7 @@ const subagentProfilePatchSchema = z
 const subagentsPatchSchema = z
   .object({
     enabled: z.boolean().optional(),
+    useExistingAgents: z.boolean().optional(),
     maxParallel: z.number().int().nonnegative().max(64).optional(),
     maxChildRuns: z.number().int().nonnegative().max(10_000).optional(),
     defaultToolPolicy: z.enum(['readOnly', 'inherit']).optional(),

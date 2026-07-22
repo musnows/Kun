@@ -2181,6 +2181,9 @@ export function ProvidersSettingsSection({ ctx }: { ctx: Record<string, any> }):
     && activeCursorAccount
     && activeCursorAccount.fingerprint === providerConnectionFingerprint(activeProvider)
   )
+  const activeCursorApiKeyUrl = activeProvider && isCursorSubscriptionProvider(activeProvider)
+    ? resolveModelProviderPresetSource(activeProvider)?.preset.apiKeyUrl
+    : undefined
   const activeTokenPlanRegions = activeProvider
     ? tokenPlanPresetForProfile(activeProvider)?.tokenPlan?.regions ?? []
     : []
@@ -2519,9 +2522,22 @@ export function ProvidersSettingsSection({ ctx }: { ctx: Record<string, any> }):
                     />
                   ) : isCursorSubscriptionProvider(activeProvider) ? (
                     <div className="grid gap-3">
-                      <p className="rounded-lg border border-ds-border bg-ds-main/30 px-3 py-2 text-[12px] leading-5 text-ds-muted">
-                        {t('cursorSubscriptionNote')}
-                      </p>
+                      <div className="grid gap-2 rounded-lg border border-ds-border bg-ds-main/30 px-3 py-2 text-[12px] leading-5 text-ds-muted sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+                        <p>{t('cursorSubscriptionNote')}</p>
+                        {activeCursorApiKeyUrl ? (
+                          <button
+                            type="button"
+                            className="inline-flex w-fit shrink-0 items-center gap-1.5 rounded-lg border border-accent/20 bg-accent/5 px-3 py-1.5 font-medium text-accent transition hover:bg-accent/10"
+                            onClick={() => {
+                              if (typeof window.kunGui?.openExternal !== 'function') return
+                              void window.kunGui.openExternal(activeCursorApiKeyUrl).catch(() => undefined)
+                            }}
+                          >
+                            {t('cursorSubscriptionGetApiKey')}
+                            <ExternalLink className="h-3.5 w-3.5" strokeWidth={1.9} />
+                          </button>
+                        ) : null}
+                      </div>
                       <label className={fieldLabelClass}>
                         {t('modelProviderApiKey')}
                         <SecretInput

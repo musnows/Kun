@@ -119,6 +119,7 @@ describe('Cursor subscription provider preset', () => {
   it('uses the official Cursor SDK transport with an auto fallback model', () => {
     const preset = getModelProviderPreset('cursor-subscription')
     expect(preset).not.toBeNull()
+    expect(preset?.apiKeyUrl).toBe('https://cursor.com/dashboard?tab=integrations')
     const profile = modelProviderPresetProfile(preset!, 'cursor-secret')
     const normalized = normalizeModelProviderSettings({ providers: [profile] })
     expect(normalized.providers.find((provider) => provider.id === profile.id)).toMatchObject({

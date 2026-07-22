@@ -225,6 +225,7 @@ export type CoreRuntimeCapabilityManifestJson = {
     lastInjectedBytes?: number
   }
   subagents: CoreRuntimeCapabilityStateJson & {
+    useExistingAgents?: boolean
     maxParallel: number
     maxChildRuns: number
     defaultToolPolicy?: 'readOnly' | 'inherit'

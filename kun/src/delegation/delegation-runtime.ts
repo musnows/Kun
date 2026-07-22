@@ -1026,6 +1026,10 @@ export class DelegationRuntime {
     return this.options.config.defaultProfile
   }
 
+  get useExistingAgents(): boolean {
+    return this.options.config.useExistingAgents
+  }
+
   get defaultToolPolicy(): SubagentToolPolicy {
     return this.options.config.defaultToolPolicy
   }

@@ -173,7 +173,9 @@ export async function syncGuiManagedKunConfig(
         ...objectValue(capabilities.instructions),
         enabled: runtime.instructions?.enabled ?? true
       },
-      subagents: subagentProfilesForRuntime(runtime.subagents ?? { enabled: true, profiles: [] }),
+      subagents: subagentProfilesForRuntime(
+        runtime.subagents ?? { enabled: true, useExistingAgents: true, profiles: [] }
+      ),
       mcp: {
         ...mcp,
         ...(options?.scheduleMcp || runtime.mcpSearch.enabled || hasImportedEnabledMcpServer || Object.keys(projectMcpServers).length > 0

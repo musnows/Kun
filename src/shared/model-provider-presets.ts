@@ -346,7 +346,7 @@ export const MODEL_PROVIDER_PRESETS: ModelProviderPreset[] = [
     endpointFormat: 'custom_endpoint',
     models: [...CURSOR_SUBSCRIPTION_MODEL_IDS],
     docsUrl: 'https://cursor.com/docs/api/sdk/typescript',
-    apiKeyUrl: 'https://cursor.com/dashboard'
+    apiKeyUrl: 'https://cursor.com/dashboard?tab=integrations'
   },
   {
     id: 'zhipu-coding-plan',

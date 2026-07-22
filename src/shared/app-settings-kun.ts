@@ -568,9 +568,10 @@ function mergeKunSubagentsSettings(
 ): KunRuntimeSettingsV1['subagents'] {
   if (patch === undefined) return current
   return {
-    ...(current ?? { enabled: true, profiles: [] }),
+    ...(current ?? { enabled: true, useExistingAgents: true, profiles: [] }),
     ...patch,
     enabled: patch.enabled ?? current?.enabled ?? true,
+    useExistingAgents: patch.useExistingAgents ?? current?.useExistingAgents ?? true,
     // A roster diff is an intentional whole-array replacement (including []
     // for deleting every custom profile). Omitting it keeps the current roster.
     profiles: patch.profiles !== undefined

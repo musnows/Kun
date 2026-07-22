@@ -92,6 +92,9 @@ const labels: Record<string, string> = {
   modelProviderId: 'Provider ID',
   modelProviderApiKey: 'Provider API key',
   modelProviderApiKeyPlaceholder: 'Enter provider API key',
+  cursorSubscriptionNote: 'Enter an API key created in the Cursor dashboard.',
+  cursorSubscriptionGetApiKey: 'Get Cursor API key',
+  cursorSubscriptionAccount: 'Connected account: {{account}} · API key: {{keyName}}',
   modelProviderBaseUrl: 'Provider base URL',
   modelProviderEndpointFormat: 'Endpoint format',
   modelProviderRetrySection: 'Failure retry',
@@ -744,6 +747,7 @@ describe('AgentsSettingsSection Kun diagnostics smoke', () => {
       ]
     }))
     const claudeSubscriptionStatus = vi.fn(async () => ({ loggedIn: true }))
+    const openExternal = vi.fn(async () => undefined)
     let mountedRenderers: ReactTestRenderer[] = []
 
     beforeEach(() => {
@@ -751,11 +755,13 @@ describe('AgentsSettingsSection Kun diagnostics smoke', () => {
       probeModelProvider.mockClear()
       fetchModelsDevCatalog.mockClear()
       claudeSubscriptionStatus.mockClear()
+      openExternal.mockClear()
       mountedRenderers = []
       vi.stubGlobal('window', {
         kunGui: {
           probeModelProvider,
           fetchModelsDevCatalog,
+          openExternal,
           claudeSubscriptionStatus,
           claudeSubscriptionSdkStatus: vi.fn(async () => ({ installed: true })),
           claudeSubscriptionModels: vi.fn(async () => []),
@@ -788,6 +794,25 @@ describe('AgentsSettingsSection Kun diagnostics smoke', () => {
       mountedRenderers.push(renderer)
       return renderer
     }
+
+    it('opens the official Cursor User API Keys page from the connection form', async () => {
+      const settings = defaultModelProviderSettings()
+      const cursor = modelProviderPresetProfile(
+        getModelProviderPreset('cursor-subscription')!,
+        ''
+      )
+      const renderer = await mountProviders({
+        ...baseCtx(),
+        provider: { ...settings, providers: [...settings.providers, cursor] },
+        kun: { ...defaultKunRuntimeSettings(), providerId: cursor.id, model: 'auto' }
+      })
+
+      expect(activePanelText(renderer)).toContain('Enter an API key created in the Cursor dashboard.')
+      await act(async () => findButton(renderer, 'Get Cursor API key').props.onClick())
+
+      expect(openExternal).toHaveBeenCalledOnce()
+      expect(openExternal).toHaveBeenCalledWith('https://cursor.com/dashboard?tab=integrations')
+    })
 
     it('renders task tabs and keeps the selected task while switching providers', async () => {
       const provider = defaultModelProviderSettings()

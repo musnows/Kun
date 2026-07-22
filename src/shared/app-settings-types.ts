@@ -387,6 +387,8 @@ export type KunSubagentProfileV1 = {
 
 export type KunSubagentsSettingsV1 = {
   enabled: boolean
+  /** Defaults to true when absent for settings written by older app versions. */
+  useExistingAgents?: boolean
   maxParallel?: number
   maxChildRuns?: number
   defaultToolPolicy?: 'readOnly' | 'inherit'

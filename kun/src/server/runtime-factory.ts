@@ -128,7 +128,6 @@ import {
   type ChildDelegatedRuntimeFactory
 } from '../delegation/child-agent-executor.js'
 import { SubagentRouter } from '../delegation/subagent-router.js'
-import { SubagentGenerator } from '../delegation/subagent-generator.js'
 import { BackgroundShellRuntime } from '../services/background-shell-runtime.js'
 import { stopBashSessionById, createBashLocalTool } from '../adapters/tool/builtin-bash-tool.js'
 import { createBackgroundShellTool } from '../adapters/tool/background-shell-tool.js'
@@ -433,15 +432,6 @@ export async function createKunServeRuntime(
         model,
         usage: cumulative
       })
-    }
-  })
-  const subagentGenerator = new SubagentGenerator({
-    modelClient,
-    roles: () => activeOptions.roles,
-    defaultModel: () => activeOptions.model,
-    recordUsage: async ({ threadId, turnId, model, usage }) => {
-      const cumulative = usageService.record(threadId, usage)
-      await events.record({ kind: 'usage', threadId, turnId, model, usage: cumulative })
     }
   })
   const replaceRoutedModelClients = (): void => {
@@ -849,7 +839,7 @@ export async function createKunServeRuntime(
       available: true,
       tools: [taskGraphTool]
     },
-    ...buildDelegationToolProviders(delegationRuntime, subagentRouter, subagentGenerator),
+    ...buildDelegationToolProviders(delegationRuntime, subagentRouter),
     ...buildComponentDesignToolProviders(delegationRuntime)
   ])
   let prepareExtensionContributions: ((context?: ToolHostContext) => Promise<void>) | undefined
@@ -1649,7 +1639,7 @@ export async function createKunServeRuntime(
 	        available: true,
 	        tools: [taskGraphTool]
 	      },
-	      ...buildDelegationToolProviders(delegationRuntime, subagentRouter, subagentGenerator),
+	      ...buildDelegationToolProviders(delegationRuntime, subagentRouter),
 	      ...buildComponentDesignToolProviders(delegationRuntime)
 	    ])
 

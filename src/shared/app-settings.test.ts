@@ -716,6 +716,7 @@ describe('mergeKunRuntimeSettings', () => {
       ...defaultKunRuntimeSettings(),
       subagents: {
         enabled: true,
+        useExistingAgents: true,
         maxParallel: 3,
         maxChildRuns: 12,
         defaultToolPolicy: 'inherit' as const,
@@ -753,11 +754,19 @@ describe('mergeKunRuntimeSettings', () => {
       subagents: { enabled: false }
     })
 
-    expect(next.subagents).toEqual({ enabled: false, profiles: [] })
+    expect(next.subagents).toEqual({
+      enabled: false,
+      useExistingAgents: true,
+      profiles: []
+    })
     expect(normalizeAppSettings({
       ...settings(),
       agents: { kun: next }
-    }).agents.kun.subagents).toEqual({ enabled: false, profiles: [] })
+    }).agents.kun.subagents).toEqual({
+      enabled: false,
+      useExistingAgents: true,
+      profiles: []
+    })
   })
 
   it('deep-merges token economy settings and keeps the legacy switch synced', () => {

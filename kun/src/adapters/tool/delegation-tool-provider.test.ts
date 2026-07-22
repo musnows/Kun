@@ -4,25 +4,36 @@ import type { ToolHostContext } from '../../ports/tool-host.js'
 import { buildDelegationToolProviders } from './delegation-tool-provider.js'
 
 describe('delegate_task observability output', () => {
-  it('keeps child runtime selection out of model-facing schemas', () => {
-    const runtime = {
+  it('exposes one mode-specific tool without child runtime selection fields', () => {
+    const existingRuntime = {
       enabled: () => true,
       listProfiles: () => [],
+      useExistingAgents: true,
       defaultToolPolicy: 'inherit'
     } as unknown as DelegationRuntime
-    const tools = buildDelegationToolProviders(runtime)[0]?.tools ?? []
-    const delegateTool = tools.find((candidate) => candidate.name === 'delegate_task')
-    const generateTool = tools.find((candidate) => candidate.name === 'generate_subagent')
+    const tools = buildDelegationToolProviders(existingRuntime)[0]?.tools ?? []
+    const delegateTool = tools[0]
     const properties = delegateTool?.inputSchema.properties as Record<string, { description?: string }> | undefined
-    const generatedProperties = generateTool?.inputSchema.properties as Record<string, unknown> | undefined
 
+    expect(tools.map((tool) => tool.name)).toEqual(['delegate_task'])
     expect(delegateTool?.description).toContain('not tool-call arguments')
     expect(properties).not.toHaveProperty('model')
     expect(properties).not.toHaveProperty('providerId')
-    expect(generatedProperties).not.toHaveProperty('model')
-    expect(generatedProperties).not.toHaveProperty('providerId')
-    expect(properties?.custom_agent?.description).toContain('always inherits the current turn model/provider/reasoning strength')
-    const customProperties = (properties?.custom_agent as { properties?: Record<string, unknown> })?.properties
+    expect(properties).toHaveProperty('profile')
+    expect(properties).not.toHaveProperty('custom_agent')
+
+    const customRuntime = {
+      enabled: () => true,
+      listProfiles: () => [],
+      useExistingAgents: false,
+      defaultToolPolicy: 'inherit'
+    } as unknown as DelegationRuntime
+    const customTool = buildDelegationToolProviders(customRuntime)[0]?.tools[0]
+    const customModeProperties = customTool?.inputSchema.properties as Record<string, { description?: string }> | undefined
+    expect(customModeProperties).not.toHaveProperty('profile')
+    expect(customModeProperties?.custom_agent?.description).toContain('always inherits the current turn model/provider/reasoning strength')
+    expect(customTool?.inputSchema.required).toEqual(['prompt', 'custom_agent'])
+    const customProperties = (customModeProperties?.custom_agent as { properties?: Record<string, unknown> })?.properties
     expect(customProperties).not.toHaveProperty('reasoning_effort')
   })
 
@@ -59,6 +70,15 @@ describe('delegate_task observability output', () => {
     const runtime = {
       enabled: () => true,
       listProfiles: () => [],
+      listRoutingProfiles: async () => [{
+        kind: 'profile' as const,
+        id: 'general',
+        source: 'builtin' as const,
+        profile: { name: 'General', toolPolicy: 'inherit' as const }
+      }],
+      useExistingAgents: true,
+      defaultProfileName: 'general',
+      defaultToolPolicy: 'inherit',
       runChild
     } as unknown as DelegationRuntime
     const tool = buildDelegationToolProviders(runtime)[0]?.tools
@@ -109,6 +129,50 @@ describe('delegate_task observability output', () => {
     const childInput = runChild.mock.calls[0]?.[0]
     expect(childInput).not.toHaveProperty('model')
     expect(childInput).not.toHaveProperty('providerId')
+  })
+
+  it('rejects stale arguments that cross the configured delegation mode', async () => {
+    const runChild = vi.fn()
+    const existingRuntime = {
+      enabled: () => true,
+      listProfiles: () => [],
+      useExistingAgents: true,
+      defaultToolPolicy: 'inherit',
+      runChild
+    } as unknown as DelegationRuntime
+    const existingTool = buildDelegationToolProviders(existingRuntime)[0]!.tools[0]!
+    await expect(existingTool.execute({
+      prompt: 'Review the change',
+      custom_agent: {
+        name: 'Reviewer',
+        description: 'Reviews changes.',
+        system_prompt: 'Review the change.'
+      }
+    }, context())).resolves.toMatchObject({
+      isError: true,
+      output: { error: expect.stringContaining('turned on') }
+    })
+
+    const customRuntime = {
+      enabled: () => true,
+      listProfiles: () => [],
+      useExistingAgents: false,
+      defaultToolPolicy: 'inherit',
+      runChild
+    } as unknown as DelegationRuntime
+    const customTool = buildDelegationToolProviders(customRuntime)[0]!.tools[0]!
+    await expect(customTool.execute({
+      prompt: 'Review the change',
+      profile: 'reviewer'
+    }, context())).resolves.toMatchObject({
+      isError: true,
+      output: { error: expect.stringContaining('turned off') }
+    })
+    await expect(customTool.execute({ prompt: 'Review the change' }, context())).resolves.toMatchObject({
+      isError: true,
+      output: { error: expect.stringContaining('custom_agent is required') }
+    })
+    expect(runChild).not.toHaveBeenCalled()
   })
 })
 

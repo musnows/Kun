@@ -18,6 +18,7 @@ import type { CoreRuntimeToolDiagnosticsJson } from '../../agent/kun-contract'
 import { rendererRuntimeClient } from '../../agent/runtime-client'
 import { confirmDialog } from '../../lib/confirm-dialog'
 import { useChatStore } from '../../store/chat-store'
+import { Toggle } from '../settings-controls'
 import { AgentKun } from './AgentKun'
 import {
   BUILTIN_AGENT_CATALOG,
@@ -33,7 +34,11 @@ export type SubagentSettingsEditorProps = {
   className?: string
 }
 
-const EMPTY_SUBAGENTS: KunSubagentsSettingsV1 = { enabled: true, profiles: [] }
+const EMPTY_SUBAGENTS: KunSubagentsSettingsV1 = {
+  enabled: true,
+  useExistingAgents: true,
+  profiles: []
+}
 const PRESET_COLORS = ['#3b82d8', '#1d9e75', '#e8943a', '#7f77dd', '#d4537e', '#d85a30']
 
 /** kun's built-in tool names (mirror kun/src/adapters/tool/builtin-tool-types.ts). Small,
@@ -772,6 +777,18 @@ export function SubagentSettingsEditor({
             </span>
           </div>
           <div className="grid gap-px bg-ds-border-muted sm:grid-cols-2">
+            <div className="sm:col-span-2">
+              <CompactPolicySetting
+                title={tSettings('subagentsUseExistingAgents')}
+                description={tSettings('subagentsUseExistingAgentsDesc')}
+              >
+                <Toggle
+                  checked={subagents.useExistingAgents !== false}
+                  onChange={(useExistingAgents) => patchSubagents({ useExistingAgents })}
+                  ariaLabel={tSettings('subagentsUseExistingAgents')}
+                />
+              </CompactPolicySetting>
+            </div>
             <CompactPolicySetting
               title={tSettings('subagentsMaxParallel')}
               description={tSettings('subagentsMaxParallelDesc')}
@@ -1054,6 +1071,24 @@ export function SubagentSettingsEditor({
   return (
     <div className={`ds-no-drag flex h-full min-h-0 flex-col overflow-hidden bg-ds-sidebar ${className ?? ''}`}>
       <div className="shrink-0 border-b border-ds-border-muted px-3 py-3">
+        <div
+          className="mb-2.5 flex items-center gap-3 rounded-xl border border-ds-border bg-ds-card px-3 py-2.5 shadow-sm shadow-black/5"
+          data-testid="subagent-delegation-mode-control"
+        >
+          <div className="min-w-0 flex-1">
+            <div className="text-[12.5px] font-semibold text-ds-heading">
+              {tSettings('subagentsUseExistingAgents')}
+            </div>
+            <p className="mt-0.5 text-[10.5px] leading-4 text-ds-muted">
+              {tSettings('subagentsUseExistingAgentsDesc')}
+            </p>
+          </div>
+          <Toggle
+            checked={subagents.useExistingAgents !== false}
+            onChange={(useExistingAgents) => patchSubagents({ useExistingAgents })}
+            ariaLabel={tSettings('subagentsUseExistingAgents')}
+          />
+        </div>
         <ExtensionAgentsControl
           enabled={extensionAgentsEnabled}
           count={extensionAgentIds.size}

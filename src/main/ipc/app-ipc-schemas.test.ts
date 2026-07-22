@@ -330,6 +330,7 @@ describe('app-ipc-schemas', () => {
             maxBytes: 1048576
           },
           subagents: {
+            useExistingAgents: false,
             maxParallel: 5
           }
         }
@@ -364,7 +365,10 @@ describe('app-ipc-schemas', () => {
     expect(payload.agents?.kun?.tokenEconomy?.historyHygiene?.maxToolResultTokens).toBe(4000)
     expect(payload.agents?.kun?.toolOutputLimits?.maxLines).toBe(30000)
     expect(payload.agents?.kun?.toolOutputLimits?.maxBytes).toBe(1048576)
-    expect(payload.agents?.kun?.subagents).toEqual({ maxParallel: 5 })
+    expect(payload.agents?.kun?.subagents).toEqual({
+      useExistingAgents: false,
+      maxParallel: 5
+    })
     expect(payload.write?.autoSaveEnabled).toBe(false)
     expect(payload.write?.autoSaveDelayMs).toBe(180000)
     expect(payload.write?.inlineCompletion?.model).toBe('deepseek-v4-pro')

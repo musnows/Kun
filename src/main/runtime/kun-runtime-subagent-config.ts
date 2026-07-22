@@ -25,6 +25,7 @@ export function subagentProfilesForRuntime(
   }
   const candidate = {
     enabled: subagents.enabled !== false,
+    useExistingAgents: subagents.useExistingAgents !== false,
     maxParallel: subagents.maxParallel && subagents.maxParallel > 0 ? subagents.maxParallel : 5,
     maxChildRuns: subagents.maxChildRuns && subagents.maxChildRuns > 0 ? subagents.maxChildRuns : 25,
     ...(subagents.defaultToolPolicy ? { defaultToolPolicy: subagents.defaultToolPolicy } : {}),
@@ -41,6 +42,7 @@ export function subagentProfilesForRuntime(
   )
   return SubagentsCapabilityConfig.parse({
     enabled: candidate.enabled,
+    useExistingAgents: candidate.useExistingAgents,
     maxParallel: candidate.maxParallel,
     maxChildRuns: candidate.maxChildRuns,
     ...(subagents.defaultToolPolicy ? { defaultToolPolicy: subagents.defaultToolPolicy } : {})

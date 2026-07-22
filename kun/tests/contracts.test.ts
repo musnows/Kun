@@ -681,6 +681,7 @@ describe('cli', () => {
     expect(config.mcp.search.mode).toBe('auto')
     expect(config.web.enabled).toBe(false)
     expect(config.skills.enabled).toBe(false)
+    expect(config.subagents.useExistingAgents).toBe(true)
     expect(config.subagents.maxParallel).toBe(0)
     expect(config.attachments.allowedMimeTypes).toContain('image/png')
     expect(config.attachments.textFallbackMaxBase64Bytes).toBe(512 * 1024)
@@ -704,6 +705,7 @@ describe('cli', () => {
 
     expect(config.subagents).toMatchObject({
       enabled: true,
+      useExistingAgents: true,
       maxParallel: 2,
       maxChildRuns: 4
     })
@@ -756,6 +758,7 @@ describe('cli', () => {
       config: KunCapabilitiesConfig.parse({
         subagents: {
           enabled: true,
+          useExistingAgents: false,
           maxParallel: 2,
           maxChildRuns: 6,
           defaultProfile: 'reviewer',
@@ -771,6 +774,7 @@ describe('cli', () => {
       subagents: { available: true }
     })
     expect(manifest.subagents).toMatchObject({
+      useExistingAgents: false,
       maxParallel: 2,
       maxChildRuns: 6,
       defaultToolPolicy: 'inherit',

@@ -333,6 +333,8 @@ export const SubagentProfileConfig = z
 export type SubagentProfileConfig = z.infer<typeof SubagentProfileConfig>
 
 export const SubagentsCapabilityConfig = CapabilityToggleConfig.extend({
+  /** Reuse configured profiles instead of requiring the parent to define a one-run role. */
+  useExistingAgents: z.boolean().default(true),
   /** Max children running at once; extra spawns queue instead of erroring. */
   maxParallel: z.number().int().nonnegative().default(0),
   /** Hard cap on total children per parent thread. */
@@ -546,6 +548,7 @@ export const RuntimeCapabilityManifest = z
       lastInjectedBytes: z.number().int().nonnegative()
     }).strict(),
     subagents: RuntimeCapabilityState.extend({
+      useExistingAgents: z.boolean(),
       maxParallel: z.number().int().nonnegative(),
       maxChildRuns: z.number().int().nonnegative(),
       defaultToolPolicy: SubagentToolPolicy,
@@ -732,6 +735,7 @@ export function buildRuntimeCapabilityManifest(input: {
         input.subagents?.available === true,
         input.subagents?.reason ?? 'subagent runtime is unavailable'
       ),
+      useExistingAgents: config.subagents.useExistingAgents,
       maxParallel: config.subagents.maxParallel,
       maxChildRuns: config.subagents.maxChildRuns,
       defaultToolPolicy: config.subagents.defaultToolPolicy,

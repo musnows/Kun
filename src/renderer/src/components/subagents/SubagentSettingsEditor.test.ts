@@ -28,6 +28,8 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string, fallback?: string) => ({
       subagentsRuntimePolicy: 'Runtime policy',
+      subagentsUseExistingAgents: 'Use existing agents',
+      subagentsUseExistingAgentsDesc: 'Choose configured profiles or parent-defined one-run roles.',
       subagentsMaxParallel: 'Maximum parallel subagents',
       subagentsMaxChildRuns: 'Child runs per session',
       subagentsDelegatable: 'Delegatable subagents',
@@ -179,6 +181,9 @@ describe('SubagentSettingsEditor', () => {
     expect(text).toContain('Enable extension agents')
     expect(text).toContain('System · internal')
     expect(text).not.toContain('Runtime policy')
+    expect(renderer.root.findByProps({
+      'data-testid': 'subagent-delegation-mode-control'
+    })).toBeDefined()
     expect(renderer.root.findAll((node) => typeof node.props.className === 'string'
       && node.props.className.includes('touch-pan-y')
       && node.props.className.includes('overflow-y-auto'))).toHaveLength(1)
@@ -187,7 +192,21 @@ describe('SubagentSettingsEditor', () => {
     expect(baseChip).toBeDefined()
     expect(baseChip!.findAllByType('span').some((span) => span.children.includes('8'))).toBe(true)
 
-    const extensionSwitch = renderer.root.findByProps({ role: 'switch' })
+    const modeSwitch = renderer.root.findByProps({
+      role: 'switch',
+      'aria-label': 'Use existing agents'
+    })
+    expect(modeSwitch.props['aria-checked']).toBe(true)
+    await act(async () => {
+      modeSwitch.props.onClick()
+    })
+    expect((onPatch.mock.calls.at(-1)?.[0] as KunRuntimeSettingsPatchV1).subagents)
+      .toMatchObject({ useExistingAgents: false })
+
+    const extensionSwitch = renderer.root.findByProps({
+      role: 'switch',
+      'aria-label': 'Toggle extension agents'
+    })
     expect(extensionSwitch.props['aria-checked']).toBe(false)
     await act(async () => {
       extensionSwitch.props.onClick()
@@ -209,6 +228,43 @@ describe('SubagentSettingsEditor', () => {
     })
     text = JSON.stringify(renderer.toJSON())
     expect(text).toContain('Researcher')
+  })
+
+  it('defaults to existing-agent reuse and persists delegation mode changes', async () => {
+    const onPatch = vi.fn()
+    const kun = {
+      ...defaultKunRuntimeSettings(),
+      subagents: {
+        enabled: true,
+        profiles: [customProfile()]
+      }
+    }
+    let renderer!: ReactTestRenderer
+
+    await act(async () => {
+      renderer = create(createElement(SubagentSettingsEditor, {
+        kun,
+        onPatch,
+        variant: 'settings'
+      }))
+    })
+
+    const modeSwitch = renderer.root.findByProps({
+      role: 'switch',
+      'aria-label': 'Use existing agents'
+    })
+    expect(modeSwitch.props['aria-checked']).toBe(true)
+    await act(async () => {
+      modeSwitch.props.onClick()
+    })
+
+    expect(onPatch).toHaveBeenLastCalledWith({
+      subagents: {
+        enabled: true,
+        useExistingAgents: false,
+        profiles: [expect.objectContaining({ id: 'researcher' })]
+      }
+    })
   })
 
   it('turns off every extension agent in one action without changing base agents', async () => {
@@ -233,7 +289,10 @@ describe('SubagentSettingsEditor', () => {
       renderer = create(createElement(SubagentSettingsEditor, { kun, onPatch, variant: 'panel' }))
     })
 
-    const extensionSwitch = renderer.root.findByProps({ role: 'switch' })
+    const extensionSwitch = renderer.root.findByProps({
+      role: 'switch',
+      'aria-label': 'Toggle extension agents'
+    })
     expect(extensionSwitch.props['aria-checked']).toBe(true)
     const keepBaseOnly = buttonWithText(renderer, 'Keep base agents only')
     expect(keepBaseOnly).toBeDefined()
@@ -324,7 +383,8 @@ describe('SubagentSettingsEditor', () => {
     const general = buttonWithText(renderer, 'General')
     expect(general).toBeDefined()
     await act(async () => general!.props.onClick())
-    const inheritedSwitch = renderer.root.findAllByProps({ role: 'switch' })[0]
+    const inheritedSwitch = renderer.root.findAllByProps({ role: 'switch' })
+      .find((candidate) => candidate.props.disabled === true)!
     expect(inheritedSwitch.props['aria-checked']).toBe(true)
     expect(inheritedSwitch.props.disabled).toBe(true)
 

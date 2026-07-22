@@ -8,7 +8,6 @@ import { CapabilityRegistry } from '../src/adapters/tool/capability-registry.js'
 import { buildDelegationToolProviders } from '../src/adapters/tool/delegation-tool-provider.js'
 import { LocalToolHost } from '../src/adapters/tool/local-tool-host.js'
 import { KunCapabilitiesConfig, type SubagentProfileConfig } from '../src/contracts/capabilities.js'
-import type { TurnItem } from '../src/contracts/items.js'
 import { emptyUsageSnapshot } from '../src/contracts/usage.js'
 import { BUILTIN_SUBAGENT_PROFILES } from '../src/delegation/builtin-profiles.js'
 import {
@@ -17,7 +16,6 @@ import {
   FileDelegationStore,
   type ChildRunExecutor
 } from '../src/delegation/delegation-runtime.js'
-import { SubagentGenerator } from '../src/delegation/subagent-generator.js'
 import { SubagentRouter } from '../src/delegation/subagent-router.js'
 import type { ModelClient, ModelRequest, ModelStreamChunk } from '../src/ports/model-client.js'
 import { RuntimeEventRecorder } from '../src/services/runtime-event-recorder.js'
@@ -371,6 +369,7 @@ describe('DelegationRuntime', () => {
       reasoningEffort?: string
     }> = []
     const runtime = createRuntime({
+      useExistingAgents: false,
       profiles: { general: { description: 'General worker', toolPolicy: 'inherit' } },
       executor: async (input) => {
         seen.push({
@@ -403,8 +402,7 @@ describe('DelegationRuntime', () => {
           description: 'Diagnoses Electron IPC boundaries.',
           system_prompt: 'Trace renderer, preload, and main. Cite concrete evidence.',
           tool_policy: 'readOnly',
-          blocked_tools: ['bash'],
-          reasoning_effort: 'low'
+          blocked_tools: ['bash']
         }
       }
     }, {
@@ -448,30 +446,17 @@ describe('DelegationRuntime', () => {
     })
   })
 
-  it('generates and immediately runs a standalone one-run agent when no profile fits', async () => {
-    const seen: Array<{
-      profile?: string
-      systemPrompt?: string
-      skillsEnabled?: boolean
-      blockedTools?: string[]
-      model?: string
-      providerId?: string
-      reasoningEffort?: string
-    }> = []
-    const updates: TurnItem[] = []
+  it('reuses the existing default agent when the router finds no matching profile', async () => {
+    const seen: Array<{ profile?: string; systemPrompt?: string }> = []
     const runtime = createRuntime({
+      defaultProfile: 'general',
       profiles: { general: { description: 'General worker', toolPolicy: 'inherit' } },
       executor: async (input) => {
         seen.push({
           profile: input.profile,
-          systemPrompt: input.systemPrompt,
-          skillsEnabled: input.skillsEnabled,
-          blockedTools: input.blockedTools,
-          model: input.model,
-          providerId: input.providerId,
-          reasoningEffort: input.reasoningEffort
+          systemPrompt: input.systemPrompt
         })
-        return { summary: 'generated investigation complete' }
+        return { summary: 'general investigation complete' }
       }
     })
     const routerModel = new StaticRouterModel(JSON.stringify({
@@ -481,19 +466,10 @@ describe('DelegationRuntime', () => {
       confidence: 0.92,
       reason: 'No fixed profile is narrow enough.'
     }))
-    const generatorModel = new StaticRouterModel(JSON.stringify({
-      name: 'Electron IPC Investigator',
-      description: 'Diagnoses Electron IPC contract failures.',
-      systemPrompt: 'You are an Electron IPC investigator. Trace each boundary, cite evidence, verify claims, return a structured report, and never delegate.',
-      toolPolicy: 'readOnly',
-      blockedTools: ['delegate_task'],
-      reason: 'Specializes the general investigation pattern for Electron IPC.'
-    }))
     const host = new LocalToolHost({
       registry: new CapabilityRegistry(buildDelegationToolProviders(
         runtime,
-        new SubagentRouter({ modelClient: routerModel, defaultModel: () => 'router-model' }),
-        new SubagentGenerator({ modelClient: generatorModel, defaultModel: () => 'generator-model' })
+        new SubagentRouter({ modelClient: routerModel, defaultModel: () => 'router-model' })
       ))
     })
     const result = await host.execute({
@@ -516,84 +492,72 @@ describe('DelegationRuntime', () => {
       approvalPolicy: 'auto',
       abortSignal: new AbortController().signal,
       awaitApproval: async () => 'allow'
-    }, (item) => {
-      updates.push(item)
     })
 
     expect(result.item).toMatchObject({ kind: 'tool_result', isError: false })
-    expect(result.item).toMatchObject({
-      output: { generatedAgent: { name: 'Electron IPC Investigator' } }
-    })
-    expect(updates.map((update) =>
-      update.kind === 'tool_result'
-        ? (update.output as { status?: string }).status
-        : undefined
-    )).toEqual(['queued', 'running'])
-    expect(updates.every((update) =>
-      update.kind === 'tool_result' &&
-      (update.output as { generatedAgent?: { name?: string } }).generatedAgent?.name === 'Electron IPC Investigator'
-    )).toBe(true)
-    expect(seen).toEqual([expect.objectContaining({
-      profile: expect.stringMatching(/^generated:electron-ipc-investigator:/),
-      systemPrompt: expect.stringContaining('Electron IPC investigator'),
-      skillsEnabled: false,
-      blockedTools: ['delegate_task', 'generate_subagent', 'load_skill'],
-      model: 'gpt-5.6-luna',
-      providerId: 'openai',
-      reasoningEffort: 'high'
-    })])
+    expect(result.item).not.toHaveProperty('output.generatedAgent')
+    expect(seen).toEqual([{ profile: 'general', systemPrompt: undefined }])
     expect((await runtime.diagnostics('thr_generated')).childRuns[0]).toMatchObject({
-      profile: expect.stringMatching(/^generated:electron-ipc-investigator:/),
+      profile: 'general',
       model: 'gpt-5.6-luna',
       providerId: 'openai',
-      reasoningEffort: 'high',
       routing: {
-        method: 'bm25-llm-generated',
-        selectedKind: 'generated',
-        generation: { method: 'llm-exemplars' }
+        method: 'bm25-fallback-profile',
+        selectedKind: 'profile',
+        selectedId: 'general'
       }
     })
+    expect(routerModel.requests).toHaveLength(1)
   })
 
-  it('rejects Object.prototype names as generated-agent references before invoking the generator', async () => {
-    const runtime = createRuntime({ profiles: { general: { toolPolicy: 'inherit' } } })
-    const generatorModel = new StaticRouterModel(JSON.stringify({
-      name: 'Unused Generator',
-      description: 'Must not be invoked.',
-      systemPrompt: 'This response must never be consumed because validation happens first.',
-      toolPolicy: 'readOnly',
-      blockedTools: [],
-      reasoningEffort: 'low',
-      reason: 'Unused.'
-    }))
-    const host = new LocalToolHost({
-      registry: new CapabilityRegistry(buildDelegationToolProviders(
-        runtime,
-        undefined,
-        new SubagentGenerator({ modelClient: generatorModel, defaultModel: () => 'generator-model' })
-      ))
+  it('runs a parent-defined one-run role when existing-agent reuse is disabled', async () => {
+    const seen: Array<{ profile?: string; systemPrompt?: string }> = []
+    const runtime = createRuntime({
+      useExistingAgents: false,
+      profiles: { general: { toolPolicy: 'inherit' } },
+      executor: async (input) => {
+        seen.push({ profile: input.profile, systemPrompt: input.systemPrompt })
+        return { summary: 'custom review complete' }
+      }
     })
-    for (const referenceId of ['constructor', 'toString', '__proto__']) {
-      const result = await host.execute({
-        callId: `call_bad_reference_${referenceId}`,
-        toolName: 'generate_subagent',
-        arguments: { prompt: 'Investigate', reference_agent_ids: [referenceId] }
-      }, {
-        threadId: 'thr_bad_reference',
-        turnId: `turn_${referenceId}`,
-        workspace: dir,
-        approvalPolicy: 'auto',
-        abortSignal: new AbortController().signal,
-        awaitApproval: async () => 'allow'
-      })
-      expect(result.item).toMatchObject({
-        kind: 'tool_result',
-        isError: true,
-        output: { error: expect.stringContaining('unknown built-in reference agent id') }
-      })
-    }
-    expect(generatorModel.requests).toHaveLength(0)
-    expect((await runtime.diagnostics('thr_bad_reference')).childRuns).toEqual([])
+    const host = new LocalToolHost({
+      registry: new CapabilityRegistry(buildDelegationToolProviders(runtime))
+    })
+    const result = await host.execute({
+      callId: 'call_custom_role',
+      toolName: 'delegate_task',
+      arguments: {
+        prompt: 'Review the IPC boundary',
+        custom_agent: {
+          name: 'IPC Reviewer',
+          description: 'Reviews IPC contracts.',
+          system_prompt: 'Review IPC contracts, cite concrete evidence, and never delegate.',
+          tool_policy: 'readOnly'
+        }
+      }
+    }, {
+      threadId: 'thr_custom_role',
+      turnId: 'turn_custom_role',
+      workspace: dir,
+      approvalPolicy: 'auto',
+      abortSignal: new AbortController().signal,
+      awaitApproval: async () => 'allow'
+    })
+
+    expect(result.item).toMatchObject({ kind: 'tool_result', isError: false })
+    expect(seen).toEqual([{
+      profile: 'custom:ipc-reviewer',
+      systemPrompt: 'Review IPC contracts, cite concrete evidence, and never delegate.'
+    }])
+    expect((await runtime.diagnostics('thr_custom_role')).childRuns[0]).toMatchObject({
+      profile: 'custom:ipc-reviewer',
+      profileSource: 'custom',
+      routing: {
+        method: 'explicit-custom',
+        selectedKind: 'custom',
+        selectedId: 'custom:ipc-reviewer'
+      }
+    })
   })
 
   it('rejects profile plus custom_agent before consuming a child-run slot', async () => {
@@ -637,7 +601,7 @@ describe('DelegationRuntime', () => {
     expect(properties).not.toHaveProperty('tokenBudget')
     expect(properties).not.toHaveProperty('timeBudgetMs')
     expect(properties).not.toHaveProperty('skill_id')
-    expect(tools.map((candidate) => candidate.name)).toContain('generate_subagent')
+    expect(tools.map((candidate) => candidate.name)).toEqual(['delegate_task'])
   })
 
   it('keeps built-in specialists searchable without embedding the full roster in the tool schema', () => {
@@ -653,7 +617,7 @@ describe('DelegationRuntime', () => {
       'security-auditor',
       'web-performance-auditor'
     ]))
-    expect(tool?.description).toContain('agent profiles are searchable')
+    expect(tool?.description).toContain('existing agent profiles')
     expect(tool?.description).not.toContain('Senior code reviewer')
   })
 
@@ -1348,6 +1312,7 @@ describe('DelegationRuntime', () => {
 
   function createRuntime(options: {
     enabled?: boolean
+    useExistingAgents?: boolean
     maxParallel?: number
     maxChildRuns?: number
     defaultToolPolicy?: 'readOnly' | 'inherit'
@@ -1365,14 +1330,19 @@ describe('DelegationRuntime', () => {
       allocateSeq: (threadId) => bus.allocateSeq(threadId),
       nowIso: () => '2026-06-03T00:00:00.000Z'
     })
+    const profiles = options.profiles ?? {
+      general: { description: 'General worker', toolPolicy: 'inherit' as const }
+    }
+    const defaultProfile = options.defaultProfile
     const config = KunCapabilitiesConfig.parse({
       subagents: {
         enabled: options.enabled ?? true,
+        useExistingAgents: options.useExistingAgents ?? true,
         maxParallel: options.maxParallel ?? 1,
         maxChildRuns: options.maxChildRuns ?? 3,
         ...(options.defaultToolPolicy ? { defaultToolPolicy: options.defaultToolPolicy } : {}),
-        ...(options.defaultProfile ? { defaultProfile: options.defaultProfile } : {}),
-        ...(options.profiles ? { profiles: options.profiles } : {})
+        ...(defaultProfile ? { defaultProfile } : {}),
+        profiles
       }
     }).subagents
     let idSeq = 0

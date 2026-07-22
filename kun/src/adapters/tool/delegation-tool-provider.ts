@@ -1,14 +1,7 @@
-import { BUILTIN_SUBAGENT_PROFILES } from '../../delegation/builtin-profiles.js'
 import {
-  profileAvailableOnSurface,
   type ChildRoutingMetadata,
   type DelegationRuntime
 } from '../../delegation/delegation-runtime.js'
-import {
-  generatedSubagentProfileId,
-  type SubagentGenerationResult,
-  type SubagentGenerator
-} from '../../delegation/subagent-generator.js'
 import {
   CustomSubagentDefinitionSchema,
   customSubagentProfile,
@@ -22,7 +15,6 @@ import {
 import type { ToolExecutionUpdate, ToolHostContext } from '../../ports/tool-host.js'
 import type { CapabilityToolProvider } from './capability-registry.js'
 import { LocalToolHost } from './local-tool-host.js'
-import { BUILTIN_AGENT_CATALOG_BY_ID } from '../../delegation/builtin-agent-catalog.js'
 
 type InlineProfile = {
   id: string
@@ -32,12 +24,19 @@ type InlineProfile = {
 
 export function buildDelegationToolProviders(
   runtime: DelegationRuntime | undefined,
-  router?: SubagentRouter,
-  generator?: SubagentGenerator
+  router?: SubagentRouter
 ): CapabilityToolProvider[] {
   if (!runtime?.enabled()) return []
   const profiles = runtime.listProfiles().filter((profile) => profile.mode !== 'primary')
-  const builtinDocuments = builtinRoutingDocuments()
+  const useExistingAgents = runtime.useExistingAgents !== false
+  const modeProperties = useExistingAgents
+    ? {
+        profile: {
+          type: 'string',
+          description: 'Optional exact existing agent profile id. Omit it to route over the configured agent catalog.'
+        }
+      }
+    : { custom_agent: customAgentSchema() }
 
   return [{
     id: 'delegation',
@@ -53,15 +52,11 @@ export function buildDelegationToolProviders(
           properties: {
             label: { type: 'string', description: 'A distinct 2-4 word UI title for this child.' },
             prompt: { type: 'string', description: 'The task for the child agent.' },
-            profile: {
-              type: 'string',
-              description: 'Optional exact agent profile id. Omit profile and custom_agent for BM25 Top-5 agent recall plus an LLM fit decision.'
-            },
-            custom_agent: customAgentSchema(),
+            ...modeProperties,
             detach: { type: 'boolean', description: 'Run in the background and return after the child is queued.' },
             returnFormat: { type: 'string', enum: ['summary', 'evidence'] }
           },
-          required: ['prompt'],
+          required: useExistingAgents ? ['prompt'] : ['prompt', 'custom_agent'],
           additionalProperties: false
         },
         policy: 'auto',
@@ -69,30 +64,39 @@ export function buildDelegationToolProviders(
           const common = parseCommonArgs(args, context)
           if (common instanceof Error) return toolError(common.message)
           const requestedProfile = stringValue(args.profile)
-          const customDefinition = parseCustomAgent(args.custom_agent)
-          if (customDefinition instanceof Error) return toolError(customDefinition.message)
-          if (requestedProfile && customDefinition) return toolError('profile and custom_agent are mutually exclusive')
-
-          let resolvedProfile = requestedProfile || undefined
+          const customAgentSupplied = args.custom_agent !== undefined && args.custom_agent !== null
           let inlineProfile: InlineProfile | undefined
           let routing: ChildRoutingMetadata | undefined
-          let generatedResult: SubagentGenerationResult | undefined
           const agentSurface = context.agentSurface ?? 'code'
 
-          if (customDefinition) {
+          if (!useExistingAgents) {
+            if (requestedProfile) {
+              return toolError('profile is unavailable while "Use existing agents" is turned off; define custom_agent instead')
+            }
+            if (!customAgentSupplied) {
+              return toolError('custom_agent is required while "Use existing agents" is turned off')
+            }
+            const customDefinition = parseCustomAgent(args.custom_agent)
+            if (customDefinition instanceof Error) return toolError(customDefinition.message)
+            if (!customDefinition) return toolError('custom_agent is required while "Use existing agents" is turned off')
             inlineProfile = {
               id: customSubagentProfileId(customDefinition.name),
               profile: customSubagentProfile(customDefinition),
               source: 'custom'
             }
-            routing = explicitCustomMetadata(inlineProfile)
-          } else if (requestedProfile) {
+            routing = explicitCustomMetadata(inlineProfile, agentSurface)
+          } else {
+            if (customAgentSupplied) {
+              return toolError('custom_agent is unavailable while "Use existing agents" is turned on; select profile or omit it for automatic routing')
+            }
+          }
+
+          if (useExistingAgents && requestedProfile) {
             const snapshot = await runtime.resolveProfileSnapshot(requestedProfile, common.workspace, agentSurface)
             if (!snapshot) {
               return toolError(`unknown or unavailable ${agentSurface} subagent profile: ${requestedProfile}`)
             }
             inlineProfile = { id: snapshot.id, profile: snapshot.profile, source: snapshot.source }
-            resolvedProfile = undefined
             routing = {
               method: 'explicit-profile',
               selectedKind: 'profile',
@@ -101,115 +105,42 @@ export function buildDelegationToolProviders(
               agentSurface,
               candidates: []
             }
-          } else if (router) {
+          } else if (useExistingAgents) {
             const documents = await runtime.listRoutingProfiles(common.workspace, agentSurface)
-            const route = await router.route({
-              threadId: context.threadId,
-              turnId: context.turnId,
-              task: common.prompt,
-              agentSurface,
-              documents,
-              mainModel: common.inheritedModel,
-              mainProviderId: common.inheritedProviderId,
-              abortSignal: context.abortSignal
-            })
-            resolvedProfile = route.profileId
-            if (route.generate) {
-              if (!generator) return toolError('subagent generator is unavailable')
-              const generated = await generator.generate({
+            const route = router
+              ? await router.route({
                 threadId: context.threadId,
                 turnId: context.turnId,
                 task: common.prompt,
-                roleBrief: route.generate.roleBrief,
-                documents: builtinDocuments.filter((document) =>
-                  profileAvailableOnSurface(document.profile, agentSurface)),
-                toolPolicy: route.generate.permissionHint,
+                agentSurface,
+                documents,
                 mainModel: common.inheritedModel,
                 mainProviderId: common.inheritedProviderId,
                 abortSignal: context.abortSignal
               })
-              generatedResult = generated
-              inlineProfile = generatedInlineProfile(generated)
-              routing = generatedRouteMetadata(route, generated, inlineProfile, agentSurface)
-            } else {
-              const snapshot = documents.find((document) => document.id === resolvedProfile)
-              if (!snapshot) return toolError(`routed subagent profile disappeared: ${resolvedProfile ?? ''}`)
-              inlineProfile = { id: snapshot.id, profile: snapshot.profile, source: snapshot.source }
-              resolvedProfile = undefined
+              : undefined
+            const routedSnapshot = route?.profileId
+              ? documents.find((document) => document.id === route.profileId)
+              : undefined
+            if (route && routedSnapshot && !route.generate) {
+              inlineProfile = {
+                id: routedSnapshot.id,
+                profile: routedSnapshot.profile,
+                source: routedSnapshot.source
+              }
               routing = existingRouteMetadata(route, agentSurface)
+            } else {
+              const snapshot = selectExistingFallback(runtime, documents)
+              if (!snapshot) return toolError('no existing subagent profile is available for delegation')
+              inlineProfile = { id: snapshot.id, profile: snapshot.profile, source: snapshot.source }
+              routing = existingFallbackMetadata(route, snapshot.id, agentSurface)
             }
           }
 
           return await runChild(runtime, common, context, onUpdate, {
-            ...(resolvedProfile ? { profile: resolvedProfile } : {}),
             ...(inlineProfile ? { inlineProfile } : {}),
             ...(routing ? { routing } : {})
-          }, generatedResult)
-        }
-      }),
-      LocalToolHost.defineTool({
-        name: 'generate_subagent',
-        description: 'Design a one-run standalone subagent from up to three trusted built-in agent exemplars, then immediately run it. Use when no fixed profile fits or a task needs a narrower custom specialty. The role is not added to settings/catalog; its exact definition is retained in the child-run audit snapshot.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            label: { type: 'string', description: 'A distinct 2-4 word UI title for this child.' },
-            prompt: { type: 'string', description: 'The task the generated child must execute.' },
-            role_brief: { type: 'string', description: 'Optional expertise, scope, non-goals, and output the generated role should own.' },
-            tool_policy: { type: 'string', enum: ['auto', 'readOnly', 'inherit'], description: 'Maximum role tool policy; permissions still cannot exceed the parent.' },
-            reference_agent_ids: { type: 'array', maxItems: 3, items: { type: 'string' }, description: 'Optional trusted built-in agent examples.' },
-            detach: { type: 'boolean' },
-            returnFormat: { type: 'string', enum: ['summary', 'evidence'] }
-          },
-          required: ['prompt'],
-          additionalProperties: false
-        },
-        policy: 'auto',
-        execute: async (args, context, onUpdate) => {
-          if (!generator) return toolError('subagent generator is unavailable')
-          const common = parseCommonArgs(args, context)
-          if (common instanceof Error) return toolError(common.message)
-          const requestedReferences = stringArray(args.reference_agent_ids)
-          const unknownReferences = requestedReferences.filter(
-            (id) => !Object.prototype.hasOwnProperty.call(BUILTIN_SUBAGENT_PROFILES, id)
-          )
-          if (unknownReferences.length) {
-            return toolError(`unknown built-in reference agent id: ${unknownReferences.join(', ')}`)
-          }
-          const agentSurface = context.agentSurface ?? 'code'
-          const unavailableReferences = requestedReferences.filter((id) => {
-            const profile = BUILTIN_SUBAGENT_PROFILES[id]
-            return profile ? !profileAvailableOnSurface(profile, agentSurface) : false
           })
-          if (unavailableReferences.length) {
-            return toolError(`built-in reference agent is unavailable on ${agentSurface}: ${unavailableReferences.join(', ')}`)
-          }
-          const policy = stringValue(args.tool_policy)
-          const generated = await generator.generate({
-            threadId: context.threadId,
-            turnId: context.turnId,
-            task: common.prompt,
-            roleBrief: stringValue(args.role_brief) || undefined,
-            documents: builtinDocuments.filter((document) =>
-              profileAvailableOnSurface(document.profile, agentSurface)),
-            ...(requestedReferences.length ? { referenceAgentIds: requestedReferences } : {}),
-            toolPolicy: policy === 'readOnly' || policy === 'inherit' ? policy : 'auto',
-            mainModel: common.inheritedModel,
-            mainProviderId: common.inheritedProviderId,
-            abortSignal: context.abortSignal
-          })
-          const inlineProfile = generatedInlineProfile(generated)
-          const routing: ChildRoutingMetadata = {
-            method: 'explicit-generated',
-            selectedKind: 'generated',
-            selectedId: inlineProfile.id,
-            reason: generated.reason,
-            agentSurface,
-            candidates: generated.candidates,
-            customAgent: inlineProfile.profile,
-            generation: generationSnapshot(generated)
-          }
-          return await runChild(runtime, common, context, onUpdate, { inlineProfile, routing }, generated)
         }
       })
     ]
@@ -261,8 +192,7 @@ async function runChild(
   common: Exclude<ReturnType<typeof parseCommonArgs>, Error>,
   context: ToolHostContext,
   onUpdate: ((update: ToolExecutionUpdate) => Promise<void> | void) | undefined,
-  selection: { profile?: string; inlineProfile?: InlineProfile; routing?: ChildRoutingMetadata },
-  generated?: SubagentGenerationResult
+  selection: { profile?: string; inlineProfile?: InlineProfile; routing?: ChildRoutingMetadata }
 ): Promise<{ output: Record<string, unknown>; isError: boolean }> {
   const record = await runtime.runChild({
     parentThreadId: context.threadId,
@@ -301,8 +231,7 @@ async function runChild(
           ...(profile ? { profile } : {}),
           ...(metadata?.profileName ? { profileName: metadata.profileName } : {}),
           ...(metadata?.model ? { model: metadata.model } : {}),
-          ...(metadata?.reasoningEffort ? { reasoningEffort: metadata.reasoningEffort } : {}),
-          ...(generated ? { generatedAgent: generatedToolOutput(profile, generated) } : {})
+          ...(metadata?.reasoningEffort ? { reasoningEffort: metadata.reasoningEffort } : {})
         },
         isError: false
       })
@@ -317,8 +246,7 @@ async function runChild(
             ...(profile ? { profile } : {}),
             ...(metadata?.profileName ? { profileName: metadata.profileName } : {}),
             ...(metadata?.model ? { model: metadata.model } : {}),
-            ...(metadata?.reasoningEffort ? { reasoningEffort: metadata.reasoningEffort } : {}),
-            ...(generated ? { generatedAgent: generatedToolOutput(profile, generated) } : {})
+            ...(metadata?.reasoningEffort ? { reasoningEffort: metadata.reasoningEffort } : {})
           },
           isError: false
         })
@@ -341,7 +269,6 @@ async function runChild(
       ...(record.model ? { model: record.model } : {}),
       ...(record.reasoningEffort ? { reasoningEffort: record.reasoningEffort } : {}),
       ...(record.routing ? { routing: routingToolOutput(record.routing) } : {}),
-      ...(generated ? { generatedAgent: generatedToolOutput(record.profile, generated) } : {}),
       ...(record.toolPolicy ? { toolPolicy: record.toolPolicy } : {}),
       ...(record.toolInvocations !== undefined ? { toolInvocations: record.toolInvocations } : {}),
       ...(record.durationMs !== undefined ? { durationMs: record.durationMs } : {}),
@@ -367,30 +294,33 @@ function parseCustomAgent(value: unknown): CustomSubagentDefinition | undefined 
     : new Error(`invalid custom_agent: ${parsed.error.issues.map((issue) => issue.message).join('; ')}`)
 }
 
-function builtinRoutingDocuments(): SubagentRoutingDocument[] {
-  return Object.entries(BUILTIN_SUBAGENT_PROFILES).map(([id, profile]) => ({
-    kind: 'profile', id, source: 'builtin', profile,
-    routingTerms: BUILTIN_AGENT_CATALOG_BY_ID[id]?.routingTerms
-  }))
-}
-
-function generatedInlineProfile(generated: SubagentGenerationResult): InlineProfile {
-  return {
-    id: generatedSubagentProfileId(generated.definition),
-    profile: customSubagentProfile(generated.definition),
-    source: 'generated'
-  }
-}
-
-function explicitCustomMetadata(inlineProfile: InlineProfile): ChildRoutingMetadata {
+function explicitCustomMetadata(
+  inlineProfile: InlineProfile,
+  agentSurface: 'code' | 'write' | 'design'
+): ChildRoutingMetadata {
   return {
     method: 'explicit-custom',
     selectedKind: 'custom',
     selectedId: inlineProfile.id,
     reason: 'The parent supplied a one-run standalone role.',
+    agentSurface,
     candidates: [],
     customAgent: inlineProfile.profile
   }
+}
+
+function selectExistingFallback(
+  runtime: DelegationRuntime,
+  documents: SubagentRoutingDocument[]
+): SubagentRoutingDocument | undefined {
+  const preferredIds = [runtime.defaultProfileName, 'general'].filter(
+    (id): id is string => Boolean(id)
+  )
+  for (const id of preferredIds) {
+    const match = documents.find((document) => document.id === id)
+    if (match) return match
+  }
+  return documents[0]
 }
 
 function existingRouteMetadata(
@@ -408,30 +338,21 @@ function existingRouteMetadata(
   }
 }
 
-function generatedRouteMetadata(
-  route: SubagentRouteResult,
-  generated: SubagentGenerationResult,
-  inlineProfile: InlineProfile,
+function existingFallbackMetadata(
+  route: SubagentRouteResult | undefined,
+  selectedId: string,
   agentSurface: 'code' | 'write' | 'design'
 ): ChildRoutingMetadata {
   return {
-    method: route.source === 'llm-generate' ? 'bm25-llm-generated' : 'bm25-fallback-generated',
-    selectedKind: 'generated',
-    selectedId: inlineProfile.id,
+    method: 'bm25-fallback-profile',
+    selectedKind: 'profile',
+    selectedId,
     agentSurface,
-    reason: `${route.reason} ${generated.reason}`.trim(),
-    ...(route.confidence !== undefined ? { confidence: route.confidence } : {}),
-    candidates: route.candidates,
-    customAgent: inlineProfile.profile,
-    generation: generationSnapshot(generated)
-  }
-}
-
-function generationSnapshot(generated: SubagentGenerationResult): NonNullable<ChildRoutingMetadata['generation']> {
-  return {
-    method: generated.source,
-    referenceAgentIds: generated.referenceAgentIds,
-    reason: generated.reason
+    reason: route
+      ? `${route.reason} Reused the configured default agent because existing-agent mode is enabled.`
+      : 'Reused the configured default agent because existing-agent mode is enabled.',
+    ...(route?.confidence !== undefined ? { confidence: route.confidence } : {}),
+    candidates: route?.candidates ?? []
   }
 }
 
@@ -459,36 +380,21 @@ function routingToolOutput(routing: ChildRoutingMetadata): Record<string, unknow
   }
 }
 
-function generatedToolOutput(profile: string | undefined, generated: SubagentGenerationResult): Record<string, unknown> {
-  return {
-    id: profile,
-    name: generated.definition.name,
-    description: generated.definition.description,
-    toolPolicy: generated.definition.toolPolicy,
-    generationMethod: generated.source,
-    referenceAgentIds: generated.referenceAgentIds,
-    reason: generated.reason
-  }
-}
-
 function buildDelegateTaskDescription(runtime: DelegationRuntime, profileCount: number): string {
+  const modeDescription = runtime.useExistingAgents
+    ? `Reuse one of ${profileCount} existing agent profiles. Select an exact profile id only when it is known; otherwise omit profile so Kun can route the task. Never define a custom role in this mode.`
+    : 'Define the best one-run role for this task in custom_agent. Do not select or recall an existing profile in this mode.'
   return [
-    'Run a standalone child agent and return its result. With no profile or custom_agent, BM25 recalls the Top-5 agent profiles and an LLM selects a fitting profile; if none fits, a separate generator designs and runs a one-run role.',
-    'Child model, provider, and reasoning strength come from the current turn or a trusted reusable profile; they are not tool-call arguments.',
+    'Run a standalone child agent and return its result.',
+    modeDescription,
+    'Child model, provider, and reasoning strength remain host-controlled and are not tool-call arguments.',
     'Issue multiple calls in one message for independent parallel work.',
-    `${profileCount} agent profiles are searchable.`,
     `Children default to the "${runtime.defaultToolPolicy}" tool policy and can never recursively delegate.`
   ].join(' ')
 }
 
 function stringValue(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
-}
-
-function stringArray(value: unknown): string[] {
-  return Array.isArray(value)
-    ? [...new Set(value.map(stringValue).filter(Boolean))].slice(0, 3)
-    : []
 }
 
 function toolError(message: string): { output: { error: string }; isError: true } {

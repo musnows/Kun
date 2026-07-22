@@ -575,7 +575,12 @@ describe('syncGuiManagedKunConfig', () => {
     // Subagents have no GUI enable toggle: they default ON so delegate_task + the
     // built-in profiles are always offered. maxParallel/maxChildRuns must be >=1 or
     // DelegationRuntime can never run a child. This locks the default against regressions.
-    expect(parsed.capabilities.subagents).toMatchObject({ enabled: true, maxParallel: 5, maxChildRuns: 25 })
+    expect(parsed.capabilities.subagents).toMatchObject({
+      enabled: true,
+      useExistingAgents: true,
+      maxParallel: 5,
+      maxChildRuns: 25
+    })
     expect(parsed.capabilities.web).toMatchObject({ enabled: true, fetchEnabled: true })
     expect(parsed.capabilities.mcp.search).toMatchObject({ enabled: false, mode: 'auto' })
     expect(parsed.capabilities.imageGen).toEqual({
@@ -1690,6 +1695,18 @@ describe('subagentProfilesForRuntime', () => {
     expect('description' in config.profiles.general).toBe(false)
     expect(config.profiles.general.model).toBeUndefined()
     expect(config.profiles.general.providerId).toBeUndefined()
+    expect(config.useExistingAgents).toBe(true)
+  })
+
+  it('preserves the parent-generated delegation mode', async () => {
+    const module = await import('./kun-process')
+    const config = module.subagentProfilesForRuntime({
+      enabled: true,
+      useExistingAgents: false,
+      profiles: []
+    })
+
+    expect(config.useExistingAgents).toBe(false)
   })
 
   it('removes provider-only legacy routing without dropping the rest of the profile', async () => {
