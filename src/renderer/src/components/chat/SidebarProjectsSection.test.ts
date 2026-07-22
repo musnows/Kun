@@ -579,6 +579,36 @@ describe('MoveThreadDialog', () => {
 })
 
 describe('ThreadRow', () => {
+  it('retains active styling for the thread identified by the conversation title bar', () => {
+    const html = renderToStaticMarkup(
+      createElement(ThreadRow, {
+        thread: thread({
+          id: 'thr_active',
+          title: 'Active conversation',
+          workspace: '/Users/zxy/project-a'
+        }),
+        active: true,
+        deleting: false,
+        locale: 'en-US',
+        showRunning: false,
+        showUnread: false,
+        onSelect: vi.fn(),
+        onContextMenu: vi.fn(),
+        onPreviewOpen: vi.fn(),
+        onPreviewClose: vi.fn(),
+        onPin: vi.fn(),
+        onRename: vi.fn(),
+        onArchive: vi.fn(),
+        onDelete: vi.fn(),
+        onRestore: vi.fn()
+      })
+    )
+
+    expect(html).toContain('data-active="true"')
+    expect(html).toContain('bg-[var(--ds-sidebar-row-active)]')
+    expect(html).toContain('Active conversation')
+  })
+
   it('anchors the preview beside the row instead of following the pointer', () => {
     expect(
       resolveThreadPreviewPosition(
