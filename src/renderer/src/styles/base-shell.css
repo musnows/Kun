@@ -3015,6 +3015,30 @@ body.ds-workbench-resizing webview {
 }
 
 .timeline-jump-rail-preview-title {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.timeline-jump-rail-preview-turn-index {
+  display: inline-grid;
+  min-width: 1.55rem;
+  height: 1.55rem;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--ds-border) 82%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ds-text) 7%, transparent);
+  color: var(--ds-text-muted);
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 750;
+  line-height: 1;
+}
+
+.timeline-jump-rail-preview-title-text {
+  min-width: 0;
   overflow: hidden;
   color: var(--ds-text);
   font-size: 0.92rem;

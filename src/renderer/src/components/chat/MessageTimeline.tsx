@@ -239,6 +239,23 @@ export function timelineJumpWaveDistance(index: number, hoveredIndex: number): n
   return Math.min(Math.abs(index - hoveredIndex), 3)
 }
 
+export function TimelineJumpPreviewTitle({
+  index,
+  title
+}: {
+  index: number
+  title: string
+}): ReactElement {
+  return (
+    <div className="timeline-jump-rail-preview-title">
+      <span className="timeline-jump-rail-preview-turn-index" aria-hidden="true">
+        {index}
+      </span>
+      <span className="timeline-jump-rail-preview-title-text">{title}</span>
+    </div>
+  )
+}
+
 function processBlockHasError(block: ChatBlock): boolean {
   return (
     (block.kind === 'tool' && block.status === 'error') ||
@@ -431,6 +448,7 @@ export function MessageTimeline({
   } | null>(null)
   const [jumpRailPreview, setJumpRailPreview] = useState<{
     key: string
+    index: number
     title: string
     prompt: string
     fileLabels: string[]
@@ -477,6 +495,7 @@ export function MessageTimeline({
     () => {
       const anchors: Array<{
         key: string
+        index: number
         title: string
         prompt: string
         fileLabels: string[]
@@ -495,6 +514,7 @@ export function MessageTimeline({
         const metadata = timelineJumpPreviewMetadata(turn)
         anchors.push({
           key,
+          index: questionIndex,
           title: turnPreview(turn, t('timelineJumpTurn', { index: questionIndex })),
           prompt: turnResponsePreview(turn, t('timelineJumpTurn', { index: questionIndex })),
           ...metadata
@@ -587,6 +607,7 @@ export function MessageTimeline({
   const showJumpRailPreview = (
     anchor: {
       key: string
+      index: number
       title: string
       prompt: string
       fileLabels: string[]
@@ -599,6 +620,7 @@ export function MessageTimeline({
     const railAnchorTop = railAnchor?.getBoundingClientRect().top ?? nodeRect.top
     setJumpRailPreview({
       key: anchor.key,
+      index: anchor.index,
       title: anchor.title,
       prompt: anchor.prompt || anchor.title,
       fileLabels: anchor.fileLabels,
@@ -633,7 +655,7 @@ export function MessageTimeline({
                   type="button"
                   className={`timeline-jump-rail-button${activeTurnKey === anchor.key ? ' is-active' : ''}`}
                   data-wave-distance={waveDistance ?? undefined}
-                  aria-label={anchor.title}
+                  aria-label={`${t('timelineJumpTurn', { index: anchor.index })}: ${anchor.title}`}
                   aria-current={activeTurnKey === anchor.key ? 'true' : undefined}
                   onMouseEnter={(event) => showJumpRailPreview(anchor, event.currentTarget)}
                   onFocus={(event) => showJumpRailPreview(anchor, event.currentTarget)}
@@ -652,7 +674,10 @@ export function MessageTimeline({
               }}
               role="tooltip"
             >
-              <div className="timeline-jump-rail-preview-title">{jumpRailPreview.title}</div>
+              <TimelineJumpPreviewTitle
+                index={jumpRailPreview.index}
+                title={jumpRailPreview.title}
+              />
               <div className="timeline-jump-rail-preview-text">{jumpRailPreview.prompt}</div>
               {jumpRailPreview.fileLabels.length > 0 || jumpRailPreview.hasCommit ? (
                 <div className="timeline-jump-rail-preview-meta" aria-hidden="true">
