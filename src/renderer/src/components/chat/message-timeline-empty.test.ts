@@ -56,13 +56,14 @@ describe('MessageTimelineEmptyHero — chat init welcome', () => {
     expect(html).not.toContain('<button')
   })
 
-  it('suppresses welcome copy in focus mode without restoring the usage panel', () => {
+  it('keeps the static welcome copy visible in focus mode without restoring the usage panel', () => {
     const html = renderEmptyHero({ focusModeEnabled: true })
 
     expect(html).toContain('ds-chat-empty-hero')
-    expect(html).toContain('aria-hidden="true"')
-    expect(html).not.toContain('What would you like to do with Kun today?')
-    expect(html).not.toContain('Describe your idea, or start a new task')
+    expect(html).toContain('What would you like to do with Kun today?')
+    expect(html).toContain('Describe your idea, or start a new task')
+    expect(html).not.toContain('aria-hidden="true"')
+    expect(html).not.toContain('ds-kun-state-')
     expect(html).not.toContain('ds-initial-usage-heatmap')
   })
 })
@@ -102,22 +103,22 @@ describe('MessageTimelineEmptyHero — runtime offline hero (issue #78)', () => 
     expect(html).toContain('Open Settings')
   })
 
-  it('plays the waking loading effects only while genuinely reconnecting', () => {
-    // Still probing: stage carries the is-waking modifier with the Zzz /
-    // sonar / caret decorations.
+  it('does not render the animated Kun stage while loading or after an error', () => {
     const waking = renderOfflineHero(null)
-    expect(waking).toContain('is-waking')
-    expect(waking).toContain('ds-runtime-wake-zzz')
-    expect(waking).toContain('ds-runtime-wake-sonar')
-    expect(waking).toContain('ds-runtime-wake-caret')
+    expect(waking).not.toContain('ds-runtime-wake-stage')
+    expect(waking).not.toContain('is-waking')
+    expect(waking).not.toContain('ds-runtime-wake-zzz')
+    expect(waking).not.toContain('ds-runtime-wake-sonar')
+    expect(waking).not.toContain('ds-runtime-wake-caret')
+    expect(waking).not.toContain('ds-kun-state-')
 
-    // Runtime error: same #78 principle as the title swap — an error state
-    // must not look like it is still loading, so the effects are dropped.
     const errored = renderOfflineHero(i18n.t('common:runtimePortConflict'))
+    expect(errored).not.toContain('ds-runtime-wake-stage')
     expect(errored).not.toContain('is-waking')
     expect(errored).not.toContain('ds-runtime-wake-zzz')
     expect(errored).not.toContain('ds-runtime-wake-sonar')
     expect(errored).not.toContain('ds-runtime-wake-caret')
+    expect(errored).not.toContain('ds-kun-state-')
   })
 })
 

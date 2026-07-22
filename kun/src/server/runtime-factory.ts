@@ -165,6 +165,7 @@ import {
   LegacyProviderCredentialMigrationService,
   materializeLegacyProviderCredential
 } from '../services/legacy-provider-credential-migration.js'
+import { GrokOAuthCredentialRefresher } from '../services/grok-oauth-credential-refresher.js'
 import { ExtensionViewSessionService } from '../services/extension-view-session-service.js'
 import { ExtensionViewHostGenerationTracker } from '../extensions/view-host-generation-tracker.js'
 import { ExtensionSecretRevealConsentService } from '../services/extension-secret-reveal-consent.js'
@@ -375,6 +376,24 @@ export async function createKunServeRuntime(
     credentials: extensionCredentials,
     nowIso
   })
+  const grokCredentialRefresher = new GrokOAuthCredentialRefresher(
+    legacyCredentialMigration
+  )
+  const resolveLegacyRequestCredentials = async (
+    sourceId: string,
+    rejectedAccessToken?: string
+  ): Promise<{
+    apiKey: string
+    headers?: Record<string, string>
+    refreshable: boolean
+  }> => {
+    const resolved = await grokCredentialRefresher.resolve(sourceId, rejectedAccessToken)
+    const material = materializeLegacyProviderCredential(resolved.rawApiKey)
+    return {
+      ...material,
+      refreshable: resolved.refreshable
+    }
+  }
   const migrateLegacyProviderCredentials = async (): Promise<void> => {
     const sources = [
       ...(activeOptions.apiKey.trim() && !activeOptions.credentialSourceId ? [{
@@ -404,7 +423,12 @@ export async function createKunServeRuntime(
   await migrateLegacyProviderCredentials()
   activeOptions = await hydrateLegacyCredentialOptions(activeOptions, legacyCredentialMigration)
   const directModelClient = new MultiProviderModelClient(
-    buildModelClientRouterInput(activeOptions, modelCapabilities, llmDebug)
+    buildModelClientRouterInput(
+      activeOptions,
+      modelCapabilities,
+      llmDebug,
+      resolveLegacyRequestCredentials
+    )
   )
   const routeHealth = new RoutePoolHealthStore(join(activeOptions.dataDir, 'model-routing', 'health.json'))
   await routeHealth.load()
@@ -435,7 +459,12 @@ export async function createKunServeRuntime(
     }
   })
   const replaceRoutedModelClients = (): void => {
-    const next = buildModelClientRouterInput(activeOptions, modelCapabilities, llmDebug)
+    const next = buildModelClientRouterInput(
+      activeOptions,
+      modelCapabilities,
+      llmDebug,
+      resolveLegacyRequestCredentials
+    )
     for (const [providerId, client] of extensionModelProviders.clientMap()) {
       next.providers.set(providerId, client)
     }
@@ -2001,7 +2030,15 @@ async function hydrateLegacyCredentialOptions(
 function buildModelClientRouterInput(
   options: KunServeRuntimeOptions,
   modelCapabilities: (model: string) => ReturnType<typeof modelCapabilitiesForModel>,
-  llmDebug?: LlmDebugRecorder
+  llmDebug?: LlmDebugRecorder,
+  credentialResolver?: (
+    sourceId: string,
+    rejectedAccessToken?: string
+  ) => Promise<{
+    apiKey: string
+    headers?: Record<string, string>
+    refreshable: boolean
+  }>
 ): { default: ModelClient; providers: Map<string, ModelClient> } {
   const streamIdleOverride =
     options.runtime?.streamIdleTimeoutMs !== undefined
@@ -2016,6 +2053,12 @@ function buildModelClientRouterInput(
     model: options.model,
     modelCapabilities,
     headers: options.headers,
+    ...(options.credentialSourceId && credentialResolver
+      ? {
+          resolveCredentials: (rejectedAccessToken?: string) =>
+            credentialResolver(options.credentialSourceId!, rejectedAccessToken)
+        }
+      : {}),
     ...(llmDebug ? { debugSink: llmDebug } : {}),
     ...streamIdleOverride
   })
@@ -2032,6 +2075,12 @@ function buildModelClientRouterInput(
       model: options.model,
       modelCapabilities,
       headers: provider.headers,
+      ...(provider.credentialSourceId && credentialResolver
+        ? {
+            resolveCredentials: (rejectedAccessToken?: string) =>
+              credentialResolver(provider.credentialSourceId!, rejectedAccessToken)
+          }
+        : {}),
       ...(llmDebug ? { debugSink: llmDebug } : {}),
       ...streamIdleOverride
     })

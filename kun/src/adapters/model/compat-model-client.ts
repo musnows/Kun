@@ -68,6 +68,14 @@ export type CompatModelClientConfig = {
   endpointFormat?: ModelEndpointFormat
   /** Optional extra headers, e.g. project or session ids. */
   headers?: Record<string, string>
+  /**
+   * Resolves protected request credentials immediately before each HTTP call.
+   * Passing the rejected access token after a 401 lets OAuth implementations
+   * rotate it once without racing concurrent requests.
+   */
+  resolveCredentials?: (
+    rejectedAccessToken?: string
+  ) => Promise<{ apiKey: string; headers?: Record<string, string>; refreshable: boolean }>
   /** HTTP fetch implementation. Defaults to global `fetch`. */
   fetchImpl?: typeof fetch
   /** Optional proxy URL used only for model HTTP requests. */
@@ -230,12 +238,22 @@ export class CompatModelClient implements ModelClient {
     const url = buildModelEndpointUrl(this.config.baseUrl, configuredEndpointFormat)
     const stream = request.stream ?? !this.config.nonStreaming
     const body = this.buildRequestBody(request, stream, { endpointFormat })
-    const headers = this.buildHeaders(
-      stream,
-      endpointFormat,
-      this.config.baseUrl.includes('chatgpt.com/backend-api/codex') &&
-        this.capabilitiesForModel(requestModel).responsesMode === 'lite'
-    )
+    let credentials: { apiKey: string; headers?: Record<string, string>; refreshable: boolean }
+    try {
+      credentials = this.config.resolveCredentials
+        ? await this.config.resolveCredentials()
+        : { apiKey: this.config.apiKey, headers: this.config.headers, refreshable: false }
+    } catch (error) {
+      yield {
+        kind: 'error',
+        code: 'credential_refresh_failed',
+        message: error instanceof Error ? error.message : String(error)
+      }
+      return
+    }
+    const responsesLite = this.config.baseUrl.includes('chatgpt.com/backend-api/codex') &&
+      this.capabilitiesForModel(requestModel).responsesMode === 'lite'
+    let headers = this.buildHeaders(stream, endpointFormat, responsesLite, credentials)
     const retry = normalizeModelRequestRetryConfig(this.config.retry)
     const modelStreamLimits = normalizeModelStreamLimits(this.config.streamLimits)
     const maxErrorBodyBytes = Math.min(modelStreamLimits.maxTotalBytes, 1 * 1024 * 1024)
@@ -243,24 +261,51 @@ export class CompatModelClient implements ModelClient {
     let attemptOrdinal = 0
     const post = (
       requestBody: Record<string, unknown>,
-      reason: 'initial' | 'transport_retry' | 'stream_options_fallback'
+      reason: 'initial' | 'transport_retry' | 'credential_refresh' | 'stream_options_fallback'
     ) => this.postChatCompletion(url, headers, requestBody, request.abortSignal, {
       round,
       endpointFormat,
       attempt: ++attemptOrdinal,
-      reason
+      reason,
+      apiKey: credentials.apiKey
     })
     let result = await post(body, 'initial')
-    for (let attempt = 0; attempt < retry.maxAttempts; attempt += 1) {
-      if (result.kind === 'error') break
-      if (result.response.ok || !retryStatuses.has(result.response.status)) break
-      const delayMs = retryDelayMs(result.response, retry.initialDelayMs, attempt)
+    let transportRetryAttempt = 0
+    let credentialRefreshAttempted = false
+    while (result.kind === 'response' && !result.response.ok) {
+      if (
+        result.response.status === 401 &&
+        credentials.refreshable &&
+        this.config.resolveCredentials &&
+        !credentialRefreshAttempted
+      ) {
+        credentialRefreshAttempted = true
+        await result.response.body?.cancel().catch(() => {})
+        try {
+          credentials = await this.config.resolveCredentials(credentials.apiKey)
+        } catch (error) {
+          yield {
+            kind: 'error',
+            code: 'credential_refresh_failed',
+            message: error instanceof Error ? error.message : String(error)
+          }
+          return
+        }
+        headers = this.buildHeaders(stream, endpointFormat, responsesLite, credentials)
+        result = await post(body, 'credential_refresh')
+        continue
+      }
+      if (
+        transportRetryAttempt >= retry.maxAttempts ||
+        !retryStatuses.has(result.response.status)
+      ) break
+      const delayMs = retryDelayMs(result.response, retry.initialDelayMs, transportRetryAttempt)
       const status = result.response.status
       await result.response.body?.cancel().catch(() => {})
       yield {
         kind: 'retrying',
         status,
-        attempt: attempt + 1,
+        attempt: transportRetryAttempt + 1,
         maxAttempts: retry.maxAttempts,
         delayMs
       }
@@ -269,6 +314,7 @@ export class CompatModelClient implements ModelClient {
         yield { kind: 'error', message: 'request was aborted during retry backoff' }
         return
       }
+      transportRetryAttempt += 1
       result = await post(body, 'transport_retry')
     }
     if (result.kind === 'error') {
@@ -450,7 +496,8 @@ export class CompatModelClient implements ModelClient {
       round: LlmDebugRound | null
       endpointFormat: ModelEndpointFormat
       attempt: number
-      reason: 'initial' | 'transport_retry' | 'stream_options_fallback'
+      reason: 'initial' | 'transport_retry' | 'credential_refresh' | 'stream_options_fallback'
+      apiKey: string
     }
   ): Promise<{ kind: 'response'; response: Response } | { kind: 'error'; message: string; failure: import('../../contracts/model-route-pool.js').ModelFailureMetadata }> {
     const bodyText = JSON.stringify(body)
@@ -464,7 +511,7 @@ export class CompatModelClient implements ModelClient {
           url,
           headers,
           bodyText,
-          secretValues: [this.config.apiKey]
+          secretValues: [trace.apiKey]
         }))
       : undefined
     try {
@@ -505,11 +552,21 @@ export class CompatModelClient implements ModelClient {
   private buildHeaders(
     stream: boolean,
     endpointFormat: ModelEndpointFormat,
-    responsesLite = false
+    responsesLite = false,
+    credentials: {
+      apiKey: string
+      headers?: Record<string, string>
+    } = {
+      apiKey: this.config.apiKey,
+      headers: this.config.headers
+    }
   ): Record<string, string> {
     return buildCompatRequestHeaders({
-      apiKey: this.config.apiKey,
-      configuredHeaders: this.config.headers,
+      apiKey: credentials.apiKey,
+      configuredHeaders: {
+        ...(this.config.headers ?? {}),
+        ...(credentials.headers ?? {})
+      },
       stream,
       endpointFormat,
       responsesLite

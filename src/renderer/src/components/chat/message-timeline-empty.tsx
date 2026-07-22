@@ -3,7 +3,6 @@ import { useTranslation } from 'react-i18next'
 import { Bot, CornerUpLeft, GitFork, RefreshCw, Settings } from 'lucide-react'
 import type { ClawImChannelV1 } from '@shared/app-settings'
 import { KunStateFigure } from './AnimatedWorkLogo'
-import { KunHeroStage } from './KunHeroStage'
 
 /**
  * Empty / hero states rendered by `MessageTimeline` when there is no
@@ -83,10 +82,7 @@ function RuntimeWakeHero({
   const detail = hasError ? trimmedError : t('runtimeOfflineHeroSub')
 
   return (
-    <div className="ds-runtime-wake-hero ds-no-drag px-6 pb-8 pt-12 text-center md:pt-16">
-      {/* 报错时关掉「唤醒中」动效,沿用 #78 的原则:错误不该看起来像还在加载 */}
-      <KunHeroStage waking={!hasError} />
-
+    <div className="ds-runtime-wake-hero ds-no-drag mx-auto flex min-h-[min(620px,calc(100dvh-220px))] w-full flex-col items-center justify-center px-6 py-10 text-center">
       <p className="text-[12px] font-semibold uppercase tracking-[0] text-accent">
         {t('runtimeOfflineHeroKicker')}
       </p>
@@ -118,27 +114,22 @@ function RuntimeWakeHero({
   )
 }
 
-function ChatEmptyHero({ hidden = false }: { hidden?: boolean }): ReactElement {
+function ChatEmptyHero(): ReactElement {
   const { t } = useTranslation('common')
 
   return (
-    <div
-      className="ds-chat-empty-hero ds-no-drag mx-auto flex min-h-[min(620px,calc(100dvh-220px))] w-full items-center justify-center px-6 py-10 text-center"
-      aria-hidden={hidden || undefined}
-    >
-      {!hidden ? (
-        <div className="flex max-w-[720px] -translate-y-6 flex-col items-center sm:-translate-y-8">
-          <h1
-            id="chat-empty-hero-title"
-            className="max-w-[620px] text-[28px] font-semibold leading-tight tracking-[-0.025em] text-ds-ink sm:text-[32px]"
-          >
-            {t('emptyHeroTitle')}
-          </h1>
-          <p className="mt-3 max-w-[680px] text-[14.5px] leading-7 text-ds-muted">
-            {t('emptyHeroSub')}
-          </p>
-        </div>
-      ) : null}
+    <div className="ds-chat-empty-hero ds-no-drag mx-auto flex min-h-[min(620px,calc(100dvh-220px))] w-full items-center justify-center px-6 py-10 text-center">
+      <div className="flex max-w-[720px] -translate-y-6 flex-col items-center sm:-translate-y-8">
+        <h1
+          id="chat-empty-hero-title"
+          className="max-w-[620px] text-[28px] font-semibold leading-tight tracking-[-0.025em] text-ds-ink sm:text-[32px]"
+        >
+          {t('emptyHeroTitle')}
+        </h1>
+        <p className="mt-3 max-w-[680px] text-[14.5px] leading-7 text-ds-muted">
+          {t('emptyHeroSub')}
+        </p>
+      </div>
     </div>
   )
 }
@@ -152,8 +143,7 @@ export function MessageTimelineEmptyHero({
   onPickWorkspace,
   onRetry,
   onOpenSettings,
-  onSelectSuggestion,
-  focusModeEnabled = false
+  onSelectSuggestion
 }: {
   route: 'chat' | 'claw'
   ready: boolean
@@ -202,7 +192,7 @@ export function MessageTimelineEmptyHero({
     )
   }
 
-  return <ChatEmptyHero hidden={focusModeEnabled} />
+  return <ChatEmptyHero />
 }
 
 export function ThreadForkBanner({ parentTitle }: { parentTitle: string }): ReactElement {

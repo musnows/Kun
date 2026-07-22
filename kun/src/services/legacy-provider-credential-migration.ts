@@ -5,9 +5,7 @@ import { AtomicJsonFile } from '../extensions/atomic-json.js'
 import type { ExtensionPrincipal } from './extension-agent-service.js'
 import type { ExtensionCredentialStore } from './extension-credential-store.js'
 import type { ExtensionProviderAccountStore } from './extension-provider-account-store.js'
-
-// Keep aligned with src/main/grok-auth.ts and the Grok Build OAuth client.
-const GROK_CLIENT_VERSION = '0.2.106'
+import { GROK_CLIENT_VERSION } from './grok-oauth-credential-refresher.js'
 
 const MigrationRollbackSchema = z.object({
   accountId: z.string().min(1),
@@ -201,6 +199,30 @@ export class LegacyProviderCredentialMigrationService {
       ...(entry.modelId ? { modelId: entry.modelId } : {}),
       apiKey
     }
+  }
+
+  /**
+   * Replaces the protected value behind an existing source binding without
+   * changing its account or ordinary-settings migration marker. OAuth refresh
+   * uses this path so a stale in-memory settings snapshot still matches the
+   * marker and cannot overwrite the newly rotated token on the next save.
+   */
+  async updateResolvedApiKey(sourceId: string, apiKey: string): Promise<boolean> {
+    const trimmed = apiKey.trim()
+    if (!trimmed) throw new Error('updated provider credential is empty')
+    const entry = (await this.markers.read(emptyDocument)).entries[sourceId]
+    if (!entry) return false
+    const account = await this.options.accounts.getAccount(entry.accountId)
+    if (!account || account.providerId !== entry.providerId || account.status !== 'connected') {
+      return false
+    }
+    const credential = await this.options.credentials.get(account.credentialRef)
+    if (!credential) return false
+    await this.options.credentials.set(account.credentialRef, {
+      ...credential,
+      apiKey: trimmed
+    })
+    return true
   }
 
   async markSettingsCommitted(sourceIds: readonly string[]): Promise<void> {

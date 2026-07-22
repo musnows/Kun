@@ -77,7 +77,12 @@ export const ModelRequestTraceRecordSchema = z.object({
   transport: z.enum(['http', 'cli', 'sdk']).optional(),
   endpointFormat: z.string(),
   attempt: z.number().int().positive(),
-  attemptReason: z.enum(['initial', 'transport_retry', 'stream_options_fallback']),
+  attemptReason: z.enum([
+    'initial',
+    'transport_retry',
+    'credential_refresh',
+    'stream_options_fallback'
+  ]),
   status: z.enum(['pending', 'completed', 'transport_error', 'capture_error']),
   startedAt: z.string(),
   responseStartedAt: z.string().optional(),

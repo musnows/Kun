@@ -166,6 +166,37 @@ describe('LegacyProviderCredentialMigrationService', () => {
     expect((await migration.resolveApiKey('runtime:same'))?.apiKey).toBe('shared-secret')
     expect(await accounts.getAccount(results[0]!.accountId)).not.toBeNull()
   })
+
+  it('updates a resolved credential in place without changing its migration marker', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'kun-legacy-credential-refresh-'))
+    const accounts = new ExtensionProviderAccountStore({ dataDir })
+    const credentials = new ExtensionCredentialStore({ dataDir, profileId: 'default' })
+    const migration = new LegacyProviderCredentialMigrationService({ dataDir, accounts, credentials })
+    const [initial] = await migration.migrate([providerSource('provider:grok', 'old-oauth-json')])
+    await migration.markSettingsCommitted([initial!.sourceId])
+    const markerBefore = await readFile(
+      join(dataDir, 'extensions', 'legacy-credential-migrations.json'),
+      'utf8'
+    )
+
+    await expect(
+      migration.updateResolvedApiKey('provider:grok', 'refreshed-oauth-json')
+    ).resolves.toBe(true)
+
+    expect((await migration.resolveApiKey('provider:grok'))?.apiKey).toBe('refreshed-oauth-json')
+    expect(await readFile(
+      join(dataDir, 'extensions', 'legacy-credential-migrations.json'),
+      'utf8'
+    )).toBe(markerBefore)
+
+    // The GUI main process may still hold the pre-refresh settings snapshot.
+    // A later unrelated settings save must not restore that stale token.
+    await migration.migrate(
+      [providerSource('provider:grok', 'old-oauth-json')],
+      { replaceCommitted: true }
+    )
+    expect((await migration.resolveApiKey('provider:grok'))?.apiKey).toBe('refreshed-oauth-json')
+  })
 })
 
 describe('materializeLegacyProviderCredential', () => {
