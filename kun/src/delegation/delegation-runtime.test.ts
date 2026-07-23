@@ -192,8 +192,12 @@ describe('DelegationRuntime model provider selection', () => {
         parentTurnId: 'turn',
         profile: 'auditor',
         prompt: 'audit the change',
-        onQueued: (_childId, _profile, metadata) => lifecycle.push(metadata),
-        onRunning: (_childId, _profile, metadata) => lifecycle.push(metadata),
+        onQueued: (_childId, _profile, metadata) => {
+          lifecycle.push(metadata)
+        },
+        onRunning: (_childId, _profile, metadata) => {
+          lifecycle.push(metadata)
+        },
         signal: new AbortController().signal
       })
 

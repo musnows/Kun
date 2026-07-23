@@ -304,6 +304,7 @@ describe('CursorSdkRuntime', () => {
     const run = fakeRun({ cancel })
     run.stream = () => (async function* () {
       await blocked
+      yield* []
     })()
     const h = harness({ run })
     const controller = new AbortController()
@@ -322,6 +323,7 @@ describe('CursorSdkRuntime', () => {
     const run = fakeRun({ cancel })
     run.stream = () => (async function* () {
       await blocked
+      yield* []
     })()
     const h = harness({ run, turnLimits: { maxWallTimeMs: 5 } })
 

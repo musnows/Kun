@@ -200,7 +200,10 @@ describe('createChildAgentExecutor', () => {
         model: 'http-model',
         async *stream(): AsyncIterable<ModelStreamChunk> {
           nativeModelCalled = true
-          throw new Error('HTTP model must not own a subscription child')
+          if (nativeModelCalled) {
+            throw new Error('HTTP model must not own a subscription child')
+          }
+          yield { kind: 'completed', stopReason: 'stop' }
         }
       },
       toolHost: new LocalToolHost({ tools: [] }),
@@ -290,6 +293,7 @@ describe('DelegationRuntime detached children', () => {
       const runtime = new DelegationRuntime({
         config: {
           enabled: true,
+          useExistingAgents: true,
           maxParallel: 1,
           maxChildRuns: 10,
           defaultToolPolicy: 'readOnly',

@@ -18,6 +18,7 @@ import {
 } from '../src/delegation/delegation-runtime.js'
 import { SubagentRouter } from '../src/delegation/subagent-router.js'
 import type { ModelClient, ModelRequest, ModelStreamChunk } from '../src/ports/model-client.js'
+import type { ToolHostContext } from '../src/ports/tool-host.js'
 import { RuntimeEventRecorder } from '../src/services/runtime-event-recorder.js'
 
 class StaticRouterModel implements ModelClient {
@@ -304,13 +305,19 @@ describe('DelegationRuntime', () => {
     const tool = providers[0]?.tools[0]
     expect((tool?.inputSchema.properties as Record<string, unknown> | undefined)?.workspace).toBeUndefined()
     const host = new LocalToolHost({ registry: new CapabilityRegistry(providers) })
-    const context = {
+    const context: ToolHostContext = {
       threadId: 'thr_security_boundary',
       turnId: 'turn_security_boundary',
       workspace: dir,
       approvalPolicy: 'auto' as const,
       sandboxMode: 'workspace-write' as const,
-      model: { id: 'deepseek-chat' },
+      model: {
+        id: 'deepseek-chat',
+        inputModalities: ['text'],
+        outputModalities: ['text'],
+        supportsToolCalling: true,
+        messageParts: ['text']
+      },
       modelProviderId: 'deepseek',
       allowedProviderIds: ['delegation'],
       allowedToolNames: ['delegate_task', 'read'],

@@ -321,7 +321,12 @@ function normalizeStringList(value: unknown, maxItems: number, maxLength: number
 
 function safeModelString(value: unknown, maxLength: number): string {
   const text = boundedString(value, maxLength)
-  return /[\u0000-\u001f\u007f]/u.test(text) ? '' : text
+  return Array.from(text).some((character) => {
+    const codePoint = character.codePointAt(0) ?? 0
+    return codePoint <= 0x1f || codePoint === 0x7f
+  })
+    ? ''
+    : text
 }
 
 function normalizeCursorAccount(value: unknown): CursorSubscriptionAccount {

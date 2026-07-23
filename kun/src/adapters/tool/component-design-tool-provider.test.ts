@@ -52,6 +52,7 @@ describe('component designer profile', () => {
   it('is built in with a narrow file-authoring allow-list', () => {
     const config = mergeBuiltinSubagentProfiles({
       enabled: true,
+      useExistingAgents: true,
       maxParallel: 3,
       maxChildRuns: 12,
       defaultToolPolicy: 'inherit',
