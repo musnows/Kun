@@ -281,7 +281,16 @@ set -eu
 
 case "$0" in
   /*) launcher_path=$0 ;;
-  *) launcher_path=$PWD/$0 ;;
+  *)
+    # AppImage may invoke AppRun through PATH, which leaves the product
+    # launcher's argv[0] as a bare filename. Its APPDIR is the only stable
+    # location for the renamed Electron payload in that case.
+    if [ -n "\${APPDIR:-}" ] && [ -x "\${APPDIR}/${executableName}" ]; then
+      launcher_path="\${APPDIR}/${executableName}"
+    else
+      launcher_path=$PWD/$0
+    fi
+    ;;
 esac
 launcher_dir=\${launcher_path%/*}
 launcher_dir=$(CDPATH= cd -P "$launcher_dir" && pwd -P)

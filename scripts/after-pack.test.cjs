@@ -116,6 +116,13 @@ test('GUI prepends the sandbox flag without parsing or swallowing user arguments
   ])
 })
 
+test('Linux launcher resolves a bare AppImage product name through APPDIR', () => {
+  const content = linuxElectronLauncherContent('kun-gui')
+  assert.match(content, /AppImage may invoke AppRun through PATH/)
+  assert.match(content, /\[ -n "\$\{APPDIR:-\}" \] && \[ -x "\$\{APPDIR\}\/kun-gui" \]/)
+  assert.match(content, /launcher_path="\$\{APPDIR\}\/kun-gui"/)
+})
+
 test('does not add a Chromium flag to ELECTRON_RUN_AS_NODE commands', {
   skip: process.platform === 'win32' && 'requires executing a POSIX shell launcher'
 }, (t) => {
