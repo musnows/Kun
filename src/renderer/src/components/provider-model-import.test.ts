@@ -7,6 +7,7 @@ import type { ModelsDevCatalogResult } from '@shared/kun-gui-api'
 import {
   buildProviderModelImportEntries,
   defaultSelectedProviderModelImportKeys,
+  enrichCursorProviderModelProfiles,
   enrichProviderModelProfiles,
   mergeProviderModelIdsCaseInsensitive,
   providerModelImportEntryKey,
@@ -139,6 +140,32 @@ describe('provider model import merging', () => {
 })
 
 describe('models.dev profile enrichment', () => {
+  it('adds the Cursor SDK adaptive reasoning default even without catalog metadata', () => {
+    const target = provider({ modelProfiles: {} })
+    const next = enrichCursorProviderModelProfiles(
+      target,
+      ['auto', 'composer-2.5'],
+      []
+    )
+
+    expect(next.auto).toEqual({
+      inputModalities: ['text'],
+      outputModalities: ['text'],
+      supportsToolCalling: true,
+      messageParts: ['text'],
+      reasoning: {
+        supportedEfforts: ['auto'],
+        defaultEffort: 'auto',
+        requestProtocol: 'none'
+      }
+    })
+    expect(next['composer-2.5']?.reasoning).toEqual({
+      supportedEfforts: ['auto'],
+      defaultEffort: 'auto',
+      requestProtocol: 'none'
+    })
+  })
+
   it('creates a runtime-safe profile for a new imported chat model', () => {
     const target = provider()
     const next = enrichProviderModelProfiles(

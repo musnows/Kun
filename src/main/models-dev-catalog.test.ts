@@ -3,6 +3,7 @@ import type { AppSettingsV1 } from '../shared/app-settings'
 import {
   MODELS_DEV_CACHE_TTL_MS,
   MODELS_DEV_MAX_RESPONSE_BYTES,
+  MODELS_DEV_TIMEOUT_MS,
   ModelsDevCatalogService,
   resolveCursorModelsDevCatalog,
   resolveModelsDevProvider
@@ -399,7 +400,7 @@ describe('ModelsDevCatalogService', () => {
     })
     await expect(timedOut.fetch(request)).resolves.toMatchObject({
       status: 'error',
-      message: 'Request to models.dev timed out after 10s.'
+      message: `Request to models.dev timed out after ${MODELS_DEV_TIMEOUT_MS / 1_000}s.`
     })
   })
 })

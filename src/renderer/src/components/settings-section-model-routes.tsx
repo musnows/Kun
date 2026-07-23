@@ -8,7 +8,7 @@ import {
   resolveModelRouteTargetReference
 } from '@shared/app-settings'
 import { KUN_MODEL_ROUTES_PATH, kunModelRouteTestPath } from '@shared/kun-endpoints'
-import { Activity, AlertTriangle, Boxes, GripVertical, Loader2, Plus, Play, Route, Server, Trash2 } from 'lucide-react'
+import { Activity, AlertTriangle, Boxes, Check, ChevronDown, Clipboard, Code2, GripVertical, Loader2, Plus, Play, Route, Server, Trash2, X } from 'lucide-react'
 import { Toggle } from './settings-controls'
 
 type RouteStatus = {
@@ -64,13 +64,16 @@ export function ModelRoutesSettings({
   onChange,
   saveStatus = 'idle',
   saveError,
-  onRetrySave
+  onRetrySave,
+  publicBaseUrl = 'http://127.0.0.1:18899'
 }: {
   settings: ModelProviderSettingsV1
   onChange: (next: ModelProviderSettingsV1) => void
   saveStatus?: 'idle' | 'saving' | 'saved' | 'error'
   saveError?: string | null
   onRetrySave?: () => void
+  /** The configured local Kun endpoint; this is also the public gateway origin. */
+  publicBaseUrl?: string
 }): ReactElement {
   const [selectedId, setSelectedId] = useState(settings.routePools[0]?.id ?? '')
   const [status, setStatus] = useState<RouteStatus | null>(null)
@@ -78,6 +81,8 @@ export function ModelRoutesSettings({
   const [runtimeSyncStatus, setRuntimeSyncStatus] = useState<KunRuntimeSettingsSyncStatusPayload | null>(null)
   const [startPending, setStartPending] = useState(false)
   const [startError, setStartError] = useState('')
+  const [apiDocsOpen, setApiDocsOpen] = useState(false)
+  const [copiedValue, setCopiedValue] = useState<'base-url' | 'curl' | 'api-example' | null>(null)
   const selected = settings.routePools.find((pool) => pool.id === selectedId) ?? settings.routePools[0]
   const executablePools = useMemo(() => projectExecutableModelRoutePools(settings), [settings])
   const executableSelected = executablePools.find((pool) => pool.id === selected?.id)
@@ -238,9 +243,21 @@ export function ModelRoutesSettings({
         ? 'Kun Runtime 同步失败'
         : !status
           ? runtimeSyncStatus?.state === 'unavailable' ? 'Kun Runtime 未运行' : 'Kun Runtime 未连接'
-          : runtimeSyncStatus?.state === 'syncing'
+              : runtimeSyncStatus?.state === 'syncing'
               ? '正在同步到 Kun Runtime'
               : '等待 Kun Runtime 同步'
+  const gatewayBaseUrl = `${publicBaseUrl.replace(/\/$/, '')}/v1`
+  const sampleModelId = selected?.modelId || settings.routePools.find((pool) => pool.enabled)?.modelId || 'your-public-model-id'
+  const curlExample = buildGatewayCurlExample(gatewayBaseUrl, sampleModelId)
+  const copyGatewayText = async (value: string, kind: 'base-url' | 'curl' | 'api-example'): Promise<void> => {
+    try {
+      await navigator.clipboard.writeText(value)
+      setCopiedValue(kind)
+      globalThis.setTimeout(() => setCopiedValue((current) => current === kind ? null : current), 1_800)
+    } catch {
+      setCopiedValue(null)
+    }
+  }
 
   return (
     <div className="grid min-h-[620px] gap-4 p-4 lg:grid-cols-[280px_minmax(0,1fr)]">
@@ -269,7 +286,7 @@ export function ModelRoutesSettings({
         <div className="flex items-center gap-3 rounded-xl border border-ds-border bg-ds-card px-3 py-2.5">
           <div>
             <div className="text-[12px] font-medium text-ds-ink">开放本地 API</div>
-            <div className="mt-0.5 text-[10.5px] text-ds-faint">127.0.0.1 · 无鉴权</div>
+            <div className="mt-0.5 text-[10.5px] text-ds-faint">仅本机访问 · 无鉴权</div>
           </div>
           <Toggle
             checked={settings.localGateway.enabled}
@@ -306,6 +323,48 @@ export function ModelRoutesSettings({
           {!status && statusError ? <span className="min-w-0 truncate text-[11px] text-ds-faint" title={statusError}>本地配置不受影响；Kun 启动后会自动同步。</span> : null}
           {runtimeSyncFailed && runtimeSyncStatus?.message ? <span className="min-w-0 truncate text-[11px] text-red-600" title={runtimeSyncStatus.message}>{runtimeSyncStatus.message}</span> : null}
         </div>
+
+        <section className="grid basis-full gap-3 rounded-xl border border-ds-border bg-ds-card p-3.5 lg:grid-cols-[minmax(0,1fr)_auto]">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <h3 className="flex items-center gap-1.5 text-[13px] font-semibold text-ds-ink"><Code2 className="h-4 w-4 text-accent" />本地 API</h3>
+              <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10.5px] font-medium ${settings.localGateway.enabled ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-200' : 'bg-ds-main text-ds-muted'}`}>
+                <span className={`h-1.5 w-1.5 rounded-full ${settings.localGateway.enabled ? 'bg-emerald-500' : 'bg-ds-faint'}`} />
+                {settings.localGateway.enabled ? '已启用 · 仅本机访问' : '未启用'}
+              </span>
+            </div>
+            <p className="mt-1 text-[11px] text-ds-faint">兼容 OpenAI Chat Completions 与 Responses；公开模型 ID 由下方路由模型决定。</p>
+            <div className="mt-2 flex min-w-0 items-center gap-1.5 rounded-lg border border-ds-border bg-ds-main px-2.5 py-2">
+              <span className="min-w-0 flex-1 truncate font-mono text-[11.5px] text-ds-ink" title={gatewayBaseUrl}>{gatewayBaseUrl}</span>
+              <button type="button" onClick={() => void copyGatewayText(gatewayBaseUrl, 'base-url')} className="inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 text-[11px] font-medium text-ds-muted hover:bg-ds-hover hover:text-ds-ink" aria-label="复制本地 API 地址">
+                {copiedValue === 'base-url' ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Clipboard className="h-3.5 w-3.5" />}
+                {copiedValue === 'base-url' ? '已复制' : '复制'}
+              </button>
+            </div>
+            <div className="mt-2 flex flex-wrap gap-1.5 text-[10.5px] text-ds-muted">
+              <ApiCompatibilityPill>GET /models</ApiCompatibilityPill>
+              <ApiCompatibilityPill>POST /chat/completions</ApiCompatibilityPill>
+              <ApiCompatibilityPill>POST /responses</ApiCompatibilityPill>
+            </div>
+          </div>
+          <div className="flex items-end gap-2 lg:flex-col lg:items-stretch lg:justify-center">
+            <button type="button" onClick={() => void copyGatewayText(curlExample, 'curl')} className="inline-flex h-8 items-center justify-center gap-1.5 rounded-lg bg-accent px-3 text-[11.5px] font-semibold text-white hover:opacity-90">
+              {copiedValue === 'curl' ? <Check className="h-3.5 w-3.5" /> : <Clipboard className="h-3.5 w-3.5" />}
+              {copiedValue === 'curl' ? '已复制' : '复制 cURL'}
+            </button>
+            <button type="button" onClick={() => setApiDocsOpen((open) => !open)} className="inline-flex h-8 items-center justify-center gap-1.5 rounded-lg border border-ds-border px-3 text-[11.5px] font-medium text-ds-muted hover:bg-ds-hover hover:text-ds-ink" aria-expanded={apiDocsOpen}>
+              接口说明 <ChevronDown className={`h-3.5 w-3.5 transition-transform ${apiDocsOpen ? 'rotate-180' : ''}`} />
+            </button>
+          </div>
+
+        </section>
+        {apiDocsOpen ? <LocalGatewayApiDialog
+          baseUrl={gatewayBaseUrl}
+          modelId={sampleModelId}
+          copied={copiedValue === 'api-example'}
+          onClose={() => setApiDocsOpen(false)}
+          onCopy={(value) => void copyGatewayText(value, 'api-example')}
+        /> : null}
       </section>
       <aside className="grid min-w-0 content-start gap-3 border-b border-ds-border-muted pb-4 lg:border-b-0 lg:border-r lg:pb-0 lg:pr-4">
         <div className="flex items-start justify-between gap-2">
@@ -494,6 +553,171 @@ export function ModelRoutesSettings({
       ) : <main className="grid place-items-center text-center"><div><Route className="mx-auto h-10 w-10 text-ds-faint" /><h3 className="mt-3 text-[14px] font-semibold text-ds-ink">添加第一个路由模型</h3><p className="mt-1 text-[12px] text-ds-faint">一个本地中转供应商可以包含多个公开模型。</p><button type="button" onClick={addPool} className="mt-4 inline-flex h-9 items-center gap-2 rounded-full bg-accent px-4 text-[12px] font-semibold text-white"><Plus className="h-3.5 w-3.5" />添加模型</button></div></main>}
     </div>
   )
+}
+
+type GatewayApiTab = 'models' | 'chat' | 'responses'
+
+function ApiCompatibilityPill({ children }: { children: string }): ReactElement {
+  return <span className="rounded-full bg-ds-main px-2 py-1 font-mono text-[10px] text-ds-muted">{children}</span>
+}
+
+function LocalGatewayApiDialog({
+  baseUrl,
+  modelId,
+  copied,
+  onClose,
+  onCopy
+}: {
+  baseUrl: string
+  modelId: string
+  copied: boolean
+  onClose: () => void
+  onCopy: (value: string) => void
+}): ReactElement {
+  const [tab, setTab] = useState<GatewayApiTab>('chat')
+  useEffect(() => {
+    if (typeof globalThis.addEventListener !== 'function') return
+    const closeOnEscape = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') onClose()
+    }
+    globalThis.addEventListener('keydown', closeOnEscape)
+    return () => globalThis.removeEventListener('keydown', closeOnEscape)
+  }, [onClose])
+
+  const guide = gatewayApiGuide(tab, baseUrl, modelId)
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/35 p-4 backdrop-blur-[1px]" onMouseDown={(event) => {
+      if (event.target === event.currentTarget) onClose()
+    }}>
+      <section role="dialog" aria-modal="true" aria-labelledby="local-api-dialog-title" className="grid max-h-[min(760px,calc(100vh-32px))] w-full max-w-4xl overflow-hidden rounded-2xl border border-ds-border bg-ds-card shadow-2xl shadow-slate-950/25">
+        <header className="flex items-start justify-between gap-4 border-b border-ds-border-muted px-5 py-4">
+          <div>
+            <h2 id="local-api-dialog-title" className="flex items-center gap-2 text-[16px] font-semibold text-ds-ink"><Code2 className="h-4 w-4 text-accent" />本地 API 说明</h2>
+            <p className="mt-1 text-[12px] text-ds-muted">OpenAI 兼容接口，仅允许本机进程访问；不需要 Authorization 请求头。</p>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-lg p-2 text-ds-muted hover:bg-ds-hover hover:text-ds-ink" aria-label="关闭 API 说明"><X className="h-4 w-4" /></button>
+        </header>
+
+        <div className="grid min-h-0 overflow-y-auto md:grid-cols-[196px_minmax(0,1fr)]">
+          <aside className="border-b border-ds-border-muted bg-ds-main/35 p-3 md:border-b-0 md:border-r">
+            <p className="px-2 pb-2 text-[10.5px] font-medium uppercase tracking-[0.08em] text-ds-faint">接口</p>
+            <div className="grid gap-1">
+              <ApiGuideTab active={tab === 'models'} onClick={() => setTab('models')} method="GET" path="/models">模型列表</ApiGuideTab>
+              <ApiGuideTab active={tab === 'chat'} onClick={() => setTab('chat')} method="POST" path="/chat/completions">Chat Completions</ApiGuideTab>
+              <ApiGuideTab active={tab === 'responses'} onClick={() => setTab('responses')} method="POST" path="/responses">Responses</ApiGuideTab>
+            </div>
+            <div className="mt-4 rounded-lg border border-ds-border bg-ds-card p-2.5 text-[10.5px] leading-4 text-ds-muted">
+              <div className="font-medium text-ds-ink">调用前提</div>
+              <p className="mt-1">先启用本地 API，并至少启用一个路由模型。请求中的 <code className="font-mono">model</code> 使用它的公开模型 ID。</p>
+            </div>
+          </aside>
+
+          <div className="min-w-0 p-5">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-2"><span className={`rounded-md px-1.5 py-0.5 font-mono text-[10.5px] font-semibold ${guide.method === 'GET' ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-200' : 'bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-200'}`}>{guide.method}</span><h3 className="font-mono text-[14px] font-semibold text-ds-ink">{guide.path}</h3></div>
+                <p className="mt-2 text-[12px] leading-5 text-ds-muted">{guide.description}</p>
+              </div>
+              <span className="rounded-full bg-ds-main px-2 py-1 text-[10.5px] text-ds-muted">OpenAI 兼容</span>
+            </div>
+
+            <div className="mt-4 rounded-xl border border-ds-border bg-ds-main/45 p-3">
+              <div className="flex items-center justify-between gap-3"><span className="text-[11px] font-medium text-ds-muted">Base URL</span><button type="button" onClick={() => onCopy(baseUrl)} className="inline-flex items-center gap-1 text-[11px] font-medium text-accent hover:opacity-80">{copied ? <Check className="h-3.5 w-3.5" /> : <Clipboard className="h-3.5 w-3.5" />}{copied ? '已复制' : '复制'}</button></div>
+              <code className="mt-1.5 block break-all font-mono text-[12px] text-ds-ink">{baseUrl}</code>
+            </div>
+
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <InfoList title="关键字段" items={guide.fields} />
+              <InfoList title="响应与限制" items={guide.notes} />
+            </div>
+
+            <div className="mt-5 overflow-hidden rounded-xl border border-slate-700 bg-slate-950">
+              <div className="flex items-center justify-between gap-3 border-b border-slate-700 px-3 py-2"><span className="text-[11px] font-medium text-slate-300">cURL 示例</span><button type="button" onClick={() => onCopy(guide.example)} className="inline-flex items-center gap-1 rounded-md bg-white/10 px-2 py-1 text-[10.5px] font-medium text-slate-100 hover:bg-white/15">{copied ? <Check className="h-3.5 w-3.5 text-emerald-300" /> : <Clipboard className="h-3.5 w-3.5" />}{copied ? '已复制' : '复制示例'}</button></div>
+              <pre className="overflow-x-auto p-3 font-mono text-[11.5px] leading-5 text-slate-100"><code>{guide.example}</code></pre>
+            </div>
+
+            <p className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] leading-4 text-amber-800 dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-100">此中转站不是面向公网的 API 服务：它仅绑定本机回环地址，且目前无鉴权。不要通过端口映射或未受保护的反向代理暴露给局域网或公网。</p>
+          </div>
+        </div>
+      </section>
+    </div>
+  )
+}
+
+function ApiGuideTab({
+  active,
+  method,
+  path,
+  children,
+  onClick
+}: {
+  active: boolean
+  method: 'GET' | 'POST'
+  path: string
+  children: string
+  onClick: () => void
+}): ReactElement {
+  return <button type="button" onClick={onClick} className={`grid gap-1 rounded-lg px-2.5 py-2 text-left transition ${active ? 'bg-ds-card text-ds-ink shadow-sm' : 'text-ds-muted hover:bg-ds-hover hover:text-ds-ink'}`}><span className="text-[11.5px] font-medium">{children}</span><span className="font-mono text-[10px]"><span className={method === 'GET' ? 'text-emerald-600' : 'text-accent'}>{method}</span> {path}</span></button>
+}
+
+function InfoList({ title, items }: { title: string; items: string[] }): ReactElement {
+  return <section><h4 className="text-[11px] font-medium text-ds-ink">{title}</h4><ul className="mt-1.5 grid gap-1 text-[11px] leading-4 text-ds-muted">{items.map((item) => <li key={item} className="flex gap-1.5"><span className="mt-[6px] h-1 w-1 shrink-0 rounded-full bg-ds-faint" />{item}</li>)}</ul></section>
+}
+
+function gatewayApiGuide(tab: GatewayApiTab, baseUrl: string, modelId: string): {
+  method: 'GET' | 'POST'
+  path: string
+  description: string
+  fields: string[]
+  notes: string[]
+  example: string
+} {
+  if (tab === 'models') return {
+    method: 'GET',
+    path: '/models',
+    description: '列出本地中转站中所有已启用的路由模型。返回的 data[].id 就是后续生成请求使用的公开模型 ID。',
+    fields: ['无需请求体。', '只返回已启用的路由模型；未启用或无效的容量池不会出现。'],
+    notes: ['成功时返回 OpenAI 风格的 object: "list" 与 data 数组。', '本地 API 未启用时返回 404（gateway_disabled）。'],
+    example: `curl --request GET ${baseUrl}/models`
+  }
+  if (tab === 'responses') return {
+    method: 'POST',
+    path: '/responses',
+    description: '以 OpenAI Responses 风格生成内容，适合使用 input 作为单次输入的客户端。',
+    fields: [`model：必填，使用公开模型 ID，例如 ${modelId}。`, 'input：必填，可传字符串或消息数组。', 'stream：可选；true 时返回 Server-Sent Events。', 'max_output_tokens、tools 与 reasoning_effort 可选。'],
+    notes: ['非流式响应为 object: "response"，文本位于 output 中。', '流式响应依次发送 response.created、response.output_text.delta 与 response.completed。'],
+    example: buildGatewayResponsesCurlExample(baseUrl, modelId)
+  }
+  return {
+    method: 'POST',
+    path: '/chat/completions',
+    description: '以 OpenAI Chat Completions 风格生成对话回复，是多数 OpenAI 兼容 SDK 的默认接入方式。',
+    fields: [`model：必填，使用公开模型 ID，例如 ${modelId}。`, 'messages：必填且不能为空，支持 system、developer、user、assistant 与 tool 消息。', 'stream：可选；true 时返回 SSE，false 时返回完整 JSON。', 'tools：可选，使用 OpenAI function 工具定义；图片仅接受 Base64 data URL。'],
+    notes: ['非流式文本位于 choices[0].message.content。', '流式输出以 data: [DONE] 结束。', '模型不存在时返回 404（model_not_found）。'],
+    example: buildGatewayCurlExample(baseUrl, modelId)
+  }
+}
+
+function buildGatewayCurlExample(baseUrl: string, modelId: string): string {
+  return `curl --request POST ${baseUrl}/chat/completions \\
+  --header 'Content-Type: application/json' \\
+  --data '{
+    "model": "${modelId}",
+    "messages": [
+      { "role": "user", "content": "你好，Kun！" }
+    ],
+    "stream": false
+  }'`
+}
+
+function buildGatewayResponsesCurlExample(baseUrl: string, modelId: string): string {
+  return `curl --request POST ${baseUrl}/responses \\
+  --header 'Content-Type: application/json' \\
+  --data '{
+    "model": "${modelId}",
+    "input": "用一句话介绍 Kun 本地中转站",
+    "stream": false
+  }'`
 }
 
 const inputClass = 'w-full rounded-xl border border-ds-border bg-ds-card px-3 py-2 text-[13px] text-ds-ink outline-none focus:border-accent/50'

@@ -92,6 +92,7 @@ import {
   type ProviderModelImportResult
 } from './provider-model-import-dialog'
 import {
+  enrichCursorProviderModelProfiles,
   enrichProviderModelProfiles,
   mergeProviderModelIdsCaseInsensitive as mergeProviderModelIds
 } from './provider-model-import'
@@ -278,6 +279,18 @@ function profileForModel(
   const trimmed = model.trim()
   if (!trimmed) return undefined
   return provider.modelProfiles[trimmed.toLowerCase()] ?? provider.modelProfiles[trimmed]
+}
+
+function cursorProviderNeedsMetadataRepair(provider: ModelProviderProfileV1): boolean {
+  if (!isCursorSubscriptionProvider(provider)) return false
+  return provider.models.some((model) => {
+    if (model.trim().toLowerCase() === 'auto') return false
+    const profile = profileForModel(provider, model)
+    return !profile || (
+      profile.contextWindowTokens === undefined
+      && profile.maxOutputTokens === undefined
+    ) || !profile.reasoning
+  })
 }
 
 function presetProfileForProvider(provider: ModelProviderProfileV1): ModelProviderProfileV1 | null {
@@ -1354,6 +1367,7 @@ export function ProvidersSettingsSection({ ctx }: { ctx: Record<string, any> }):
       }
     | null
   >(null)
+  const cursorMetadataRepairAttempts = useRef(new Set<string>())
   // 新增供应商先停留在本地草稿,点「添加」才写入设置,避免半配置状态被持久化。
   const [draftProvider, setDraftProvider] = useState<ModelProviderProfileV1 | null>(null)
   const displayProviders = draftProvider ? [...modelProviders, draftProvider] : modelProviders
@@ -1775,7 +1789,8 @@ export function ProvidersSettingsSection({ ctx }: { ctx: Record<string, any> }):
 
   const fetchModelsDevCatalogFor = async (
     target: ModelProviderProfileV1,
-    modelHints?: CursorSubscriptionModel[]
+    modelHints?: CursorSubscriptionModel[],
+    forceRefresh = true
   ): Promise<ModelsDevCatalogResult> => {
     if (typeof window.kunGui?.fetchModelsDevCatalog !== 'function') {
       return { status: 'error', message: 'models.dev catalog bridge is unavailable.', models: [] }
@@ -1791,7 +1806,7 @@ export function ProvidersSettingsSection({ ctx }: { ctx: Record<string, any> }):
             : source.preset.id
           : target.id,
         baseUrl: target.baseUrl,
-        forceRefresh: true,
+        forceRefresh,
         ...(modelHints?.length
           ? {
               modelHints: modelHints.map((model) => ({
@@ -1809,6 +1824,47 @@ export function ProvidersSettingsSection({ ctx }: { ctx: Record<string, any> }):
       }
     }
   }
+
+  const patchProviderProfileRef = useRef(patchProviderProfile)
+  patchProviderProfileRef.current = patchProviderProfile
+  const fetchModelsDevCatalogForRef = useRef(fetchModelsDevCatalogFor)
+  fetchModelsDevCatalogForRef.current = fetchModelsDevCatalogFor
+
+  useEffect(() => {
+    if (
+      activeTab !== 'models'
+      || !activeProvider
+      || !cursorProviderNeedsMetadataRepair(activeProvider)
+    ) return
+
+    const repairKey = [
+      activeProvider.id,
+      ...activeProvider.models.map((model) => model.trim().toLowerCase()).filter(Boolean)
+    ].join('\u0001')
+    if (cursorMetadataRepairAttempts.current.has(repairKey)) return
+    cursorMetadataRepairAttempts.current.add(repairKey)
+
+    void fetchModelsDevCatalogForRef.current(
+      activeProvider,
+      activeProvider.models.map((model) => ({
+        id: model,
+        displayName: model
+      })),
+      false
+    ).then((catalogResult) => {
+      if (catalogResult.status !== 'ok' || catalogResult.models.length === 0) return
+      patchProviderProfileRef.current(activeProvider, (item) => {
+        const modelProfiles = enrichCursorProviderModelProfiles(
+          item,
+          item.models,
+          catalogResult.models
+        )
+        return modelProfiles === item.modelProfiles
+          ? item
+          : { ...item, modelProfiles }
+      })
+    })
+  }, [activeProvider, activeTab])
 
   const openModelImport = (input: {
     target: ModelProviderProfileV1
@@ -2121,12 +2177,19 @@ export function ProvidersSettingsSection({ ctx }: { ctx: Record<string, any> }):
     const nextVideoModels = target.video
       ? mergeProviderModelIds(target.video.models, picked.video)
       : picked.video
-    const nextModelProfiles = enrichProviderModelProfiles(
-      target,
-      nextChatModels,
-      picked.catalogModels,
-      modelAliases
-    )
+    const nextModelProfiles = isCursorSubscriptionProvider(target)
+      ? enrichCursorProviderModelProfiles(
+          target,
+          nextChatModels,
+          picked.catalogModels,
+          modelAliases
+        )
+      : enrichProviderModelProfiles(
+          target,
+          nextChatModels,
+          picked.catalogModels,
+          modelAliases
+        )
     const added =
       addedModelCount(target.models, nextChatModels)
       + addedModelCount(target.image?.models ?? [], nextImageModels)
@@ -2395,6 +2458,7 @@ export function ProvidersSettingsSection({ ctx }: { ctx: Record<string, any> }):
             saveStatus={saveStatus}
             saveError={saveError}
             onRetrySave={retrySave}
+            publicBaseUrl={`http://127.0.0.1:${kun.port}`}
           />
         ) : <div className="grid gap-4 p-4">
           <label className="grid gap-1.5 lg:hidden">

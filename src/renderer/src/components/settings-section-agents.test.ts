@@ -17,7 +17,11 @@ import {
   modelProviderTokenPlanProfile,
   type ModelProviderProfileV1
 } from '@shared/app-settings'
-import type { ModelProviderProbeResult } from '@shared/kun-gui-api'
+import type {
+  CursorSubscriptionModel,
+  ModelsDevCatalogResult,
+  ModelProviderProbeResult
+} from '@shared/kun-gui-api'
 import { AgentsSettingsSection, modelProvidersSettingsPatch } from './settings-section-agents'
 import { ProvidersSettingsSection } from './settings-section-providers'
 
@@ -724,7 +728,7 @@ describe('AgentsSettingsSection Kun diagnostics smoke', () => {
       latencyMs: 18,
       modelIds: ['model-a', 'model-b']
     }))
-    const fetchModelsDevCatalog = vi.fn(async () => ({
+    const fetchModelsDevCatalog = vi.fn(async (): Promise<ModelsDevCatalogResult> => ({
       status: 'ok' as const,
       providerKey: 'test-provider',
       providerName: 'Test Provider',
@@ -735,22 +739,30 @@ describe('AgentsSettingsSection Kun diagnostics smoke', () => {
           id: 'model-a',
           name: 'Model A',
           description: 'Vision-capable catalog metadata',
-          inputModalities: ['text', 'image'] as const,
-          outputModalities: ['text'] as const,
+          inputModalities: ['text', 'image'],
+          outputModalities: ['text'],
           contextWindowTokens: 128_000,
           maxOutputTokens: 16_000,
           toolCalling: true
         },
         {
           id: 'catalog-only',
-          inputModalities: ['text'] as const,
-          outputModalities: ['text'] as const,
+          inputModalities: ['text'],
+          outputModalities: ['text'],
           toolCalling: false
         }
       ]
     }))
     const claudeSubscriptionStatus = vi.fn(async () => ({ loggedIn: true }))
-    const cursorSubscriptionDiscover = vi.fn(async () => ({
+    const cursorSubscriptionDiscover = vi.fn(async (): Promise<{
+      account: {
+        apiKeyName: string
+        userEmail?: string
+        userFirstName?: string
+        userLastName?: string
+      }
+      models: CursorSubscriptionModel[]
+    }> => ({
       account: { apiKeyName: 'test-key', userEmail: 'cursor@example.com' },
       models: [{ id: 'auto', displayName: 'Auto' }]
     }))
@@ -924,7 +936,83 @@ describe('AgentsSettingsSection Kun diagnostics smoke', () => {
         contextWindowTokens: 1_048_576,
         maxOutputTokens: 65_536,
         inputModalities: ['text', 'image'],
-        messageParts: ['text', 'image_url']
+        messageParts: ['text', 'image_url'],
+        reasoning: {
+          supportedEfforts: ['auto'],
+          defaultEffort: 'auto',
+          requestProtocol: 'none'
+        }
+      }))
+    })
+
+    it('repairs missing metadata for an existing pulled Cursor model list', async () => {
+      fetchModelsDevCatalog.mockResolvedValueOnce({
+        status: 'ok',
+        providerKey: 'cursor-mixed',
+        providerName: 'Cursor',
+        matchMode: 'enrichment-only',
+        stale: false,
+        models: [{
+          id: 'gemini-3.6-flash',
+          providerKey: 'google',
+          inputModalities: ['text', 'image'],
+          outputModalities: ['text'],
+          contextWindowTokens: 1_048_576,
+          maxOutputTokens: 65_536,
+          reasoning: true,
+          toolCalling: true
+        }]
+      })
+      const settings = defaultModelProviderSettings()
+      const cursor = {
+        ...modelProviderPresetProfile(
+          getModelProviderPreset('cursor-subscription')!,
+          'cursor-secret'
+        ),
+        models: ['gemini-3.6-flash'],
+        modelProfiles: {}
+      }
+      const update = vi.fn()
+      const renderer = await mountProviders({
+        ...baseCtx(),
+        provider: { ...settings, providers: [...settings.providers, cursor] },
+        kun: {
+          ...defaultKunRuntimeSettings(),
+          providerId: cursor.id,
+          model: 'gemini-3.6-flash'
+        },
+        update
+      })
+
+      await act(async () => {
+        findButton(renderer, 'Models').props.onClick()
+        await Promise.resolve()
+        await Promise.resolve()
+        await Promise.resolve()
+      })
+
+      expect(fetchModelsDevCatalog).toHaveBeenCalledWith({
+        providerId: 'cursor-subscription',
+        baseUrl: '',
+        forceRefresh: false,
+        modelHints: [{
+          id: 'gemini-3.6-flash'
+        }]
+      })
+      const updatedProviders = update.mock.calls.at(-1)?.[0]?.provider?.providers as
+        | ModelProviderProfileV1[]
+        | undefined
+      const updatedCursor = updatedProviders?.find((item) => item.id === cursor.id)
+      expect(updatedCursor?.modelProfiles['gemini-3.6-flash']).toEqual(expect.objectContaining({
+        contextWindowTokens: 1_048_576,
+        maxOutputTokens: 65_536,
+        inputModalities: ['text', 'image'],
+        messageParts: ['text', 'image_url'],
+        reasoning: {
+          supportedEfforts: ['auto'],
+          defaultEffort: 'auto',
+          requestProtocol: 'none'
+        }
       }))
     })
 

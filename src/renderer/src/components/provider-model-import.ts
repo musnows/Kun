@@ -2,6 +2,7 @@ import type {
   ModelProviderModelProfileV1,
   ModelProviderProfileV1
 } from '@shared/app-settings'
+import { CURSOR_SDK_ADAPTIVE_REASONING } from '@shared/app-settings'
 import type {
   ModelsDevCatalogModel,
   ModelsDevCatalogResult,
@@ -206,6 +207,49 @@ export function enrichProviderModelProfiles(
         ? { maxOutputTokens: catalog?.maxOutputTokens }
         : {})
     }
+  }
+
+  return next
+}
+
+export function enrichCursorProviderModelProfiles(
+  provider: Pick<ModelProviderProfileV1, 'modelProfiles'>,
+  selectedChatModelIds: readonly string[],
+  catalogModels: readonly ModelsDevCatalogModel[],
+  discoveredAliases: Readonly<Record<string, readonly string[]>> = {}
+): Record<string, ModelProviderModelProfileV1> {
+  const enriched = enrichProviderModelProfiles(
+    provider,
+    selectedChatModelIds,
+    catalogModels,
+    discoveredAliases
+  )
+  const profileKeyById = new Map(
+    Object.keys(enriched).map((key) => [modelKey(key), key] as const)
+  )
+  let next = enriched
+
+  for (const rawModelId of selectedChatModelIds) {
+    const normalizedId = modelKey(rawModelId)
+    if (!normalizedId) continue
+    const existingKey = profileKeyById.get(normalizedId)
+    const existing = existingKey ? next[existingKey] : undefined
+    if (existing?.reasoning) continue
+    if (next === enriched) next = { ...enriched }
+    const key = existingKey ?? normalizedId
+    next[key] = existing
+      ? {
+          ...existing,
+          reasoning: { ...CURSOR_SDK_ADAPTIVE_REASONING }
+        }
+      : {
+          inputModalities: ['text'],
+          outputModalities: ['text'],
+          supportsToolCalling: true,
+          messageParts: ['text'],
+          reasoning: { ...CURSOR_SDK_ADAPTIVE_REASONING }
+        }
+    profileKeyById.set(normalizedId, key)
   }
 
   return next

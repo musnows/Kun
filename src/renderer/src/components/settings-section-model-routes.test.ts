@@ -50,7 +50,41 @@ describe('ModelRoutesSettings', () => {
     expect(html).toContain('添加模型')
     expect(html).toContain('稳定性优先自适应')
     expect(html).toContain('流式输出开始后固定停止')
-    expect(html).toContain('127.0.0.1 · 无鉴权')
+    expect(html).toContain('仅本机访问 · 无鉴权')
+    expect(html).toContain('http://127.0.0.1:18899/v1')
+    expect(html).toContain('GET /models')
+    expect(html).toContain('POST /chat/completions')
+    expect(html).toContain('POST /responses')
+  })
+
+  it('opens a detailed local API dialog with endpoint examples', async () => {
+    vi.stubGlobal('window', {
+      kunGui: {
+        runtimeRequest: vi.fn(async () => ({ ok: true, status: 200, body: '{"localGateway":{"enabled":true},"pools":[],"metrics":{},"events":[]}' }))
+      }
+    })
+    let renderer: ReactTestRenderer
+    await act(async () => {
+      renderer = createRenderer(createElement(ModelRoutesSettings, {
+        settings: settings(),
+        onChange: () => undefined,
+        publicBaseUrl: 'http://127.0.0.1:19999'
+      }))
+    })
+
+    await act(async () => {
+      const button = renderer!.root.findAllByType('button').find((item) => item.children.join('')?.includes('接口说明'))
+      button!.props.onClick()
+    })
+
+    expect(renderer!.root.findByProps({ role: 'dialog' })).toBeDefined()
+    const dialogTree = JSON.stringify(renderer!.toJSON())
+    expect(dialogTree).toContain('本地 API 说明')
+    expect(dialogTree).toContain('Chat Completions')
+    expect(dialogTree).toContain('http://127.0.0.1:19999/v1')
+    expect(dialogTree).toContain('/chat/completions')
+
+    await act(async () => { renderer!.unmount() })
   })
 
   it('keeps every numbered account available as an independent route target', () => {

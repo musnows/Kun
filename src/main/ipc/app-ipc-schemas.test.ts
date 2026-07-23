@@ -50,6 +50,15 @@ describe('app-ipc-schemas', () => {
       forceRefresh: true,
       modelHints: [{ id: 'gpt-5.5', aliases: ['gpt-latest'] }]
     })
+    expect(modelsDevCatalogPayloadSchema.parse({
+      providerId: 'cursor-subscription',
+      baseUrl: '',
+      modelHints: [{ id: 'gemini-3.6-flash' }]
+    })).toEqual({
+      providerId: 'cursor-subscription',
+      baseUrl: '',
+      modelHints: [{ id: 'gemini-3.6-flash' }]
+    })
     expect(() => modelsDevCatalogPayloadSchema.parse({
       providerId: 'xiaomi-token-plan',
       baseUrl: 'https://token-plan-cn.xiaomimimo.com/v1',

@@ -127,7 +127,16 @@ describe('Cursor subscription provider preset', () => {
       apiKey: 'cursor-secret',
       baseUrl: '',
       endpointFormat: 'custom_endpoint',
-      models: ['auto']
+      models: ['auto'],
+      modelProfiles: {
+        auto: {
+          reasoning: {
+            supportedEfforts: ['auto'],
+            defaultEffort: 'auto',
+            requestProtocol: 'none'
+          }
+        }
+      }
     })
   })
 })

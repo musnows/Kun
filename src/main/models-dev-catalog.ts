@@ -13,7 +13,12 @@ import { fetchWithOptionalProxy } from './proxy-fetch'
 
 export const MODELS_DEV_CATALOG_URL = 'https://models.dev/api.json'
 export const MODELS_DEV_CACHE_TTL_MS = 6 * 60 * 60 * 1_000
-export const MODELS_DEV_TIMEOUT_MS = 10_000
+// The public catalog is several megabytes and can take more than ten seconds
+// to download on higher-latency connections. Model IDs are still useful when
+// this request fails, but silently losing capability metadata leaves imported
+// providers stuck on the default profile. Keep the request bounded while
+// allowing enough time for the full catalog to arrive.
+export const MODELS_DEV_TIMEOUT_MS = 30_000
 export const MODELS_DEV_MAX_RESPONSE_BYTES = 8 * 1024 * 1024
 
 const MAX_PROVIDER_COUNT = 1_000

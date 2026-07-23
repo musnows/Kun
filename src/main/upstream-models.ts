@@ -6,6 +6,7 @@ import {
   isComposerChatModelId,
   listModelProviderModelIds,
   listNonTextModelIds,
+  listProviderNonTextModelIds,
   modelProfileSupportsTextChat,
   modelProviderModelProfile,
   projectExecutableModelRoutePools,
@@ -46,10 +47,14 @@ export async function fetchUpstreamModelIds(
 ): Promise<FetchUpstreamModelsResult> {
   const configuredModelIds = await readConfiguredKunModelIds(settings)
   const configuredGroups = await readConfiguredModelGroups(settings)
-  const nonTextModelIds = listNonTextModelIds(settings)
+  const providerSettings = getModelProviderSettings(settings)
   const runtime = resolveKunRuntimeSettings(settings)
   const runtimeModel = runtime.model.trim()
-  const defaultModelId = isComposerChatModelId(runtimeModel, nonTextModelIds) ? runtimeModel : ''
+  const runtimeProvider = providerSettings.providers.find((provider) => provider.id === runtime.providerId)
+  const runtimeNonTextModelIds = runtimeProvider
+    ? listProviderNonTextModelIds(runtimeProvider)
+    : listNonTextModelIds(settings)
+  const defaultModelId = isComposerChatModelId(runtimeModel, runtimeNonTextModelIds) ? runtimeModel : ''
   return modelListOrError(
     configuredModelIds,
     configuredGroups,
@@ -62,9 +67,10 @@ export async function readConfiguredKunModelIds(settings: AppSettingsV1): Promis
   const runtime = resolveKunRuntimeSettings(settings)
   const configPath = join(expandHome(runtime.dataDir), 'config.json')
   const nonTextModelIds = listNonTextModelIds(settings)
-  const ids = [runtime.model, ...listModelProviderModelIds(settings)].filter((id) =>
-    isComposerChatModelId(id, nonTextModelIds)
-  )
+  const ids = [
+    ...(isComposerChatModelId(runtime.model, nonTextModelIds) ? [runtime.model] : []),
+    ...listModelProviderModelIds(settings)
+  ]
   let parsed: unknown
   try {
     parsed = JSON.parse(await readFile(configPath, 'utf8')) as unknown
@@ -94,8 +100,8 @@ function modelListOrError(
 
 async function readConfiguredModelGroups(settings: AppSettingsV1): Promise<ModelProviderModelGroup[]> {
   const groups: ModelProviderModelGroup[] = []
-  const nonTextModelIds = listNonTextModelIds(settings)
   for (const provider of getModelProviderSettings(settings).providers) {
+    const nonTextModelIds = listProviderNonTextModelIds(provider)
     const modelIds = provider.models.filter((id) =>
       isComposerChatModelId(id, nonTextModelIds)
       && modelProfileSupportsTextChat(modelProviderModelProfile(provider, id))

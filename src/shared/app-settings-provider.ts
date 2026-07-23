@@ -333,10 +333,10 @@ export function getModelProviderProfile(
 }
 
 export function listModelProviderModelIds(settings: AppSettingsV1): string[] {
-  const nonTextModelIds = listNonTextModelIds(settings)
   const ids = new Set<string>()
   const providerSettings = getModelProviderSettings(settings)
   for (const provider of providerSettings.providers) {
+    const nonTextModelIds = listProviderNonTextModelIds(provider)
     for (const model of provider.models) {
       const trimmed = model.trim()
       if (!trimmed || !isComposerChatModelId(trimmed, nonTextModelIds)) continue
@@ -348,6 +348,25 @@ export function listModelProviderModelIds(settings: AppSettingsV1): string[] {
     if (pool.enabled && pool.targets.some((target) => target.enabled)) ids.add(pool.modelId)
   }
   return [...ids].sort((a, b) => a.localeCompare(b))
+}
+
+/**
+ * Media model IDs apply only to the provider that declares them. Different
+ * providers can expose the same model ID with different capabilities.
+ */
+export function listProviderNonTextModelIds(
+  provider: Pick<ModelProviderProfileV1, 'image' | 'speech' | 'textToSpeech' | 'music' | 'video'>
+): string[] {
+  return [...new Set([
+    ...(provider.speech?.models ?? []),
+    ...(provider.image?.models ?? []),
+    ...(provider.textToSpeech?.models ?? []),
+    ...(provider.music?.models ?? []),
+    ...(provider.video?.models ?? [])
+  ])]
+    .map((model) => model.trim())
+    .filter(Boolean)
+    .sort((a, b) => a.localeCompare(b))
 }
 
 export function listSpeechToTextModelIds(settings: AppSettingsV1): string[] {
@@ -406,13 +425,9 @@ export function listVideoGenerationModelIds(settings: AppSettingsV1): string[] {
 }
 
 export function listNonTextModelIds(settings: AppSettingsV1): string[] {
-  return [...new Set([
-    ...listSpeechToTextModelIds(settings),
-    ...listImageGenerationModelIds(settings),
-    ...listTextToSpeechModelIds(settings),
-    ...listMusicGenerationModelIds(settings),
-    ...listVideoGenerationModelIds(settings)
-  ])].sort((a, b) => a.localeCompare(b))
+  return [...new Set(
+    getModelProviderSettings(settings).providers.flatMap((provider) => listProviderNonTextModelIds(provider))
+  )].sort((a, b) => a.localeCompare(b))
 }
 
 export function isComposerChatModelId(

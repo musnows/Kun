@@ -220,6 +220,14 @@ const ANTIGRAVITY_REASONING: ModelProviderReasoningCapabilityV1 = {
   requestProtocol: 'none'
 }
 
+export const CURSOR_SDK_ADAPTIVE_REASONING: ModelProviderReasoningCapabilityV1 = {
+  supportedEfforts: ['auto'],
+  defaultEffort: 'auto',
+  // Cursor's Agent SDK owns the model-specific thinking parameters. Omitting
+  // explicit SDK params preserves its adaptive default for every model family.
+  requestProtocol: 'none'
+}
+
 // 通义千问 / 混元 / 豆包的「思考」开关各家用私有 body 字段,无法用现有 requestProtocol 精确映射,
 // 这里统一按「内置推理」建模(requestProtocol: 'none'):只展示 effort 开关、不向上游发送特定协议字段,避免请求被拒。
 const QWEN_REASONING: ModelProviderReasoningCapabilityV1 = {
@@ -345,6 +353,9 @@ export const MODEL_PROVIDER_PRESETS: ModelProviderPreset[] = [
     baseUrl: '',
     endpointFormat: 'custom_endpoint',
     models: [...CURSOR_SUBSCRIPTION_MODEL_IDS],
+    modelProfiles: {
+      auto: textChatProfile(undefined, CURSOR_SDK_ADAPTIVE_REASONING)
+    },
     docsUrl: 'https://cursor.com/docs/api/sdk/typescript',
     apiKeyUrl: 'https://cursor.com/dashboard?tab=integrations'
   },

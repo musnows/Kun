@@ -148,6 +148,43 @@ describe('upstream model picker list', () => {
     }
   })
 
+  it('keeps a chat model when another provider uses the same id for media', async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), 'deepseek-gui-models-'))
+    await mkdir(dataDir, { recursive: true })
+    const configured = settings(dataDir)
+    const chatProvider = configured.provider.providers.find((provider) => provider.id === 'custom-provider')!
+    chatProvider.models.push('gemini-3.5-flash')
+    chatProvider.modelProfiles['gemini-3.5-flash'] = {
+      inputModalities: ['text', 'image'],
+      outputModalities: ['text'],
+      supportsToolCalling: true,
+      messageParts: ['text', 'image_url']
+    }
+    configured.provider.providers.push({
+      id: 'speech-provider',
+      name: 'Speech Provider',
+      apiKey: 'sk-speech',
+      baseUrl: 'https://speech.example/v1',
+      endpointFormat: 'chat_completions',
+      models: ['speech-model'],
+      modelProfiles: {},
+      speech: {
+        protocol: 'openai-transcriptions',
+        baseUrl: 'https://speech.example/v1',
+        models: ['gemini-3.5-flash']
+      }
+    })
+
+    const result = await fetchUpstreamModelIds(configured)
+
+    expect(result).toMatchObject({ ok: true })
+    if (result.ok) {
+      expect(result.modelIds).toContain('gemini-3.5-flash')
+      expect(result.modelGroups?.find((group) => group.providerId === 'custom-provider')?.modelIds)
+        .toContain('gemini-3.5-flash')
+    }
+  })
+
   it('groups multiple route aliases under one local gateway provider', async () => {
     const dataDir = mkdtempSync(join(tmpdir(), 'deepseek-gui-models-'))
     await mkdir(dataDir, { recursive: true })

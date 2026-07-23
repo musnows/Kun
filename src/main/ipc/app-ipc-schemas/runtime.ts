@@ -51,7 +51,10 @@ export const providerProbePayloadSchema = z
 export const modelsDevCatalogPayloadSchema = z
   .object({
     providerId: trimmedString(128),
-    baseUrl: trimmedString(MAX_URL_LENGTH),
+    // SDK-backed subscription providers (Cursor and Antigravity) deliberately
+    // have no HTTP endpoint. Their canonical provider id is enough for
+    // deterministic models.dev matching, so an empty Base URL is valid here.
+    baseUrl: z.string().trim().max(MAX_URL_LENGTH),
     forceRefresh: z.boolean().optional(),
     modelHints: z.array(z.object({
       id: trimmedString(512),
