@@ -1248,8 +1248,9 @@ export function registerAppIpcHandlers(options: RegisterAppIpcHandlersOptions): 
             : `${stamp.getMilliseconds()}${randomBytes(1).toString('hex')}`
           workspacePath = join(root, `${base}-${suffix}`)
         }
-        // 对话根目录由设置存储层创建；若用户改成自定义目录，则要求该目录已存在，
-        // 禁止在这里递归补建用户选择的路径。
+        // 用户显式创建对话时，补建其配置的根目录。不要在设置加载期间创建自定义
+        // 路径，避免应用启动时意外恢复不可用的网络盘或已删除的目录。
+        await mkdir(root, { recursive: true })
         await mkdir(workspacePath)
         return { ok: true, path: workspacePath }
       } catch (error) {

@@ -131,7 +131,11 @@ import { SubagentRouter } from '../delegation/subagent-router.js'
 import { BackgroundShellRuntime } from '../services/background-shell-runtime.js'
 import { stopBashSessionById, createBashLocalTool } from '../adapters/tool/builtin-bash-tool.js'
 import { createBackgroundShellTool } from '../adapters/tool/background-shell-tool.js'
-import { createSecretEncryptor, defaultSecretCommandRunner } from '../security/secret-store.js'
+import {
+  createSecretEncryptor,
+  defaultSecretCommandRunner,
+  hasPersistedSecretKeyMaterial
+} from '../security/secret-store.js'
 import type { LocalTool } from '../adapters/tool/local-tool-host.js'
 import type { FaultInjectionController } from '../services/fault-injection-controller.js'
 import { InMemoryPublisherTrustStore } from '../supplychain/publisher-trust-store.js'
@@ -350,7 +354,8 @@ export async function createKunServeRuntime(
   })
   const extensionCredentialKeyProvider = await createSecretEncryptor({
     keyFilePath: join(activeOptions.dataDir, 'secret.key'),
-    run: defaultSecretCommandRunner
+    run: defaultSecretCommandRunner,
+    canBootstrapKeyFileFallback: async () => !(await hasPersistedSecretKeyMaterial(activeOptions.dataDir))
   })
   const extensionCredentials = new ExtensionCredentialStore({
     dataDir: activeOptions.dataDir,

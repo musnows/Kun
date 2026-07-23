@@ -1247,9 +1247,9 @@ describe('registerAppIpcHandlers', () => {
     }
   })
 
-  it('does not create a missing custom conversation workspace root', async () => {
+  it('creates a missing custom conversation workspace root when creating a conversation', async () => {
     const parent = mkdtempSync(join(tmpdir(), 'kun-conv-missing-'))
-    const root = join(parent, 'custom-root')
+    const root = join(parent, 'custom-root', 'nested-root')
     try {
       registerAppIpcHandlers(registerOptions({
         store: { load: vi.fn(async () => ({ ...settings(), conversationWorkspaceRoot: root })) } as never
@@ -1258,9 +1258,10 @@ describe('registerAppIpcHandlers', () => {
       const handler = handlers.get('conversation:create-workspace')
       const result = await handler?.({}) as { ok: boolean; path: string; error?: string }
 
-      expect(result.ok).toBe(false)
-      expect(result.path).toBe('')
-      expect(existsSync(root)).toBe(false)
+      expect(result.ok).toBe(true)
+      expect(result.path.startsWith(root)).toBe(true)
+      expect(existsSync(root)).toBe(true)
+      expect(existsSync(result.path)).toBe(true)
     } finally {
       rmSync(parent, { recursive: true, force: true })
     }

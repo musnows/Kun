@@ -1,6 +1,10 @@
 import { join } from 'node:path'
 import { homedir } from 'node:os'
-import { createSecretEncryptor, defaultSecretCommandRunner } from '../../kun/src/security/secret-store.js'
+import {
+  createSecretEncryptor,
+  defaultSecretCommandRunner,
+  hasPersistedSecretKeyMaterial
+} from '../../kun/src/security/secret-store.js'
 import { ExtensionCredentialStore } from '../../kun/src/services/extension-credential-store.js'
 import { LegacyProviderCredentialMigrationService } from '../../kun/src/services/legacy-provider-credential-migration.js'
 import { ExtensionProviderAccountStore } from '../../kun/src/services/extension-provider-account-store.js'
@@ -233,7 +237,8 @@ function resolveSettingsDataDir(settings: AppSettingsV1): string {
 async function createMigrationRuntime(dataDir: string): Promise<MigrationRuntime> {
   const keyProvider = await createSecretEncryptor({
     keyFilePath: join(dataDir, 'secret.key'),
-    run: defaultSecretCommandRunner
+    run: defaultSecretCommandRunner,
+    canBootstrapKeyFileFallback: async () => !(await hasPersistedSecretKeyMaterial(dataDir))
   })
   const accounts = new ExtensionProviderAccountStore({ dataDir })
   const credentials = new ExtensionCredentialStore({
